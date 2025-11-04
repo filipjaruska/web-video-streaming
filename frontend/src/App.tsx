@@ -5,8 +5,8 @@ import './App.css'
 type StreamingMethod = 'http-range' | 'hls'
 
 function App() {
-  const API_URL = 'http://localhost:5180'
-  const videoFileName = 'sample.mp4'
+  const API_URL = import.meta.env.VITE_API_URL
+  const videoFileName = import.meta.env.VITE_VIDEO_FILE_NAME
 
   const [streamingMethod, setStreamingMethod] = useState<StreamingMethod>('http-range')
   const [hlsInstance, setHlsInstance] = useState<Hls | null>(null)
