@@ -50,7 +50,7 @@ function App() {
         setError('HLS is not supported in this browser. Please use a modern browser like Google Chrome or a Chromium-based alternative.')
       }
     } else {
-      videoRef.current.src = `${API_URL}/api/video/${videoFileName}`
+      videoRef.current.src = `${API_URL}/api/httprange/${videoFileName}`
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamingMethod, API_URL, videoFileName])
@@ -159,7 +159,7 @@ function App() {
           </div>
           <div style={{ fontSize: '0.85rem', color: '#666' }}>
             {streamingMethod === 'http-range' ? (
-              <>URL: {`${API_URL}/api/video/${videoFileName}`}</>
+              <>URL: {`${API_URL}/api/httprange/${videoFileName}`}</>
             ) : (
               <>Manifest: {`${API_URL}/api/hls/${videoFileName.replace('.mp4', '')}/master.m3u8`}</>
             )}

@@ -3,6 +3,7 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+wwwroot/
 sample.mp4
 hls/
 
