@@ -1,0 +1,11 @@
+{
+  "omnisharp.useModernNet": true,
+  "[csharp]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "ms-dotnettools.csharp"
+  },
+  "dotnet.codestyle.formatting.openBracesOnNewLine": false,
+  "csharp.format.enable": true,
+  "omnisharp.enableEditorConfigSupport": true,
+  "omnisharp.enableRoslynAnalyzers": true
+}
