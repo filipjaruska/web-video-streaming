@@ -4,12 +4,12 @@ namespace WebWVideoStreamingAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class VideoController : ControllerBase
+public class HttpRangeController : ControllerBase
 {
     private readonly IWebHostEnvironment _environment;
-    private readonly ILogger<VideoController> _logger;
+    private readonly ILogger<HttpRangeController> _logger;
 
-    public VideoController(IWebHostEnvironment environment, ILogger<VideoController> logger)
+    public HttpRangeController(IWebHostEnvironment environment, ILogger<HttpRangeController> logger)
     {
         _environment = environment;
         _logger = logger;
@@ -22,7 +22,7 @@ public class VideoController : ControllerBase
     {
         try
         {
-            var videoPath = Path.Combine(_environment.WebRootPath, "videos", fileName);
+            var videoPath = Path.Combine(_environment.WebRootPath, "httprange", fileName);
 
             if (!System.IO.File.Exists(videoPath))
             {
