@@ -4,13 +4,11 @@ namespace WebWVideoStreamingAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class HttpRangeController : ControllerBase
-{
+public class HttpRangeController : ControllerBase {
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<HttpRangeController> _logger;
 
-    public HttpRangeController(IWebHostEnvironment environment, ILogger<HttpRangeController> logger)
-    {
+    public HttpRangeController(IWebHostEnvironment environment, ILogger<HttpRangeController> logger) {
         _environment = environment;
         _logger = logger;
     }
@@ -18,23 +16,18 @@ public class HttpRangeController : ControllerBase
     [HttpGet("{fileName}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult StreamVideo(string fileName)
-    {
-        try
-        {
+    public IActionResult StreamVideo(string fileName) {
+        try {
             var videoPath = Path.Combine(_environment.WebRootPath, "httprange", fileName);
 
-            if (!System.IO.File.Exists(videoPath))
-            {
+            if (!System.IO.File.Exists(videoPath)) {
                 _logger.LogWarning($"Video file not found at {videoPath}");
                 return NotFound(new { message = "Video not found" });
             }
 
             var fileStream = System.IO.File.OpenRead(videoPath);
             return File(fileStream, "video/mp4", enableRangeProcessing: true);
-        }
-        catch (Exception ex)
-        {
+        } catch (Exception ex) {
             _logger.LogError(ex, $"Error streaming video at {fileName}");
             return StatusCode(500, new { message = "Error streaming video" });
         }
