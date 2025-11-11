@@ -10,7 +10,7 @@ builder.Services.AddCors(options => {
 });
 
 // Add services to the container.
-
+builder.Services.AddSingleton<WebWVideoStreamingAPI.Services.IVideoTranscodingService, WebWVideoStreamingAPI.Services.VideoTranscodingService>();
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
