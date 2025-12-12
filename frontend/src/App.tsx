@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import Hls from 'hls.js'
+import * as dashjs from 'dashjs'
 import './App.css'
 
-type StreamingMethod = 'http-range' | 'hls'
+type StreamingMethod = 'http-range' | 'hls' | 'dash'
 
 function App() {
   const API_URL = import.meta.env.VITE_API_URL
@@ -10,14 +11,23 @@ function App() {
 
   const [streamingMethod, setStreamingMethod] = useState<StreamingMethod>('http-range')
   const [hlsInstance, setHlsInstance] = useState<Hls | null>(null)
+  const [dashInstance, setDashInstance] = useState<dashjs.MediaPlayerClass | null>(null)
   const [error, setError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
     if (!videoRef.current) return
+
+    setError(null) // Clear any previous errors
+
+    // Clean up any existing instances
     if (hlsInstance) {
       hlsInstance.destroy()
       setHlsInstance(null)
+    }
+    if (dashInstance) {
+      dashInstance.reset()
+      setDashInstance(null)
     }
 
     if (streamingMethod === 'hls') {
@@ -48,6 +58,21 @@ function App() {
         videoRef.current.src = `${API_URL}/api/hls/${videoFileName.replace('.mp4', '')}/master.m3u8`
       } else {
         setError('HLS is not supported in this browser. Please use a modern browser like Google Chrome or a Chromium-based alternative.')
+      }
+    } else if (streamingMethod === 'dash') {
+      const dash = dashjs.MediaPlayer().create()
+      dash.initialize(videoRef.current, `${API_URL}/api/dash/${videoFileName.replace('.mp4', '')}/manifest.mpd`, false)
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      dash.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
+        console.error('DASH error:', e)
+        setError(`DASH Error: ${e.error?.code || 'Unknown error'}`)
+      })
+
+      setDashInstance(dash)
+
+      return () => {
+        dash.reset()
       }
     } else {
       videoRef.current.src = `${API_URL}/api/httprange/${videoFileName}`
@@ -88,7 +113,8 @@ function App() {
               }}
             >
               <option value="http-range">HTTP Range Requests (Progressive Download)</option>
-              <option value="hls">HLS (HTTP Live Streaming)</option>
+              <option value="hls">HLS (HTTP Live Streaming - Apple)</option>
+              <option value="dash">DASH (Dynamic Adaptive Streaming - MPEG)</option>
             </select>
           </label>
 
@@ -102,18 +128,23 @@ function App() {
           }}>
             {streamingMethod === 'http-range' ? (
               <>
-                <strong>HTTP Range Requests:</strong> Traditional video delivery.
+                <strong>📹 HTTP Range Requests:</strong> Traditional video delivery.
                 Single quality, browser requests video chunks as needed.
-                Simple with no quality adaptation.
+                Simple but no quality adaptation.
+              </>
+            ) : streamingMethod === 'hls' ? (
+              <>
+                <strong>🍎 HLS (Adaptive):</strong> Apple's streaming protocol.
+                Multiple quality levels, automatically adapts to network conditions.
+                Used by YouTube, Twitch. Format: .m3u8 + .ts segments.
               </>
             ) : (
               <>
-                <strong>HLS (Adaptive):</strong> Streaming protocol.
-                Multiple quality levels, automatically adapts to network conditions.
-                Used by YouTube.
+                <strong>🎬 DASH (Adaptive):</strong> Industry-standard streaming protocol (MPEG).
+                Multiple quality levels, automatic adaptation.
+                Used by Netflix, YouTube. Format: .mpd manifest + .m4s segments.
               </>
             )}
-            // TODO: Add dash, used by Netflix.
           </div>
         </div>
 
@@ -155,13 +186,19 @@ function App() {
           color: '#495057'
         }}>
           <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>
-            Active Method: {streamingMethod === 'http-range' ? 'HTTP Range Requests' : 'HLS Adaptive Streaming'}
+            Active Method: {
+              streamingMethod === 'http-range' ? 'HTTP Range Requests' :
+                streamingMethod === 'hls' ? 'HLS Adaptive Streaming' :
+                  'DASH Adaptive Streaming'
+            }
           </div>
           <div style={{ fontSize: '0.85rem', color: '#666' }}>
             {streamingMethod === 'http-range' ? (
-              <>URL: {`${API_URL}/api/httprange/${videoFileName}`}</>
-            ) : (
+              <>URL: {`${API_URL}/api/video/${videoFileName}`}</>
+            ) : streamingMethod === 'hls' ? (
               <>Manifest: {`${API_URL}/api/hls/${videoFileName.replace('.mp4', '')}/master.m3u8`}</>
+            ) : (
+              <>Manifest: {`${API_URL}/api/dash/${videoFileName.replace('.mp4', '')}/manifest.mpd`}</>
             )}
           </div>
         </div>

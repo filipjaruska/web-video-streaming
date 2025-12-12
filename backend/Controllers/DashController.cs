@@ -25,7 +25,7 @@ public class DashController : ControllerBase {
     [ProducesResponseType(StatusCodes.Status501NotImplemented)]
     public async Task<IActionResult> GenerateDash(string videoId) {
         try {
-            var inputPath = Path.Combine(_environment.WebRootPath, "videos", $"{videoId}.mp4");
+            var inputPath = Path.Combine(_environment.WebRootPath, "httprange", $"{videoId}.mp4");
 
             if (!System.IO.File.Exists(inputPath)) {
                 return NotFound(new { message = "Source video not found" });
