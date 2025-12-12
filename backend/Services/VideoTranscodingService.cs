@@ -16,6 +16,11 @@ public class TranscodeResult {
 public class VideoTranscodingService : IVideoTranscodingService {
     private readonly ILogger<VideoTranscodingService> _logger;
 
+    private readonly (string resolution, string bitrate, string label)[] _variants = new[] {
+        ("1920:1080", "5000k", "1080p"),
+        ("640:360", "800k", "360p")
+    };
+
     public VideoTranscodingService(ILogger<VideoTranscodingService> logger) {
         _logger = logger;
     }
@@ -24,14 +29,8 @@ public class VideoTranscodingService : IVideoTranscodingService {
         var result = new TranscodeResult { Success = true };
 
         try {
-            var variants = new[]
-            {
-                ("1920:1080", "5000k", "1080p"),
-                ("640:360", "800k", "360p")
-            };
-
-            var tasks = variants.Select(variant =>
-                GenerateHlsVariantAsync(inputPath, outputDir, variant.Item1, variant.Item2, variant.Item3, cancellationToken)
+            var tasks = _variants.Select(variant =>
+                GenerateHlsVariantAsync(inputPath, outputDir, variant.resolution, variant.bitrate, variant.label, cancellationToken)
             ).ToList();
 
             var variantResults = await Task.WhenAll(tasks);
@@ -43,7 +42,7 @@ public class VideoTranscodingService : IVideoTranscodingService {
                 return result;
             }
 
-            await GenerateHlsMasterPlaylistAsync(outputDir, variants);
+            await GenerateHlsMasterPlaylistAsync(outputDir, _variants);
             result.GeneratedFiles.Add("master.m3u8");
 
             _logger.LogInformation("Successfully generated HLS streams in {OutputDir}", outputDir);
@@ -57,13 +56,116 @@ public class VideoTranscodingService : IVideoTranscodingService {
     }
 
     public async Task<TranscodeResult> GenerateDashAsync(string inputPath, string outputDir, CancellationToken cancellationToken = default) {
-        // TODO: Implement DASH generation
-        // Similar structure to HLS but using DASH manifest format (MPD)
-        await Task.CompletedTask;
-        return new TranscodeResult {
-            Success = false,
-            ErrorMessage = "DASH generation not yet implemented"
-        };
+        var result = new TranscodeResult { Success = true };
+
+        try {
+            // DASH requires all variants in ONE FFmpeg command to create unified MPD manifest
+            var manifestPath = "manifest.mpd";
+
+            var ffmpegArgs = new System.Text.StringBuilder();
+            // -y: overwrite output files without asking
+            // -i: input file path
+            ffmpegArgs.Append($@"-y -i ""{inputPath}"" ");
+
+            // -filter_complex: apply complex filtergraph (multiple inputs/outputs)
+            // [0:v]: select video stream from input 0
+            // scale=1920:1080: resize to specific resolution
+            // [v0]: label the output stream as "v0" for later reference
+            var filterComplex = new List<string>();
+            var mapCommands = new List<string>();
+
+            for (int i = 0; i < _variants.Length; i++) {
+                var (resolution, bitrate, label) = _variants[i];
+                filterComplex.Add($"[0:v]scale={resolution}[v{i}]");
+            }
+
+            ffmpegArgs.Append($@"-filter_complex ""{string.Join(";", filterComplex)}"" ");
+
+            for (int i = 0; i < _variants.Length; i++) {
+                var (resolution, bitrate, label) = _variants[i];
+                var bitrateNum = int.Parse(bitrate.TrimEnd('k'));
+
+                // -map "[v0]": select the filtered video stream labeled "v0"
+                ffmpegArgs.Append($@"-map ""[v{i}]"" ");
+                // -c:v:0: codec for video stream 0 (libx264 = H.264 encoder)
+                // -b:v:0: target bitrate for video stream 0
+                // -maxrate: maximum bitrate (for rate control)
+                // -bufsize: rate control buffer size (usually 2x bitrate)
+                ffmpegArgs.Append($@"-c:v:{i} libx264 -b:v:{i} {bitrate} -maxrate:{i} {bitrate} -bufsize:{i} {bitrateNum * 2}k ");
+                // -map 0:a?: map audio stream from input 0 if it exists (? means optional)
+                ffmpegArgs.Append($@"-map 0:a? ");
+                // -c:a:0: audio codec (aac)
+                // -b:a:0: audio bitrate
+                ffmpegArgs.Append($@"-c:a:{i} aac -b:a:{i} 128k ");
+            }
+
+            // -f dash: output format = MPEG-DASH
+            ffmpegArgs.Append($@"-f dash ");
+            // -seg_duration: target segment duration in seconds
+            ffmpegArgs.Append($@"-seg_duration 6 ");
+            // -use_template 1: use SegmentTemplate instead of SegmentList in MPD (more efficient)
+            ffmpegArgs.Append($@"-use_template 1 ");
+            // -use_timeline 1: use SegmentTimeline in MPD (allows variable segment durations)
+            ffmpegArgs.Append($@"-use_timeline 1 ");
+            // -init_seg_name: naming pattern for initialization segments
+            // $RepresentationID$: replaced with quality variant ID (0, 1, etc.)
+            ffmpegArgs.Append($@"-init_seg_name ""init-$RepresentationID$.m4s"" ");
+            // -media_seg_name: naming pattern for media segments
+            // $Number%05d$: segment number padded to 5 digits (00001, 00002, etc.)
+            ffmpegArgs.Append($@"-media_seg_name ""chunk-$RepresentationID$-$Number%05d$.m4s"" ");
+            ffmpegArgs.Append($@"""{manifestPath}""");
+
+            _logger.LogInformation("Starting FFmpeg DASH: ffmpeg {Args}", ffmpegArgs.ToString());
+
+            var processInfo = new ProcessStartInfo {
+                FileName = "ffmpeg",
+                Arguments = ffmpegArgs.ToString(),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                // WorkingDirectory: FFmpeg uses relative paths for segment files, so set this to output directory
+                WorkingDirectory = outputDir
+            };
+
+            using var process = Process.Start(processInfo);
+            if (process != null) {
+                // IMPORTANT: Read output/error streams asynchronously BEFORE WaitForExitAsync
+                // to prevent deadlock (buffers can fill up and block FFmpeg)
+                var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+                var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+                await process.WaitForExitAsync(cancellationToken);
+
+                var output = await outputTask;
+                var error = await errorTask;
+
+                if (process.ExitCode != 0) {
+                    _logger.LogError("FFmpeg DASH error (exit code {ExitCode}): {Error}", process.ExitCode, error);
+                    result.Success = false;
+                    result.ErrorMessage = $"FFmpeg failed: {error}";
+                } else {
+                    _logger.LogInformation("FFmpeg DASH completed successfully");
+                    result.Success = true;
+                    result.GeneratedFiles.Add("manifest.mpd");
+
+                    // Count generated segments
+                    var segments = Directory.GetFiles(outputDir, "*.m4s");
+                    result.GeneratedFiles.AddRange(segments.Select(Path.GetFileName).Where(f => f != null)!);
+                }
+            } else {
+                result.Success = false;
+                result.ErrorMessage = "Failed to start FFmpeg process";
+            }
+
+            _logger.LogInformation("Successfully generated DASH streams in {OutputDir}", outputDir);
+        } catch (Exception ex) {
+            _logger.LogError(ex, "Failed to generate DASH for {InputPath}", inputPath);
+            result.Success = false;
+            result.ErrorMessage = ex.Message;
+        }
+
+        return result;
     }
 
     private async Task<TranscodeResult> GenerateHlsVariantAsync(
@@ -77,6 +179,22 @@ public class VideoTranscodingService : IVideoTranscodingService {
         var segmentPattern = Path.Combine(outputDir, $"{name}_%03d.ts");
         var playlistPath = Path.Combine(outputDir, $"{name}.m3u8");
 
+        // -y: overwrite without asking
+        // -vf scale: simple video filter (not filter_complex since only one output)
+        // -c:v: video codec, -b:v: video bitrate
+        // -c:a: audio codec, -b:a: audio bitrate, -ac: audio channels
+        // -f hls: output format = HTTP Live Streaming (Apple's protocol)
+        // -hls_time: target segment duration in seconds
+        // -hls_list_size 0: keep all segments in playlist (0 = unlimited)
+        // -hls_segment_filename: pattern for .ts segment files
+        // -y: overwrite without asking
+        // -vf scale: simple video filter (not filter_complex since only one output)
+        // -c:v: video codec, -b:v: video bitrate
+        // -c:a: audio codec, -b:a: audio bitrate, -ac: audio channels
+        // -f hls: output format = HTTP Live Streaming (Apple's protocol)
+        // -hls_time: target segment duration in seconds
+        // -hls_list_size 0: keep all segments in playlist (0 = unlimited)
+        // -hls_segment_filename: pattern for .ts segment files
         var ffmpegArgs = $@"-y -i ""{inputPath}"" " +
             $@"-vf scale={scale} " +
             $@"-c:v libx264 -b:v {bitrate} -maxrate {bitrate} -bufsize {int.Parse(bitrate.TrimEnd('k')) * 2}k " +
@@ -101,6 +219,7 @@ public class VideoTranscodingService : IVideoTranscodingService {
 
             using var process = Process.Start(processInfo);
             if (process != null) {
+                // Read streams async first to prevent buffer deadlock
                 var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
                 var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
