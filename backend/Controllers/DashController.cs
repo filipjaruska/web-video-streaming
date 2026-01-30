@@ -3,6 +3,24 @@ using WebWVideoStreamingAPI.Services;
 
 namespace WebWVideoStreamingAPI.Controllers;
 
+/// <summary>
+/// DASH (Dynamic Adaptive Streaming over HTTP) Controller
+/// Supports multiple ABR (Adaptive Bitrate) algorithms configured client-side via dash.js:
+/// 
+/// 1. Dynamic (Hybrid) - Default: Modern ABR strategy combining multiple factors including
+///    bandwidth, buffer, and latency. Most robust for varying network conditions.
+/// 
+/// 2. Throughput-Based (abrThroughput): Legacy approach focusing solely on network
+///    throughput measurements for quality selection.
+/// 
+/// 3. BOLA (abrBola): Buffer Occupancy based Lyapunov Algorithm. Mathematically proven
+///    approach that optimizes QoE based on buffer state. Reduces rebuffering events.
+/// 
+/// 4. Baseline (Non-Adaptive): Disables ABR and locks to highest quality. Mimics
+///    traditional progressive download. May cause rebuffering on insufficient bandwidth.
+/// 
+/// DASH is the MPEG industry standard used by Netflix, YouTube, and major streaming platforms.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class DashController : ControllerBase {

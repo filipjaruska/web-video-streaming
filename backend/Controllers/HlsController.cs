@@ -3,6 +3,22 @@ using WebWVideoStreamingAPI.Services;
 
 namespace WebWVideoStreamingAPI.Controllers;
 
+/// <summary>
+/// HLS (HTTP Live Streaming) Controller
+/// Supports multiple ABR (Adaptive Bitrate) algorithms configured client-side:
+/// 
+/// 1. Hybrid (Dynamic) - Default: Combines bandwidth estimation and buffer occupancy
+///    for balanced quality adaptation. Modern standard approach.
+/// 
+/// 2. Throughput-Based (Legacy): Makes quality decisions primarily based on network
+///    speed estimation. Can be aggressive in quality changes.
+/// 
+/// 3. Buffer-Based (BOLA): Buffer Occupancy based Lyapunov Algorithm. Makes decisions
+///    based on current buffer level to optimize quality while avoiding rebuffering.
+/// 
+/// 4. Baseline (Non-Adaptive): Locks to highest quality available. Will cause stalls
+///    if network bandwidth is insufficient. Similar to HTTP Range progressive download.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class HlsController : ControllerBase {
@@ -24,7 +40,7 @@ public class HlsController : ControllerBase {
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GenerateHls(string videoId) {
         try {
-            var inputPath = Path.Combine(_environment.WebRootPath, "videos", $"{videoId}.mp4");
+            var inputPath = Path.Combine(_environment.WebRootPath, "httprange", $"{videoId}.mp4");
 
             if (!System.IO.File.Exists(inputPath)) {
                 return NotFound(new { message = "Source video not found" });
