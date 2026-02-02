@@ -1,5 +1,6 @@
 import { VideoStreamingClient } from '@/components/VideoStreamingClient'
 
+export default async function VideoPage({ params }: { params: Promise<{ video: string }> }) {
     const { video } = await params
     const videoFileName = `${video}.mp4`
 

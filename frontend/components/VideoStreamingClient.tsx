@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { StreamingMethod, AbrAlgorithm } from '@/types/streaming'
 import { StreamingControls } from '@/components/StreamingControls'
 import { VideoPlayer } from '@/components/VideoPlayer'
@@ -15,6 +15,15 @@ export function VideoStreamingClient({ videoFileName }: VideoStreamingClientProp
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5180'
     const [streamingMethod, setStreamingMethod] = useState<StreamingMethod>('http-range')
     const [abrAlgorithm, setAbrAlgorithm] = useState<AbrAlgorithm>('hybrid')
+    const [mounted, setMounted] = useState(false)
+
+    useEffect(() => {
+        setMounted(true)
+    }, [])
+
+    if (!mounted) {
+        return null
+    }
 
     return (
         <>
