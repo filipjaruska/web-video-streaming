@@ -27,6 +27,7 @@ export function useVideoPlayer({
   const [dashInstance, setDashInstance] =
     useState<dashjs.MediaPlayerClass | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const playListenerRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -55,13 +56,40 @@ export function useVideoPlayer({
    * Clean up any existing player instances
    */
   function cleanupInstances() {
+    // Pause and reset video element first
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+
+    // Remove any play event listener
+    if (playListenerRef.current && videoRef.current) {
+      videoRef.current.removeEventListener("play", playListenerRef.current);
+      playListenerRef.current = null;
+    }
+
     if (hlsInstance) {
-      hlsInstance.destroy();
+      try {
+        hlsInstance.destroy();
+      } catch (e) {
+        console.error("Error destroying HLS instance:", e);
+      }
       setHlsInstance(null);
     }
+
     if (dashInstance) {
-      dashInstance.reset();
+      try {
+        dashInstance.reset();
+      } catch (e) {
+        console.error("Error resetting DASH instance:", e);
+      }
       setDashInstance(null);
+    }
+
+    // Clear video src for clean state
+    if (videoRef.current) {
+      videoRef.current.removeAttribute("src");
+      videoRef.current.load();
     }
   }
 
@@ -78,6 +106,17 @@ export function useVideoPlayer({
 
       hls.loadSource(hlsUrl);
       hls.attachMedia(videoRef.current);
+
+      // Start loading only when user interacts (play button)
+      const startLoad = () => {
+        hls.startLoad();
+        if (playListenerRef.current && videoRef.current) {
+          videoRef.current.removeEventListener("play", playListenerRef.current);
+          playListenerRef.current = null;
+        }
+      };
+      playListenerRef.current = startLoad;
+      videoRef.current.addEventListener("play", startLoad);
 
       // Lock to highest quality for baseline mode
       if (abrAlgorithm === "baseline") {
@@ -116,7 +155,27 @@ export function useVideoPlayer({
     const dashUrl = getVideoUrl("dash", apiUrl, videoFileName);
 
     dash.updateSettings(dashSettings);
-    dash.initialize(videoRef.current, dashUrl, false);
+
+    // Set up video element first - use a data URL to make play button work
+    const dataUrl =
+      "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMQAAAAhmcmVlAAAAG21kYXQAAAGzABAHAAABthADAowdbb9/AAAC6W1vb3YAAABsbXZoZAAAAAB8JbCAfCWwgAAAA+gAAAAAAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAIVdHJhawAAAFx0a2hkAAAAD3wlsIB8JbCAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAIAAAACAAAAAABsW1kaWEAAAAgbWRoZAAAAAB8JbCAfCWwgAAAA+gAAAAAVcQAAAAAAC1oZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAAXxtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAE8c3RibAAAALhzdHNkAAAAAAAAAAEAAACobXA0dgAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAIAAgASAAAAEgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAAFJlc2RzAAAAAANEAAEABDwgEQAAAAADDUAAAAAABS0AAAGwAQAAAbWJEwAAAQAAAAEgAMSNiB9FAEQBFGMAAAGyTGF2YzUyLjg3LjQGAQIAAAAYc3R0cwAAAAAAAAABAAAAAQAAAAAAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAEAAAABAAAAFHN0c3oAAAAAAAAAEwAAAAEAAAAUc3RjbwAAAAAAAAABAAAALAAAAGB1ZHRhAAAAWG1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAAK2lsc3QAAAAjqXRvbwAAABtkYXRhAAAAAQAAAABMYXZmNTIuNzguMw==";
+
+    videoRef.current.src = dataUrl;
+
+    // When play is clicked, prevent default and initialize DASH instead
+    const onPlay = (e: Event) => {
+      e.preventDefault();
+      if (!videoRef.current) return;
+      videoRef.current.pause();
+      // DASH will take over the video element
+      dash.initialize(videoRef.current, dashUrl, true);
+      if (playListenerRef.current && videoRef.current) {
+        videoRef.current.removeEventListener("play", playListenerRef.current);
+        playListenerRef.current = null;
+      }
+    };
+    playListenerRef.current = onPlay as () => void;
+    videoRef.current.addEventListener("play", onPlay);
 
     // Handle errors
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,7 +192,9 @@ export function useVideoPlayer({
    */
   function initializeHttpRange() {
     if (!videoRef.current) return;
-    videoRef.current.src = getVideoUrl("http-range", apiUrl, videoFileName);
+
+    const videoUrl = getVideoUrl("http-range", apiUrl, videoFileName);
+    videoRef.current.src = videoUrl;
   }
 
   return {
