@@ -2,7 +2,7 @@ import Hls from "hls.js";
 import type { AbrAlgorithm } from "../types/streaming";
 
 export function createHlsConfig(
-  abrAlgorithm: AbrAlgorithm
+  abrAlgorithm: AbrAlgorithm,
 ): Partial<Hls["config"]> {
   const baseConfig: Partial<Hls["config"]> = {
     debug: false,
