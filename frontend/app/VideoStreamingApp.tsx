@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import type { StreamingMethod, AbrAlgorithm } from './types/streaming'
-import { useVideoPlayer } from './hooks/useVideoPlayer'
-import { StreamingControls } from './components/StreamingControls'
-import { ErrorDisplay } from './components/ErrorDisplay'
-import { ActiveStreamingStatus } from './components/ActiveStreamingStatus'
+import type { StreamingMethod, AbrAlgorithm } from '@/types/streaming'
+import { useVideoPlayer } from '@/hooks/useVideoPlayer'
+import { StreamingControls } from '@/components/StreamingControls'
+import { ErrorDisplay } from '@/components/ErrorDisplay'
+import { ActiveStreamingStatus } from '@/components/ActiveStreamingStatus'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function VideoStreamingApp() {

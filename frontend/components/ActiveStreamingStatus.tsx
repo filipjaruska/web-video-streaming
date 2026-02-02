@@ -1,12 +1,12 @@
 import { memo } from 'react'
-import type { StreamingMethod, AbrAlgorithm } from '../types/streaming'
+import type { StreamingMethod, AbrAlgorithm } from '@/types/streaming'
 import {
     getActiveMethodName,
     getVideoUrl,
     getStreamingMethodDescription,
     getAbrDescription,
     getDashAbrDescription,
-} from '../utils/streamingLabels'
+} from '@/lib/streamingLabels'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface ActiveStreamingStatusProps {

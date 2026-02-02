@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { StreamingMethod, AbrAlgorithm } from '../types/streaming'
+import type { StreamingMethod, AbrAlgorithm } from '@/types/streaming'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'

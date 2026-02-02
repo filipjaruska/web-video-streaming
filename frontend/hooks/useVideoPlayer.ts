@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import * as dashjs from "dashjs";
-import type { AbrAlgorithm, StreamingMethod } from "../types/streaming";
-import { createHlsConfig, createDashSettings } from "../utils/streamingConfig";
-import { getVideoUrl } from "../utils/streamingLabels";
+import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
+import { createHlsConfig, createDashSettings } from "@/lib/streamingConfig";
+import { getVideoUrl } from "@/lib/streamingLabels";
 
 interface UseVideoPlayerProps {
   streamingMethod: StreamingMethod;
