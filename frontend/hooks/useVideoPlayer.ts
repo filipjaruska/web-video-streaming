@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
-import * as dashjs from "dashjs";
 import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
 import { createHlsConfig, createDashSettings } from "@/lib/streamingConfig";
 import { getVideoUrl } from "@/lib/streamingLabels";
@@ -24,8 +23,7 @@ export function useVideoPlayer({
 }: UseVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hlsInstance, setHlsInstance] = useState<Hls | null>(null);
-  const [dashInstance, setDashInstance] =
-    useState<dashjs.MediaPlayerClass | null>(null);
+  const [dashInstance, setDashInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const playListenerRef = useRef<(() => void) | null>(null);
 
@@ -79,9 +77,12 @@ export function useVideoPlayer({
 
     if (dashInstance) {
       try {
-        dashInstance.reset();
+        // Only reset if the player is actually initialized
+        if (dashInstance.isReady && dashInstance.isReady()) {
+          dashInstance.reset();
+        }
       } catch (e) {
-        console.error("Error resetting DASH instance:", e);
+        // Silently ignore reset errors - player may not be fully initialized
       }
       setDashInstance(null);
     }
@@ -147,9 +148,11 @@ export function useVideoPlayer({
   /**
    * Initialize DASH streaming
    */
-  function initializeDash() {
+  async function initializeDash() {
     if (!videoRef.current) return;
 
+    // Dynamically import dashjs only on client side
+    const dashjs = await import("dashjs");
     const dash = dashjs.MediaPlayer().create();
     const dashSettings = createDashSettings(abrAlgorithm);
     const dashUrl = getVideoUrl("dash", apiUrl, videoFileName);
@@ -178,7 +181,6 @@ export function useVideoPlayer({
     videoRef.current.addEventListener("play", onPlay);
 
     // Handle errors
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     dash.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
       console.error("DASH error:", e);
       setError(`DASH Error: ${e.error?.code || "Unknown error"}`);

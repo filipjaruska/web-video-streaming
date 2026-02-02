@@ -48,8 +48,17 @@ export function createHlsConfig(
 export interface DashSettings {
   streaming?: {
     abr?: {
-      useDefaultABRRules?: boolean;
-      ABRStrategy?: string;
+      rules?: {
+        throughputRule?: {
+          active?: boolean;
+        };
+        bolaRule?: {
+          active?: boolean;
+        };
+        insufficientBufferRule?: {
+          active?: boolean;
+        };
+      };
       autoSwitchBitrate?: {
         video?: boolean;
         audio?: boolean;
@@ -67,8 +76,14 @@ export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
       return {
         streaming: {
           abr: {
-            useDefaultABRRules: true,
-            ABRStrategy: "abrThroughput",
+            rules: {
+              throughputRule: {
+                active: true,
+              },
+              bolaRule: {
+                active: false,
+              },
+            },
           },
           buffer: {
             fastSwitchEnabled: false,
@@ -80,8 +95,14 @@ export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
       return {
         streaming: {
           abr: {
-            useDefaultABRRules: true,
-            ABRStrategy: "abrBola",
+            rules: {
+              throughputRule: {
+                active: false,
+              },
+              bolaRule: {
+                active: true,
+              },
+            },
           },
           buffer: {
             fastSwitchEnabled: false,
@@ -109,8 +130,14 @@ export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
       return {
         streaming: {
           abr: {
-            useDefaultABRRules: true,
-            ABRStrategy: "abrDynamic",
+            rules: {
+              throughputRule: {
+                active: true,
+              },
+              bolaRule: {
+                active: true,
+              },
+            },
           },
           buffer: {
             fastSwitchEnabled: false,
