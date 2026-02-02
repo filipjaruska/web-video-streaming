@@ -7,27 +7,13 @@ import {
     getAbrDescription,
     getDashAbrDescription,
 } from '../utils/streamingLabels'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface ActiveStreamingStatusProps {
     streamingMethod: StreamingMethod
     abrAlgorithm: AbrAlgorithm
     apiUrl: string
     videoFileName: string
-}
-
-const sectionHeaderStyle = {
-    fontSize: '0.6875rem',
-    fontWeight: '600',
-    color: '#64748b',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.05em',
-    marginBottom: '0.375rem',
-}
-
-const sectionContentStyle = {
-    fontSize: '0.875rem',
-    lineHeight: '1.5',
-    color: '#1e293b',
 }
 
 function ActiveStreamingStatusComponent({
@@ -40,71 +26,52 @@ function ActiveStreamingStatusComponent({
     const url = getVideoUrl(streamingMethod, apiUrl, videoFileName)
 
     return (
-        <div
-            style={{
-                padding: '1.25rem',
-                background: 'white',
-                borderRadius: '8px',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '1.25rem',
-                height: '100%',
-            }}
-        >
-            <div style={{ paddingBottom: '0.75rem', borderBottom: '2px solid #f1f5f9' }}>
-                <h2 style={{ fontSize: '1rem', fontWeight: '600', color: '#0f172a', margin: 0 }}>
-                    Streaming Information
-                </h2>
-            </div>
-
-            <div>
-                <div style={sectionHeaderStyle}>Active Method</div>
-                <div style={{ ...sectionContentStyle, fontWeight: '500' }}>
-                    {getActiveMethodName(streamingMethod, showAbrAlgorithm ? abrAlgorithm : undefined)}
-                </div>
-            </div>
-
-            <div>
-                <div style={sectionHeaderStyle}>Protocol Details</div>
-                <div style={sectionContentStyle}>
-                    {getStreamingMethodDescription(streamingMethod)}
-                </div>
-            </div>
-
-            {showAbrAlgorithm && (
+        <Card className="h-full">
+            <CardHeader className="border-b">
+                <CardTitle>Streaming Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
                 <div>
-                    <div style={sectionHeaderStyle}>ABR Strategy</div>
-                    <div style={sectionContentStyle}>
-                        {streamingMethod === 'hls'
-                            ? getAbrDescription(abrAlgorithm)
-                            : getDashAbrDescription(abrAlgorithm)}
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                        Active Method
+                    </div>
+                    <div className="text-sm font-medium">
+                        {getActiveMethodName(streamingMethod, showAbrAlgorithm ? abrAlgorithm : undefined)}
                     </div>
                 </div>
-            )}
 
-            <div>
-                <div style={sectionHeaderStyle}>
-                    {streamingMethod === 'http-range' ? 'Video URL' : 'Manifest URL'}
+                <div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                        Protocol Details
+                    </div>
+                    <div className="text-sm leading-relaxed">
+                        {getStreamingMethodDescription(streamingMethod)}
+                    </div>
                 </div>
-                <div
-                    style={{
-                        fontSize: '0.75rem',
-                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                        background: '#f8fafc',
-                        padding: '0.625rem',
-                        borderRadius: '4px',
-                        wordBreak: 'break-all',
-                        color: '#475569',
-                        border: '1px solid #e2e8f0',
-                    }}
-                >
-                    {url}
-                </div>
-            </div>
 
-        </div>
+                {showAbrAlgorithm && (
+                    <div>
+                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                            ABR Strategy
+                        </div>
+                        <div className="text-sm leading-relaxed">
+                            {streamingMethod === 'hls'
+                                ? getAbrDescription(abrAlgorithm)
+                                : getDashAbrDescription(abrAlgorithm)}
+                        </div>
+                    </div>
+                )}
+
+                <div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                        {streamingMethod === 'http-range' ? 'Video URL' : 'Manifest URL'}
+                    </div>
+                    <div className="text-xs font-mono bg-muted p-2.5 rounded border break-all">
+                        {url}
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
     )
 }
 

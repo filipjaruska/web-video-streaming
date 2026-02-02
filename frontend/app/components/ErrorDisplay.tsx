@@ -1,4 +1,6 @@
 import { memo } from 'react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { AlertCircle } from 'lucide-react'
 
 interface ErrorDisplayProps {
     error: string
@@ -6,30 +8,13 @@ interface ErrorDisplayProps {
 
 function ErrorDisplayComponent({ error }: ErrorDisplayProps) {
     return (
-        <div
-            style={{
-                padding: '3rem 2rem',
-                background: '#fee2e2',
-                borderRadius: '8px',
-                border: '1px solid #fecaca',
-                textAlign: 'center',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-            }}
-        >
-            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>⚠️</div>
-            <div style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '0.75rem', color: '#991b1b' }}>
-                Playback Error
-            </div>
-            <div style={{
-                fontSize: '0.9375rem',
-                color: '#7f1d1d',
-                maxWidth: '500px',
-                margin: '0 auto',
-                lineHeight: '1.6',
-            }}>
+        <Alert variant="destructive" className="py-12">
+            <AlertCircle className="!size-10 mx-auto mb-4" />
+            <AlertTitle className="text-center text-lg">Playback Error</AlertTitle>
+            <AlertDescription className="text-center max-w-lg mx-auto">
                 {error}
-            </div>
-        </div>
+            </AlertDescription>
+        </Alert>
     )
 }
 

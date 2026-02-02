@@ -6,6 +6,7 @@ import { useVideoPlayer } from './hooks/useVideoPlayer'
 import { StreamingControls } from './components/StreamingControls'
 import { ErrorDisplay } from './components/ErrorDisplay'
 import { ActiveStreamingStatus } from './components/ActiveStreamingStatus'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function VideoStreamingApp() {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5180'
@@ -22,13 +23,13 @@ export default function VideoStreamingApp() {
     })
 
     return (
-        <div style={{ padding: '2rem 1.5rem', minHeight: '100vh' }}>
-            <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-                <header style={{ marginBottom: '2rem' }}>
-                    <h1 style={{ fontSize: '1.875rem', fontWeight: '600', marginBottom: '0.5rem', color: '#0f172a' }}>
+        <div className="p-8 min-h-screen">
+            <div className="max-w-[1400px] mx-auto">
+                <header className="mb-8">
+                    <h1 className="text-3xl font-semibold mb-2">
                         Video Streaming Comparison
                     </h1>
-                    <p style={{ color: '#64748b', fontSize: '1rem' }}>
+                    <p className="text-muted-foreground">
                         Compare HTTP Range, HLS, and DASH streaming protocols with different ABR algorithms
                     </p>
                 </header>
@@ -40,14 +41,8 @@ export default function VideoStreamingApp() {
                     onAbrAlgorithmChange={setAbrAlgorithm}
                 />
 
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 360px',
-                    gap: '1.5rem',
-                    alignItems: 'stretch',
-                    marginBottom: '1.5rem',
-                }}>
-                    <div style={{ position: 'relative' }}>
+                <div className="grid grid-cols-[1fr_360px] gap-6 items-stretch mb-6">
+                    <div className="relative">
                         {error ? (
                             <ErrorDisplay error={error} />
                         ) : (
@@ -55,14 +50,7 @@ export default function VideoStreamingApp() {
                                 ref={videoRef}
                                 controls
                                 preload="none"
-                                width="100%"
-                                style={{
-                                    borderRadius: '8px',
-                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                                    background: '#000',
-                                    aspectRatio: '16/9',
-                                    display: 'block',
-                                }}
+                                className="w-full rounded-lg shadow-sm bg-black aspect-video block"
                             >
                                 Your browser does not support the video tag.
                             </video>
@@ -77,76 +65,47 @@ export default function VideoStreamingApp() {
                     />
                 </div>
 
-                {/* Stats Panel */}
-                <div style={{
-                    padding: '1.25rem',
-                    background: 'white',
-                    borderRadius: '8px',
-                    border: '1px solid #e2e8f0',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                }}>
-                    <h2 style={{ fontSize: '1rem', fontWeight: '600', color: '#0f172a', marginBottom: '1rem' }}>
-                        Real-time Statistics
-                    </h2>
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                        gap: '1rem',
-                    }}>
-                        <div style={{
-                            padding: '1rem',
-                            background: '#f8fafc',
-                            borderRadius: '6px',
-                            border: '1px solid #e2e8f0',
-                        }}>
-                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
-                                Current Quality
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Real-time Statistics</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+                            <div className="p-4 bg-muted rounded-md border">
+                                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                    Current Quality
+                                </div>
+                                <div className="text-2xl font-semibold">
+                                    —
+                                </div>
                             </div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: '600', color: '#0f172a' }}>
-                                —
+                            <div className="p-4 bg-muted rounded-md border">
+                                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                    Buffer Level
+                                </div>
+                                <div className="text-2xl font-semibold">
+                                    —
+                                </div>
                             </div>
-                        </div>
-                        <div style={{
-                            padding: '1rem',
-                            background: '#f8fafc',
-                            borderRadius: '6px',
-                            border: '1px solid #e2e8f0',
-                        }}>
-                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
-                                Buffer Level
+                            <div className="p-4 bg-muted rounded-md border">
+                                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                    Bandwidth
+                                </div>
+                                <div className="text-2xl font-semibold">
+                                    —
+                                </div>
                             </div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: '600', color: '#0f172a' }}>
-                                —
+                            <div className="p-4 bg-muted rounded-md border">
+                                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                    Dropped Frames
+                                </div>
+                                <div className="text-2xl font-semibold">
+                                    —
+                                </div>
                             </div>
                         </div>
-                        <div style={{
-                            padding: '1rem',
-                            background: '#f8fafc',
-                            borderRadius: '6px',
-                            border: '1px solid #e2e8f0',
-                        }}>
-                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
-                                Bandwidth
-                            </div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: '600', color: '#0f172a' }}>
-                                —
-                            </div>
-                        </div>
-                        <div style={{
-                            padding: '1rem',
-                            background: '#f8fafc',
-                            borderRadius: '6px',
-                            border: '1px solid #e2e8f0',
-                        }}>
-                            <div style={{ fontSize: '0.6875rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
-                                Dropped Frames
-                            </div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: '600', color: '#0f172a' }}>
-                                —
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                    </CardContent>
+                </Card>
             </div>
         </div>
     )
