@@ -1,30 +1,25 @@
 import Hls from "hls.js";
 import type { AbrAlgorithm } from "../types/streaming";
 
-/**
- * HLS Configuration Factory
- * Creates HLS.js configuration based on the selected ABR algorithm
- */
 export function createHlsConfig(
-  abrAlgorithm: AbrAlgorithm,
+  abrAlgorithm: AbrAlgorithm
 ): Partial<Hls["config"]> {
   const baseConfig: Partial<Hls["config"]> = {
     debug: false,
     enableWorker: true,
     lowLatencyMode: false,
+    autoStartLoad: false,
   };
 
   switch (abrAlgorithm) {
-    case "baseline":
-      // Force highest quality, disable adaptive streaming
+    case "baseline": // Non-Adaptive: Force highest quality, disable adaptive streaming
       return {
         ...baseConfig,
-        startLevel: -1, // Start with highest
+        startLevel: -1,
         capLevelToPlayerSize: false,
       };
 
-    case "throughput":
-      // Throughput-based (legacy): primarily based on bandwidth estimation
+    case "throughput": // Throughput-based only
       return {
         ...baseConfig,
         abrEwmaDefaultEstimate: 500000, // Start conservative
@@ -32,8 +27,7 @@ export function createHlsConfig(
         abrBandWidthUpFactor: 0.7, // Slower to upgrade quality
       };
 
-    case "buffer":
-      // Buffer-based: make decisions based on buffer occupancy
+    case "buffer": // Buffer-based: make decisions based on buffer occupancy
       return {
         ...baseConfig,
         abrEwmaDefaultEstimate: 500000,
@@ -41,9 +35,8 @@ export function createHlsConfig(
         maxMaxBufferLength: 60,
       };
 
-    case "hybrid":
+    case "hybrid": // Hybrid (Default): Dynamic strategy combining multiple factors
     default:
-      // Hybrid (default): balanced approach
       return {
         ...baseConfig,
         abrEwmaDefaultEstimate: 500000,
@@ -52,11 +45,6 @@ export function createHlsConfig(
       };
   }
 }
-
-/**
- * DASH Configuration Factory
- * Creates dash.js settings based on the selected ABR algorithm
- */
 export interface DashSettings {
   streaming?: {
     abr?: {
@@ -67,33 +55,41 @@ export interface DashSettings {
         audio?: boolean;
       };
     };
+    buffer?: {
+      fastSwitchEnabled?: boolean;
+    };
   };
 }
 
 export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
   switch (abrAlgorithm) {
-    case "throughput":
+    case "throughput": // Throughput-based only
       return {
         streaming: {
           abr: {
             useDefaultABRRules: true,
-            ABRStrategy: "abrThroughput", // Throughput-based only
+            ABRStrategy: "abrThroughput",
+          },
+          buffer: {
+            fastSwitchEnabled: false,
           },
         },
       };
 
-    case "buffer":
+    case "buffer": // Buffer-Based (BOLA): Buffer Occupancy based Lyapunov Algorithm
       return {
         streaming: {
           abr: {
             useDefaultABRRules: true,
-            ABRStrategy: "abrBola", // BOLA - Buffer Occupancy based
+            ABRStrategy: "abrBola",
+          },
+          buffer: {
+            fastSwitchEnabled: false,
           },
         },
       };
 
-    case "baseline":
-      // Baseline: disable adaptive streaming, force highest quality
+    case "baseline": // Non-Adaptive: disable adaptive streaming, force highest quality
       return {
         streaming: {
           abr: {
@@ -102,17 +98,22 @@ export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
               audio: false,
             },
           },
+          buffer: {
+            fastSwitchEnabled: false,
+          },
         },
       };
 
-    case "hybrid":
+    case "hybrid": // Hybrid (Default): Dynamic strategy combining multiple factors
     default:
-      // Hybrid (default): Dynamic strategy combining multiple factors
       return {
         streaming: {
           abr: {
             useDefaultABRRules: true,
-            ABRStrategy: "abrDynamic", // Default hybrid approach
+            ABRStrategy: "abrDynamic",
+          },
+          buffer: {
+            fastSwitchEnabled: false,
           },
         },
       };

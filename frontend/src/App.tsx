@@ -53,6 +53,7 @@ function App() {
               <video
                 ref={videoRef}
                 controls
+                preload="none"
                 width="100%"
                 style={{
                   borderRadius: '8px',

@@ -2,7 +2,7 @@
   "omnisharp.useModernNet": true,
   "[csharp]": {
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "ms-dotnettools.csharp"
+    "editor.defaultFormatter": "anysphere.csharp"
   },
   "dotnet.codestyle.formatting.openBracesOnNewLine": false,
   "csharp.format.enable": true,
