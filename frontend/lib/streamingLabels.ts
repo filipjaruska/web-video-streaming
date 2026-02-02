@@ -1,4 +1,4 @@
-import type { AbrAlgorithm, StreamingMethod } from "../types/streaming";
+import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
 
 /**
  * Get human-readable label for ABR algorithm
