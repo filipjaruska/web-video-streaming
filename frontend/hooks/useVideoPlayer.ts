@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
-import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
+import type {
+  AbrAlgorithm,
+  StreamingMethod,
+  CurrentStats,
+} from "@/types/streaming";
 import { createHlsConfig, createDashSettings } from "@/lib/streamingConfig";
 import { getVideoUrl } from "@/lib/streamingLabels";
+import { useVideoStatsTracking } from "@/hooks/useVideoStatsTracking";
 
 interface UseVideoPlayerProps {
   streamingMethod: StreamingMethod;
   abrAlgorithm: AbrAlgorithm;
   apiUrl: string;
   videoFileName: string;
+  onStatsUpdate?: (stats: Partial<CurrentStats>) => void;
 }
 
 /**
@@ -20,12 +26,21 @@ export function useVideoPlayer({
   abrAlgorithm,
   apiUrl,
   videoFileName,
+  onStatsUpdate,
 }: UseVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hlsInstance, setHlsInstance] = useState<Hls | null>(null);
   const [dashInstance, setDashInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const playListenerRef = useRef<(() => void) | null>(null);
+
+  useVideoStatsTracking({
+    videoElement: videoRef.current,
+    streamingMethod,
+    hlsInstance,
+    dashInstance,
+    onStatsUpdate,
+  });
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -50,9 +65,6 @@ export function useVideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamingMethod, abrAlgorithm, apiUrl, videoFileName]);
 
-  /**
-   * Clean up any existing player instances
-   */
   function cleanupInstances() {
     // Pause and reset video element first
     if (videoRef.current) {
