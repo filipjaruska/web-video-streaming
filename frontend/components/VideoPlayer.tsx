@@ -1,7 +1,7 @@
 'use client'
 
 import { useVideoPlayer } from '@/hooks/useVideoPlayer'
-import type { StreamingMethod, AbrAlgorithm } from '@/types/streaming'
+import type { StreamingMethod, AbrAlgorithm, CurrentStats } from '@/types/streaming'
 import { ErrorDisplay } from '@/components/ErrorDisplay'
 
 interface VideoPlayerProps {
@@ -9,14 +9,16 @@ interface VideoPlayerProps {
     abrAlgorithm: AbrAlgorithm
     apiUrl: string
     videoFileName: string
+    onStatsUpdate?: (stats: Partial<CurrentStats>) => void
 }
 
-export function VideoPlayer({ streamingMethod, abrAlgorithm, apiUrl, videoFileName }: VideoPlayerProps) {
+export function VideoPlayer({ streamingMethod, abrAlgorithm, apiUrl, videoFileName, onStatsUpdate }: VideoPlayerProps) {
     const { videoRef, error } = useVideoPlayer({
         streamingMethod,
         abrAlgorithm,
         apiUrl,
         videoFileName,
+        onStatsUpdate,
     })
 
     return (

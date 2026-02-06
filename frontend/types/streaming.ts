@@ -8,3 +8,47 @@ export interface StreamingConfig {
   apiUrl: string;
   videoFileName: string;
 }
+
+// Video Statistics Types
+export interface VideoQuality {
+  width: number;
+  height: number;
+  bitrate: number;
+  label: string; // e.g., "1080p", "720p", "480p"
+  codec?: string; // e.g., "avc1.64001f" (H.264), "hev1" (H.265), "vp9"
+}
+
+export interface CurrentStats {
+  quality: VideoQuality | null;
+  bufferLevel: number; // in seconds
+  bandwidth: number; // in Mbps
+  droppedFrames: number;
+  totalFrames: number;
+  playbackTime: number; // in seconds
+  rebufferingEvents: number;
+  rebufferingDuration: number; // in seconds
+}
+
+export interface AverageStats {
+  avgQuality: VideoQuality | null;
+  avgBufferLevel: number;
+  avgBandwidth: number;
+  avgDroppedFramesRate: number; // percentage
+  totalRebufferingEvents: number;
+  totalRebufferingDuration: number;
+  totalPlaybackTime: number;
+}
+
+export interface VideoStats {
+  current: CurrentStats;
+  average: AverageStats;
+}
+
+export interface StatsSnapshot {
+  timestamp: number;
+  quality: VideoQuality | null;
+  bufferLevel: number;
+  bandwidth: number;
+  droppedFrames: number;
+  totalFrames: number;
+}
