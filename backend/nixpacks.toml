@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["dotnet-sdk_9", "ffmpeg"]
+
+[phases.build]
+cmds = ["dotnet publish -c Release -o out"]
+
+[start]
+cmd = "cd out && dotnet WebWVideoStreamingAPI.dll"
