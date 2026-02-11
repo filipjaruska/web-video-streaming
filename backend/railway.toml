@@ -1,7 +1,0 @@
-[build]
-builder = "NIXPACKS"
-
-[deploy]
-startCommand = "dotnet WebWVideoStreamingAPI.dll"
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
