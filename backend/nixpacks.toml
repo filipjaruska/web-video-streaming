@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["dotnet-sdk_9", "ffmpeg"]
+nixPkgs = ["dotnet-sdk", "ffmpeg"]
 
 [phases.build]
 cmds = ["dotnet publish -c Release -o out"]
