@@ -1,0 +1,19 @@
+# Ignore development files and directories
+obj/
+bin/
+.vs/
+.vscode/
+*.user
+*.suo
+*.cache
+.DS_Store
+
+# Ignore IDE files
+.idea/
+*.swp
+*.swo
+*~
+
+# Don't ignore wwwroot since we need it for video storage
+# but exclude any local test videos if they're too large
+# wwwroot/httprange/*.mp4
