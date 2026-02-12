@@ -146,7 +146,12 @@ function collectHttpRangeStats(
   const quality = getVideoElementQuality(video);
   if (quality) {
     stats.quality = quality;
+    // Convert bitrate from bps to Mbps
     stats.bandwidth = quality.bitrate / 1000000;
+  } else {
+    // If quality not available yet, set default values
+    stats.quality = null;
+    stats.bandwidth = 0;
   }
 }
 
@@ -242,14 +247,45 @@ function getDashQuality(dash: any): VideoQuality | null {
 
 function getVideoElementQuality(video: HTMLVideoElement): VideoQuality | null {
   try {
+    // Check if video metadata is loaded
+    if (video.readyState < 1) {
+      return null; // Metadata not loaded yet
+    }
+
     if (video.videoWidth && video.videoHeight) {
+      // Better bitrate estimation based on resolution
       const pixels = video.videoWidth * video.videoHeight;
-      const estimatedBitrate = pixels * 0.1;
+      let estimatedBitrate: number;
+
+      // More realistic bitrate estimates for common resolutions
+      if (pixels >= 3840 * 2160) {
+        estimatedBitrate = 20000000; // 4K ~20 Mbps
+      } else if (pixels >= 1920 * 1080) {
+        estimatedBitrate = 5000000; // 1080p ~5 Mbps
+      } else if (pixels >= 1280 * 720) {
+        estimatedBitrate = 2500000; // 720p ~2.5 Mbps
+      } else if (pixels >= 854 * 480) {
+        estimatedBitrate = 1000000; // 480p ~1 Mbps
+      } else if (pixels >= 640 * 360) {
+        estimatedBitrate = 800000; // 360p ~800 Kbps
+      } else {
+        estimatedBitrate = 500000; // Lower ~500 Kbps
+      }
 
       let codec: string | undefined;
+
+      // Try multiple methods to get codec info
       const videoTracks = (video as any).videoTracks;
       if (videoTracks && videoTracks.length > 0) {
         codec = videoTracks[0].configuration?.codec;
+      }
+
+      // Fallback: try to get from source type
+      if (!codec && video.currentSrc) {
+        // Most likely H.264 for MP4 files
+        if (video.currentSrc.includes(".mp4")) {
+          codec = "avc1.64001f"; // H.264 High Profile
+        }
       }
 
       return {
@@ -257,11 +293,11 @@ function getVideoElementQuality(video: HTMLVideoElement): VideoQuality | null {
         height: video.videoHeight,
         bitrate: estimatedBitrate,
         label: formatQualityLabel(video.videoWidth, video.videoHeight),
-        codec,
+        codec: codec || "H.264",
       };
     }
   } catch (e) {
-    // Ignore
+    console.error("Error getting video element quality:", e);
   }
   return null;
 }
