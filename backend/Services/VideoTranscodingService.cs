@@ -29,6 +29,32 @@ public class VideoTranscodingService : IVideoTranscodingService {
         var result = new TranscodeResult { Success = true };
 
         try {
+            // Check if input file exists
+            if (!File.Exists(inputPath)) {
+                throw new FileNotFoundException($"Input video not found: {inputPath}");
+            }
+
+            // Check if FFmpeg is available
+            try {
+                var ffmpegCheck = new ProcessStartInfo {
+                    FileName = "ffmpeg",
+                    Arguments = "-version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var checkProcess = Process.Start(ffmpegCheck);
+                await checkProcess!.WaitForExitAsync(cancellationToken);
+                if (checkProcess.ExitCode != 0) {
+                    throw new Exception("FFmpeg is not available");
+                }
+            } catch (Exception ex) {
+                throw new Exception($"FFmpeg not found or not working: {ex.Message}");
+            }
+
+            _logger.LogInformation("Starting HLS generation for {InputPath}", inputPath);
+
             var tasks = _variants.Select(variant =>
                 GenerateHlsVariantAsync(inputPath, outputDir, variant.resolution, variant.bitrate, variant.label, cancellationToken)
             ).ToList();
@@ -222,6 +248,17 @@ public class VideoTranscodingService : IVideoTranscodingService {
                 // Read streams async first to prevent buffer deadlock
                 var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
                 var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+                // Add timeout - FFmpeg shouldn't take more than 5 minutes per variant
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+                try {
+                    await process.WaitForExitAsync(linkedCts.Token);
+                } catch (OperationCanceledException) {
+                    process.Kill(true);
+                    throw new TimeoutException($"FFmpeg timed out after 5 minutes for {name}");
+                }
 
                 await process.WaitForExitAsync(cancellationToken);
 
