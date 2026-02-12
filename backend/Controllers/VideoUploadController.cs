@@ -123,7 +123,7 @@ public class VideoUploadController : ControllerBase {
                     };
                 })
                 .Where(v => v != null)
-                .OrderByDescending(v => v.createdAt)
+                .OrderByDescending(v => v!.createdAt)
                 .ToList();
 
             return Ok(new {

@@ -107,7 +107,7 @@ export function getVideoUrl(
 
   switch (method) {
     case "http-range":
-      return `${apiUrl}/api/httprange/${videoFileName}`;
+      return `${apiUrl}/api/httprange/${videoId}`;
     case "hls":
       return `${apiUrl}/api/hls/${videoId}/master.m3u8`;
     case "dash":
