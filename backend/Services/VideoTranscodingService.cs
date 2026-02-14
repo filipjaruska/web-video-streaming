@@ -29,12 +29,10 @@ public class VideoTranscodingService : IVideoTranscodingService {
         var result = new TranscodeResult { Success = true };
 
         try {
-            // Check if input file exists
             if (!File.Exists(inputPath)) {
                 throw new FileNotFoundException($"Input video not found: {inputPath}");
             }
 
-            // Check if FFmpeg is available
             try {
                 var ffmpegCheck = new ProcessStartInfo {
                     FileName = "ffmpeg",
@@ -85,12 +83,9 @@ public class VideoTranscodingService : IVideoTranscodingService {
         var result = new TranscodeResult { Success = true };
 
         try {
-            // DASH requires all variants in ONE FFmpeg command to create unified MPD manifest
             var manifestPath = "manifest.mpd";
 
             var ffmpegArgs = new System.Text.StringBuilder();
-            // -y: overwrite output files without asking
-            // -i: input file path
             ffmpegArgs.Append($@"-y -i ""{inputPath}"" ");
 
             // -filter_complex: apply complex filtergraph (multiple inputs/outputs)
@@ -150,14 +145,11 @@ public class VideoTranscodingService : IVideoTranscodingService {
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                // WorkingDirectory: FFmpeg uses relative paths for segment files, so set this to output directory
                 WorkingDirectory = outputDir
             };
 
             using var process = Process.Start(processInfo);
             if (process != null) {
-                // IMPORTANT: Read output/error streams asynchronously BEFORE WaitForExitAsync
-                // to prevent deadlock (buffers can fill up and block FFmpeg)
                 var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
                 var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
@@ -175,7 +167,6 @@ public class VideoTranscodingService : IVideoTranscodingService {
                     result.Success = true;
                     result.GeneratedFiles.Add("manifest.mpd");
 
-                    // Count generated segments
                     var segments = Directory.GetFiles(outputDir, "*.m4s");
                     result.GeneratedFiles.AddRange(segments.Select(Path.GetFileName).Where(f => f != null)!);
                 }
@@ -205,22 +196,6 @@ public class VideoTranscodingService : IVideoTranscodingService {
         var segmentPattern = Path.Combine(outputDir, $"{name}_%03d.ts");
         var playlistPath = Path.Combine(outputDir, $"{name}.m3u8");
 
-        // -y: overwrite without asking
-        // -vf scale: simple video filter (not filter_complex since only one output)
-        // -c:v: video codec, -b:v: video bitrate
-        // -c:a: audio codec, -b:a: audio bitrate, -ac: audio channels
-        // -f hls: output format = HTTP Live Streaming (Apple's protocol)
-        // -hls_time: target segment duration in seconds
-        // -hls_list_size 0: keep all segments in playlist (0 = unlimited)
-        // -hls_segment_filename: pattern for .ts segment files
-        // -y: overwrite without asking
-        // -vf scale: simple video filter (not filter_complex since only one output)
-        // -c:v: video codec, -b:v: video bitrate
-        // -c:a: audio codec, -b:a: audio bitrate, -ac: audio channels
-        // -f hls: output format = HTTP Live Streaming (Apple's protocol)
-        // -hls_time: target segment duration in seconds
-        // -hls_list_size 0: keep all segments in playlist (0 = unlimited)
-        // -hls_segment_filename: pattern for .ts segment files
         var ffmpegArgs = $@"-y -i ""{inputPath}"" " +
             $@"-vf scale={scale} " +
             $@"-c:v libx264 -b:v {bitrate} -maxrate {bitrate} -bufsize {int.Parse(bitrate.TrimEnd('k')) * 2}k " +
@@ -245,11 +220,9 @@ public class VideoTranscodingService : IVideoTranscodingService {
 
             using var process = Process.Start(processInfo);
             if (process != null) {
-                // Read streams async first to prevent buffer deadlock
                 var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
                 var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
-                // Add timeout - FFmpeg shouldn't take more than 5 minutes per variant
                 using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 

@@ -25,7 +25,7 @@ export default function Home() {
               </CardHeader>
               <CardContent>
                 <div className="aspect-video bg-muted rounded-md flex items-center justify-center">
-                  <span className="text-4xl">🎬</span>
+                  <span className="text-xl text-muted-foreground">Sample Video</span>
                 </div>
               </CardContent>
             </Card>

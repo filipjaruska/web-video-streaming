@@ -149,7 +149,6 @@ function collectHttpRangeStats(
     // Convert bitrate from bps to Mbps
     stats.bandwidth = quality.bitrate / 1000000;
   } else {
-    // If quality not available yet, set default values
     stats.quality = null;
     stats.bandwidth = 0;
   }

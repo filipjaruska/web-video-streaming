@@ -40,7 +40,6 @@ public class HlsController : ControllerBase {
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GenerateHls(string videoId) {
         try {
-            // Try new folder structure first, then fallback to old flat structure
             var inputPath = Path.Combine(_environment.WebRootPath, "httprange", videoId, $"{videoId}.mp4");
             if (!System.IO.File.Exists(inputPath)) {
                 inputPath = Path.Combine(_environment.WebRootPath, "httprange", $"{videoId}.mp4");

@@ -2,7 +2,7 @@
 
 import { useVideoPlayer } from '@/hooks/useVideoPlayer'
 import type { StreamingMethod, AbrAlgorithm, CurrentStats } from '@/types/streaming'
-import { ErrorDisplay } from '@/components/ErrorDisplay'
+import { ErrorDisplay } from '@/components/error-display'
 
 interface VideoPlayerProps {
     streamingMethod: StreamingMethod

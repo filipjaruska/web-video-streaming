@@ -26,9 +26,9 @@ export function getStreamingMethodDescription(method: StreamingMethod): string {
     case "http-range":
       return "Traditional video delivery. Single quality, browser requests video chunks as needed. Simple but no quality adaptation.";
     case "hls":
-      return "Apple's streaming protocol. Multiple quality levels, automatically adapts to network conditions. Used by YouTube, Twitch. Format: .m3u8 + .ts segments.";
+      return "Apple's streaming protocol. Multiple quality levels, automatically adapts to network conditions. Used by Twitch, Apple TV+. Format: .m3u8 + .ts segments.";
     case "dash":
-      return "Industry-standard streaming protocol (MPEG). Multiple quality levels, automatic adaptation. Used by Netflix, YouTube. Format: .mpd manifest + .m4s segments.";
+      return "Industry-standard streaming protocol (MPEG). Multiple quality levels, automatic adaptation. Used by YouTube, Netflix. Format: .mpd manifest + .m4s segments.";
   }
 }
 
@@ -38,13 +38,13 @@ export function getStreamingMethodDescription(method: StreamingMethod): string {
 export function getAbrDescription(algorithm: AbrAlgorithm): string {
   switch (algorithm) {
     case "hybrid":
-      return "🔄 Hybrid: Balances bandwidth and buffer for optimal quality";
+      return "Hybrid: Balances bandwidth and buffer for optimal quality";
     case "throughput":
-      return "📊 Throughput: Quality based on network speed estimation";
+      return "Throughput: Quality based on network speed estimation";
     case "buffer":
-      return "📦 BOLA: Quality based on buffer occupancy levels";
+      return "BOLA: Quality based on buffer occupancy levels";
     case "baseline":
-      return "⚡ Baseline: Locks to highest quality (may stall on slow networks)";
+      return "Baseline: Locks to highest quality (may stall on slow networks)";
   }
 }
 
@@ -54,13 +54,13 @@ export function getAbrDescription(algorithm: AbrAlgorithm): string {
 export function getDashAbrDescription(algorithm: AbrAlgorithm): string {
   switch (algorithm) {
     case "hybrid":
-      return "🔄 Dynamic: Modern hybrid approach combining multiple factors";
+      return "Dynamic: Modern hybrid approach combining multiple factors";
     case "throughput":
-      return "📊 Throughput: Quality based on network speed only";
+      return "Throughput: Quality based on network speed only";
     case "buffer":
-      return "📦 BOLA: Buffer Occupancy based Lyapunov Algorithm";
+      return "BOLA: Buffer Occupancy based Lyapunov Algorithm";
     case "baseline":
-      return "⚡ Baseline: Forces highest quality (may cause buffering)";
+      return "Baseline: Forces highest quality (may cause buffering)";
   }
 }
 
@@ -70,11 +70,11 @@ export function getDashAbrDescription(algorithm: AbrAlgorithm): string {
 export function getStreamingMethodTitle(method: StreamingMethod): string {
   switch (method) {
     case "http-range":
-      return "📹 HTTP Range Requests:";
+      return "HTTP Range Requests:";
     case "hls":
-      return "🍎 HLS (Adaptive):";
+      return "HLS (Adaptive):";
     case "dash":
-      return "🎬 DASH (Adaptive):";
+      return "DASH (Adaptive):";
   }
 }
 
