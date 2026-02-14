@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import type { StreamingMethod, AbrAlgorithm } from '@/types/streaming'
-import { StreamingControls } from '@/components/StreamingControls'
-import { VideoPlayer } from '@/components/VideoPlayer'
-import { ActiveStreamingStatus } from '@/components/ActiveStreamingStatus'
-import { VideoEncodingInfo } from '@/components/VideoEncodingInfo'
+import { StreamingControls } from '@/components/streaming-controls'
+import { VideoPlayer } from '@/components/video-player'
+import { ActiveStreamingStatus } from '@/components/active-streaming-status'
+import { VideoEncodingInfo } from '@/components/video-encoding-info'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useVideoStats } from '@/hooks/useVideoStats'
 

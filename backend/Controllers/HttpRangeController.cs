@@ -18,10 +18,8 @@ public class HttpRangeController : ControllerBase {
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult StreamVideo(string videoId) {
         try {
-            // Support both old flat structure (videoId.mp4) and new folder structure (videoId/videoId.mp4)
             var videoPath = Path.Combine(_environment.WebRootPath, "httprange", videoId, $"{videoId}.mp4");
             
-            // Fallback to old structure if new structure doesn't exist
             if (!System.IO.File.Exists(videoPath)) {
                 videoPath = Path.Combine(_environment.WebRootPath, "httprange", videoId);
             }

@@ -11,7 +11,7 @@ namespace WebWVideoStreamingAPI.Controllers;
 public class VideoUploadController : ControllerBase {
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<VideoUploadController> _logger;
-    private const long MaxFileSize = 500 * 1024 * 1024; // 500 MB
+    private const long MaxFileSize = 500 * 1024 * 1024;
     private static readonly string[] AllowedExtensions = { ".mp4", ".mov", ".avi", ".mkv", ".webm" };
 
     public VideoUploadController(IWebHostEnvironment environment, ILogger<VideoUploadController> logger) {
@@ -49,21 +49,16 @@ public class VideoUploadController : ControllerBase {
                 });
             }
 
-            // Generate video ID if not provided
             if (string.IsNullOrWhiteSpace(videoId)) {
                 videoId = Path.GetFileNameWithoutExtension(file.FileName);
-                // Sanitize the filename
                 videoId = string.Join("_", videoId.Split(Path.GetInvalidFileNameChars()));
-                // Add timestamp to make it unique
                 videoId = $"{videoId}_{DateTime.UtcNow:yyyyMMddHHmmss}";
             } else {
-                // Sanitize the provided video ID
                 videoId = string.Join("_", videoId.Split(Path.GetInvalidFileNameChars()));
             }
 
             var uploadDir = Path.Combine(_environment.WebRootPath, "httprange", videoId);
             
-            // Check if directory already exists
             if (Directory.Exists(uploadDir)) {
                 return BadRequest(new { 
                     message = "A video with this ID already exists", 
@@ -150,16 +145,13 @@ public class VideoUploadController : ControllerBase {
                 return NotFound(new { message = "Video not found" });
             }
 
-            // Delete source video directory
             Directory.Delete(videoDir, true);
 
-            // Delete HLS directory if exists
             var hlsDir = Path.Combine(_environment.WebRootPath, "hls", videoId);
             if (Directory.Exists(hlsDir)) {
                 Directory.Delete(hlsDir, true);
             }
 
-            // Delete DASH directory if exists
             var dashDir = Path.Combine(_environment.WebRootPath, "dash", videoId);
             if (Directory.Exists(dashDir)) {
                 Directory.Delete(dashDir, true);

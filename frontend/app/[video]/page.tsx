@@ -1,4 +1,4 @@
-import { VideoStreamingClient } from '@/components/VideoStreamingClient'
+import { VideoStreamingClient } from '@/components/video-streaming-client'
 
 export default async function VideoPage({ params }: { params: Promise<{ video: string }> }) {
     const { video } = await params

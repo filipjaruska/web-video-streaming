@@ -37,7 +37,6 @@ export function useVideoStats() {
     },
   });
 
-  // Store snapshots for average calculations
   const snapshotsRef = useRef<StatsSnapshot[]>([]);
   const startTimeRef = useRef<number>(Date.now());
   const lastRebufferingRef = useRef<boolean>(false);
@@ -50,7 +49,6 @@ export function useVideoStats() {
     setStats((prevStats) => {
       const updatedCurrent = { ...prevStats.current, ...newStats };
 
-      // Create snapshot for average calculations
       const snapshot: StatsSnapshot = {
         timestamp: Date.now(),
         quality: updatedCurrent.quality,
@@ -62,7 +60,6 @@ export function useVideoStats() {
 
       snapshotsRef.current.push(snapshot);
 
-      // Calculate averages
       const averages = calculateAverages(snapshotsRef.current, updatedCurrent);
 
       return {
@@ -77,7 +74,6 @@ export function useVideoStats() {
    */
   const trackRebuffering = useCallback((isRebuffering: boolean) => {
     if (isRebuffering && !lastRebufferingRef.current) {
-      // New rebuffering event started
       setStats((prev) => ({
         ...prev,
         current: {
@@ -164,21 +160,17 @@ function calculateAverages(
     };
   }
 
-  // Calculate average buffer level
   const avgBufferLevel =
     snapshots.reduce((sum, s) => sum + s.bufferLevel, 0) / snapshots.length;
 
-  // Calculate average bandwidth
   const avgBandwidth =
     snapshots.reduce((sum, s) => sum + s.bandwidth, 0) / snapshots.length;
 
-  // Calculate average dropped frames rate
   const totalDropped = currentStats.droppedFrames;
   const totalFrames = currentStats.totalFrames;
   const avgDroppedFramesRate =
     totalFrames > 0 ? (totalDropped / totalFrames) * 100 : 0;
 
-  // Calculate average quality (weighted by time at each quality)
   const avgQuality = calculateAverageQuality(snapshots);
 
   return {
@@ -219,7 +211,6 @@ function calculateAverageQuality(
     return null;
   }
 
-  // Find the quality level with the most snapshots (most time spent)
   let maxCount = 0;
   let dominantQuality: VideoQuality | null = null;
 

@@ -47,10 +47,8 @@ export function useVideoPlayer({
 
     setError(null);
 
-    // Clean up existing instances
     cleanupInstances();
 
-    // Initialize based on streaming method
     if (streamingMethod === "hls") {
       initializeHls();
     } else if (streamingMethod === "dash") {
@@ -66,13 +64,11 @@ export function useVideoPlayer({
   }, [streamingMethod, abrAlgorithm, apiUrl, videoFileName]);
 
   function cleanupInstances() {
-    // Pause and reset video element first
     if (videoRef.current) {
       videoRef.current.pause();
       videoRef.current.currentTime = 0;
     }
 
-    // Remove any play event listener
     if (playListenerRef.current && videoRef.current) {
       videoRef.current.removeEventListener("play", playListenerRef.current);
       playListenerRef.current = null;
