@@ -50,7 +50,7 @@ function StreamingControlsComponent({
                             <SelectContent>
                                 {isAdaptive && (
                                     <>
-                                        <SelectItem value="hybrid">Hybrid (Recommended)</SelectItem>
+                                        <SelectItem value="hybrid">Hybrid</SelectItem>
                                         <SelectItem value="throughput">Throughput-Based</SelectItem>
                                         <SelectItem value="buffer">Buffer-Based (BOLA)</SelectItem>
                                         <SelectItem value="baseline">Non-Adaptive</SelectItem>
