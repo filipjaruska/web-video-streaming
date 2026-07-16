@@ -6,6 +6,20 @@ export interface UploadVideoResponse {
   httpRangePath: string;
 }
 
+export interface VideoListItem {
+  videoId: string;
+  fileName: string;
+  size: number;
+  createdAt: string;
+  hasHls: boolean;
+  hasDash: boolean;
+}
+
+export interface ListVideosResponse {
+  count: number;
+  videos: VideoListItem[];
+}
+
 export async function uploadVideo(
   apiUrl: string,
   file: File,
@@ -25,4 +39,14 @@ export async function uploadVideo(
   }
 
   return res.json() as Promise<UploadVideoResponse>;
+}
+
+export async function listVideos(apiUrl: string): Promise<ListVideosResponse> {
+  const res = await fetch(`${apiUrl}/api/videoUpload/list`);
+
+  if (!res.ok) {
+    throw new Error(`Failed to list videos: ${res.status}`);
+  }
+
+  return res.json() as Promise<ListVideosResponse>;
 }

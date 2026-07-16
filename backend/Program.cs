@@ -7,7 +7,7 @@ builder.WebHost.ConfigureKestrel(serverOptions => {
 
 builder.Services.AddSwaggerGen();
 
-var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() 
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
     ?? new[] { "http://localhost:5173", "http://localhost:3000" };
 
 builder.Services.AddCors(options => {
