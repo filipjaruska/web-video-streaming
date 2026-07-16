@@ -14,7 +14,7 @@ interface VideoStreamingClientProps {
 }
 
 export function VideoStreamingClient({ videoFileName }: VideoStreamingClientProps) {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5180'
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
     const [streamingMethod, setStreamingMethod] = useState<StreamingMethod>('http-range')
     const [abrAlgorithm, setAbrAlgorithm] = useState<AbrAlgorithm>('hybrid')
     const [mounted, setMounted] = useState(false)
