@@ -22,7 +22,7 @@ function StreamingControlsComponent({
     return (
         <Card className="mb-6">
             <CardContent>
-                <div className="grid grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     <div className="space-y-2">
                         <Label>Streaming Protocol</Label>
                         <Select value={streamingMethod} onValueChange={onStreamingMethodChange}>
