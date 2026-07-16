@@ -27,7 +27,7 @@ export function PageShell({
             {description && <p className="text-muted-foreground">{description}</p>}
           </div>
           {actionLabel && (
-            <Button type="button" variant="outline" className="shrink-0 self-center">
+            <Button type="button" className="shrink-0 self-center">
               {actionLabel}
             </Button>
           )}
