@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ModeToggle } from './mode-toggle'
+import { Button } from './ui/button'
 
 export function Header() {
     return (
@@ -19,7 +20,10 @@ export function Header() {
                         Editor
                     </span>
                 </nav>
-                <ModeToggle />
+                <div className='flex items-center space-x-2'>
+                    <Button>Upload</Button>
+                    <ModeToggle />
+                </div>
             </div>
         </header>
     )
