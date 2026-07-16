@@ -1,3 +1,6 @@
+import { cache } from "react";
+import { getApiUrl } from "@/lib/env";
+
 export interface UploadVideoResponse {
   message: string;
   videoId: string;
@@ -41,12 +44,16 @@ export async function uploadVideo(
   return res.json() as Promise<UploadVideoResponse>;
 }
 
-export async function listVideos(apiUrl: string): Promise<ListVideosResponse> {
-  const res = await fetch(`${apiUrl}/api/videoUpload/list`);
+/** Cached video catalog — shared across page, sitemap, and metadata in one request. */
+export const listVideos = cache(async (): Promise<ListVideosResponse> => {
+  const apiUrl = getApiUrl();
+  const res = await fetch(`${apiUrl}/api/videoUpload/list`, {
+    next: { revalidate: 60, tags: ["videos"] },
+  });
 
   if (!res.ok) {
     throw new Error(`Failed to list videos: ${res.status}`);
   }
 
   return res.json() as Promise<ListVideosResponse>;
-}
+});
