@@ -1,23 +1,43 @@
-import { VideoStreamingClient } from '@/components/video-streaming-client'
+import Link from "next/link"
+import { VideoStreamingClient } from "@/components/video-streaming-client"
+import { PageShell } from "@/components/page-shell"
+import { Separator } from "@/components/ui/separator"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
 
 export default async function VideoPage({ params }: { params: Promise<{ video: string }> }) {
-    const { video } = await params
-    const videoFileName = `${video}.mp4`
+  const { video } = await params
+  const videoFileName = `${video}.mp4`
 
-    return (
-        <div className="p-8 min-h-screen">
-            <div className="max-w-[1400px] mx-auto">
-                <header className="mb-8">
-                    <h1 className="text-3xl font-semibold mb-2">
-                        Video Streaming Comparison
-                    </h1>
-                    <p className="text-muted-foreground">
-                        Compare HTTP Range, HLS, and DASH streaming protocols with different ABR algorithms
-                    </p>
-                </header>
-
-                <VideoStreamingClient videoFileName={videoFileName} />
-            </div>
-        </div>
-    )
+  return (
+    <PageShell
+      title={video}
+      description="Compare HTTP Range, HLS, and DASH streaming protocols with different ABR algorithms"
+      actionLabel="Display Analysis"
+      breadcrumb={
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/">Videos</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{videoFileName}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      }
+    >
+      <Separator className="mb-6" />
+      <VideoStreamingClient videoFileName={videoFileName} />
+    </PageShell>
+  )
 }
