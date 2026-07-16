@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Skeleton, { SkeletonTheme } from 'react-loading-skeleton'
-import 'react-loading-skeleton/dist/skeleton.css'
 import type { StreamingMethod, AbrAlgorithm } from '@/types/streaming'
 import { StreamingControls } from '@/components/streaming-controls'
 import { VideoPlayer } from '@/components/video-player'
@@ -10,32 +8,10 @@ import { ActiveStreamingStatus } from '@/components/active-streaming-status'
 import { VideoEncodingInfo } from '@/components/video-encoding-info'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useVideoStats } from '@/hooks/useVideoStats'
+import { getPublicApiUrl } from '@/lib/env'
 
 interface VideoStreamingClientProps {
     videoFileName: string
-}
-
-function ClientSkeleton() {
-    return (
-        <SkeletonTheme baseColor="var(--muted)" highlightColor="var(--accent)">
-            <div className="space-y-6">
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                            <Skeleton height={40} />
-                            <Skeleton height={40} />
-                        </div>
-                    </CardContent>
-                </Card>
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-                    <div className="aspect-video w-full">
-                        <Skeleton className="!h-full !rounded-md" containerClassName="block h-full leading-none" />
-                    </div>
-                    <Skeleton height={280} className="!rounded-md" />
-                </div>
-            </div>
-        </SkeletonTheme>
-    )
 }
 
 function StatTile({
@@ -67,23 +43,14 @@ function StatTile({
 }
 
 export function VideoStreamingClient({ videoFileName }: VideoStreamingClientProps) {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+    const apiUrl = getPublicApiUrl()
     const [streamingMethod, setStreamingMethod] = useState<StreamingMethod>('http-range')
     const [abrAlgorithm, setAbrAlgorithm] = useState<AbrAlgorithm>('hybrid')
-    const [mounted, setMounted] = useState(false)
     const { stats, updateStats, resetStats } = useVideoStats()
-
-    useEffect(() => {
-        setMounted(true)
-    }, [])
 
     useEffect(() => {
         resetStats()
     }, [streamingMethod, abrAlgorithm, resetStats])
-
-    if (!mounted) {
-        return <ClientSkeleton />
-    }
 
     return (
         <>
@@ -98,7 +65,7 @@ export function VideoStreamingClient({ videoFileName }: VideoStreamingClientProp
                 <VideoPlayer
                     streamingMethod={streamingMethod}
                     abrAlgorithm={abrAlgorithm}
-                    apiUrl={API_URL}
+                    apiUrl={apiUrl}
                     videoFileName={videoFileName}
                     onStatsUpdate={updateStats}
                 />
@@ -106,7 +73,7 @@ export function VideoStreamingClient({ videoFileName }: VideoStreamingClientProp
                 <ActiveStreamingStatus
                     streamingMethod={streamingMethod}
                     abrAlgorithm={abrAlgorithm}
-                    apiUrl={API_URL}
+                    apiUrl={apiUrl}
                     videoFileName={videoFileName}
                 />
             </div>
