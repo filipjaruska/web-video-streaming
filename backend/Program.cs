@@ -1,3 +1,8 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.HttpOverrides;
+using WebWVideoStreamingAPI.Data;
+using WebWVideoStreamingAPI.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
@@ -19,8 +24,18 @@ builder.Services.AddCors(options => {
         });
 });
 
-builder.Services.AddSingleton<WebWVideoStreamingAPI.Services.IFfmpegRunner, WebWVideoStreamingAPI.Services.FfmpegRunner>();
-builder.Services.AddSingleton<WebWVideoStreamingAPI.Services.IVideoTranscodingService, WebWVideoStreamingAPI.Services.VideoTranscodingService>();
+var appDataDirectory = Path.Combine(builder.Environment.ContentRootPath, "App_Data");
+Directory.CreateDirectory(appDataDirectory);
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? $"Data Source={Path.Combine(appDataDirectory, "upload-sessions.db")}";
+
+builder.Services.AddDbContext<AppDbContext>(options => {
+    options.UseSqlite(connectionString);
+});
+
+builder.Services.AddScoped<IUploadSessionService, UploadSessionService>();
+builder.Services.AddSingleton<IFfmpegRunner, FfmpegRunner>();
+builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>();
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => {
     options.MultipartBodyLengthLimit = 524_288_000;
@@ -48,12 +63,17 @@ app.UseStaticFiles();
 
 if (app.Environment.IsProduction()) {
     app.UseForwardedHeaders(new ForwardedHeadersOptions {
-        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.All
+        ForwardedHeaders = ForwardedHeaders.All
     });
 }
 
 app.UseAuthorization();
 
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope()) {
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    dbContext.Database.EnsureCreated();
+}
 
 app.Run();
