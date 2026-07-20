@@ -2,10 +2,10 @@ using Microsoft.AspNetCore.Mvc;
 using WebWVideoStreamingAPI.Models;
 using WebWVideoStreamingAPI.Services;
 
-namespace WebWVideoStreamingAPI.Controllers;
+namespace WebWVideoStreamingAPI.Api.UploadSessions;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/uploadSessions")]
 public class UploadSessionsController : ControllerBase {
     private readonly IUploadSessionService _uploadSessionService;
 
