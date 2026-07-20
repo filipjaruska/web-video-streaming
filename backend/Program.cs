@@ -19,6 +19,7 @@ builder.Services.AddCors(options => {
         });
 });
 
+builder.Services.AddSingleton<WebWVideoStreamingAPI.Services.IFfmpegRunner, WebWVideoStreamingAPI.Services.FfmpegRunner>();
 builder.Services.AddSingleton<WebWVideoStreamingAPI.Services.IVideoTranscodingService, WebWVideoStreamingAPI.Services.VideoTranscodingService>();
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => {
