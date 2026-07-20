@@ -34,6 +34,7 @@ builder.Services.AddDbContext<AppDbContext>(options => {
 });
 
 builder.Services.AddScoped<IUploadSessionService, UploadSessionService>();
+builder.Services.AddScoped<IVideoStorageService, VideoStorageService>();
 builder.Services.AddSingleton<IFfmpegRunner, FfmpegRunner>();
 builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>();
 
