@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import { ModeToggle } from './mode-toggle'
-import { Button } from './ui/button'
+import { UploadSessionLauncher } from './upload-session-launcher'
 
 export function Header() {
     return (
-        <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <header className="supports-backdrop-filter:bg-background/60 sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur">
             <div className="flex h-14 items-center justify-between px-6">
                 <nav className="flex items-center space-x-6 text-sm font-medium">
                     <Link
@@ -21,7 +21,7 @@ export function Header() {
                     </span>
                 </nav>
                 <div className='flex items-center space-x-2'>
-                    <Button>Upload</Button>
+                    <UploadSessionLauncher />
                     <ModeToggle />
                 </div>
             </div>
