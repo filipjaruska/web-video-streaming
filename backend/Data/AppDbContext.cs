@@ -9,6 +9,7 @@ public class AppDbContext : DbContext {
 
     public DbSet<Video> Videos => Set<Video>();
     public DbSet<UploadSession> UploadSessions => Set<UploadSession>();
+    public DbSet<Transcode> Transcodes => Set<Transcode>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         modelBuilder.Entity<Video>(entity => {
@@ -19,10 +20,17 @@ public class AppDbContext : DbContext {
             entity.Property(video => video.ThumbnailUrl).HasMaxLength(500);
             entity.Property(video => video.OriginalFileName).HasMaxLength(260);
             entity.Property(video => video.StorageKey).HasMaxLength(260);
+            entity.Property(video => video.SourceContentType).HasMaxLength(100);
             entity.Property(video => video.CreatedAtUtc).IsRequired();
             entity.Property(video => video.UpdatedAtUtc).IsRequired();
 
             entity.HasIndex(video => video.RouteId).IsUnique();
+            entity.HasIndex(video => video.PublishedAtUtc);
+
+            entity.HasOne(video => video.ActiveTranscode)
+                .WithMany()
+                .HasForeignKey(video => video.ActiveTranscodeId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<UploadSession>(entity => {
@@ -40,6 +48,20 @@ public class AppDbContext : DbContext {
 
             entity.HasIndex(session => new { session.VideoId, session.ExpiresAtUtc });
             entity.HasIndex(session => session.Status);
+        });
+
+        modelBuilder.Entity<Transcode>(entity => {
+            entity.HasKey(transcode => transcode.Id);
+            entity.Property(transcode => transcode.Status).HasConversion<string>().HasMaxLength(32);
+            entity.Property(transcode => transcode.ErrorMessage).HasMaxLength(2000);
+            entity.Property(transcode => transcode.CreatedAtUtc).IsRequired();
+
+            entity.HasOne(transcode => transcode.Video)
+                .WithMany(video => video.Transcodes)
+                .HasForeignKey(transcode => transcode.VideoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(transcode => new { transcode.VideoId, transcode.CreatedAtUtc });
         });
     }
 }

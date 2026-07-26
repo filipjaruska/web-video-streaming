@@ -1,239 +1,141 @@
+using Microsoft.Extensions.Options;
+using WebWVideoStreamingAPI.Storage;
+
 namespace WebWVideoStreamingAPI.Services;
 
-public sealed class VideoUploadResult {
-    public bool Success { get; init; }
-    public string? ErrorCode { get; init; }
-    public string? Message { get; init; }
-    public string? VideoId { get; init; }
-    public string? FileName { get; init; }
-    public long Size { get; init; }
-    public DateTime UploadedAtUtc { get; init; }
-    public string[]? AllowedExtensions { get; init; }
-}
-
-public sealed class VideoListItem {
-    public required string VideoId { get; init; }
-    public required string FileName { get; init; }
-    public long Size { get; init; }
-    public DateTime CreatedAtUtc { get; init; }
-    public bool HasHls { get; init; }
-    public bool HasDash { get; init; }
-}
-
 public interface IVideoStorageService {
-    string? ResolveSourcePath(string videoId);
-    Task<VideoUploadResult> UploadAsync(Stream content, string fileName, long fileSize, string? videoId, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<VideoListItem>> ListAsync(CancellationToken cancellationToken = default);
-    Task<bool> DeleteAsync(string videoId, CancellationToken cancellationToken = default);
-    string? GetHlsManifestPath(string videoId);
-    string? GetHlsQualityPlaylistPath(string videoId, string quality);
-    string? GetHlsSegmentPath(string videoId, string segment);
-    string? GetDashManifestPath(string videoId);
-    string? GetDashSegmentPath(string videoId, string segment);
-    string GetHlsOutputDir(string videoId);
-    string GetDashOutputDir(string videoId);
-    void EnsureHlsOutputDir(string videoId);
-    void EnsureDashOutputDir(string videoId);
-    bool HasHlsGenerated(string videoId);
-    bool HasDashGenerated(string videoId);
+    string RootPath { get; }
+    string GetVideoRoot(string routeId);
+    string GetSourcePath(string routeId);
+    string GetSourceDir(string routeId);
+    string GetThumbnailPath(string routeId);
+    string GetTranscodeDir(string routeId, Guid transcodeId);
+    string GetHlsDir(string routeId, Guid transcodeId);
+    string GetDashDir(string routeId, Guid transcodeId);
+    string? ResolveSourcePath(string routeId);
+    string? GetHlsManifestPath(string routeId, Guid transcodeId);
+    string? GetHlsQualityPlaylistPath(string routeId, Guid transcodeId, string quality);
+    string? GetHlsSegmentPath(string routeId, Guid transcodeId, string segment);
+    string? GetDashManifestPath(string routeId, Guid transcodeId);
+    string? GetDashSegmentPath(string routeId, Guid transcodeId, string segment);
+    void EnsureSourceDir(string routeId);
+    void EnsureHlsDir(string routeId, Guid transcodeId);
+    void EnsureDashDir(string routeId, Guid transcodeId);
+    Task SaveSourceAsync(string routeId, Stream content, CancellationToken cancellationToken = default);
+    bool DeleteVideoTree(string routeId);
 }
 
 public class VideoStorageService : IVideoStorageService {
-    private const long MaxFileSize = 500 * 1024 * 1024;
-    private static readonly string[] AllowedExtensions = { ".mp4", ".mov", ".avi", ".mkv", ".webm" };
-
-    private readonly IWebHostEnvironment _environment;
+    private readonly string _rootPath;
     private readonly ILogger<VideoStorageService> _logger;
 
-    public VideoStorageService(IWebHostEnvironment environment, ILogger<VideoStorageService> logger) {
-        _environment = environment;
+    public VideoStorageService(IOptions<StorageOptions> options, ILogger<VideoStorageService> logger) {
+        _rootPath = options.Value.RootPath;
         _logger = logger;
+        Directory.CreateDirectory(_rootPath);
     }
 
-    public string? ResolveSourcePath(string videoId) {
-        var nestedPath = Path.Combine(_environment.WebRootPath, "httprange", videoId, $"{videoId}.mp4");
-        if (File.Exists(nestedPath)) {
-            return nestedPath;
-        }
+    public string RootPath => _rootPath;
 
-        var flatPath = Path.Combine(_environment.WebRootPath, "httprange", $"{videoId}.mp4");
-        return File.Exists(flatPath) ? flatPath : null;
+    public string GetVideoRoot(string routeId) {
+        return Path.Combine(_rootPath, SanitizeSegment(routeId));
     }
 
-    public async Task<VideoUploadResult> UploadAsync(
-        Stream content,
-        string fileName,
-        long fileSize,
-        string? videoId,
-        CancellationToken cancellationToken = default) {
-        if (fileSize == 0) {
-            return Fail("NoFile", "No file uploaded");
-        }
-
-        if (fileSize > MaxFileSize) {
-            return Fail("TooLarge", $"File size exceeds maximum limit of {MaxFileSize / (1024 * 1024)} MB");
-        }
-
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (!AllowedExtensions.Contains(extension)) {
-            return new VideoUploadResult {
-                Success = false,
-                ErrorCode = "InvalidType",
-                Message = "Invalid file type",
-                AllowedExtensions = AllowedExtensions
-            };
-        }
-
-        videoId = SanitizeVideoId(videoId, fileName);
-        var uploadDir = Path.Combine(_environment.WebRootPath, "httprange", videoId);
-
-        if (Directory.Exists(uploadDir)) {
-            return Fail("DuplicateId", "A video with this ID already exists", videoId);
-        }
-
-        Directory.CreateDirectory(uploadDir);
-        var filePath = Path.Combine(uploadDir, $"{videoId}.mp4");
-
-        await using (var stream = new FileStream(filePath, FileMode.Create)) {
-            await content.CopyToAsync(stream, cancellationToken);
-        }
-
-        _logger.LogInformation("Video uploaded successfully: {VideoId}, Size: {Size} bytes", videoId, fileSize);
-
-        return new VideoUploadResult {
-            Success = true,
-            VideoId = videoId,
-            FileName = $"{videoId}.mp4",
-            Size = fileSize,
-            UploadedAtUtc = DateTime.UtcNow
-        };
+    public string GetSourceDir(string routeId) {
+        return Path.Combine(GetVideoRoot(routeId), "source");
     }
 
-    public Task<IReadOnlyList<VideoListItem>> ListAsync(CancellationToken cancellationToken = default) {
-        var uploadDir = Path.Combine(_environment.WebRootPath, "httprange");
-        Directory.CreateDirectory(uploadDir);
-
-        var videos = Directory.GetDirectories(uploadDir)
-            .Select(dir => {
-                var videoId = Path.GetFileName(dir);
-                var videoPath = Path.Combine(dir, $"{videoId}.mp4");
-                if (!File.Exists(videoPath)) {
-                    return null;
-                }
-
-                var fileInfo = new FileInfo(videoPath);
-                return new VideoListItem {
-                    VideoId = videoId,
-                    FileName = fileInfo.Name,
-                    Size = fileInfo.Length,
-                    CreatedAtUtc = fileInfo.CreationTimeUtc,
-                    HasHls = HasHlsGenerated(videoId),
-                    HasDash = HasDashGenerated(videoId)
-                };
-            })
-            .Where(item => item != null)
-            .Cast<VideoListItem>()
-            .OrderByDescending(item => item.CreatedAtUtc)
-            .ToList();
-
-        return Task.FromResult<IReadOnlyList<VideoListItem>>(videos);
+    public string GetSourcePath(string routeId) {
+        return Path.Combine(GetSourceDir(routeId), "source.mp4");
     }
 
-    public Task<bool> DeleteAsync(string videoId, CancellationToken cancellationToken = default) {
-        var videoDir = Path.Combine(_environment.WebRootPath, "httprange", videoId);
-        if (!Directory.Exists(videoDir)) {
-            return Task.FromResult(false);
-        }
-
-        Directory.Delete(videoDir, true);
-
-        var hlsDir = Path.Combine(_environment.WebRootPath, "hls", videoId);
-        if (Directory.Exists(hlsDir)) {
-            Directory.Delete(hlsDir, true);
-        }
-
-        var dashDir = Path.Combine(_environment.WebRootPath, "dash", videoId);
-        if (Directory.Exists(dashDir)) {
-            Directory.Delete(dashDir, true);
-        }
-
-        _logger.LogInformation("Video deleted: {VideoId}", videoId);
-        return Task.FromResult(true);
+    public string GetThumbnailPath(string routeId) {
+        return Path.Combine(GetSourceDir(routeId), "thumb.jpg");
     }
 
-    public string? GetHlsManifestPath(string videoId) {
-        var filePath = Path.Combine(_environment.WebRootPath, "hls", videoId, "master.m3u8");
+    public string GetTranscodeDir(string routeId, Guid transcodeId) {
+        return Path.Combine(GetVideoRoot(routeId), transcodeId.ToString("N"));
+    }
+
+    public string GetHlsDir(string routeId, Guid transcodeId) {
+        return Path.Combine(GetTranscodeDir(routeId, transcodeId), "hls");
+    }
+
+    public string GetDashDir(string routeId, Guid transcodeId) {
+        return Path.Combine(GetTranscodeDir(routeId, transcodeId), "dash");
+    }
+
+    public string? ResolveSourcePath(string routeId) {
+        var path = GetSourcePath(routeId);
+        return File.Exists(path) ? path : null;
+    }
+
+    public string? GetHlsManifestPath(string routeId, Guid transcodeId) {
+        var filePath = Path.Combine(GetHlsDir(routeId, transcodeId), "master.m3u8");
         return File.Exists(filePath) ? filePath : null;
     }
 
-    public string? GetHlsQualityPlaylistPath(string videoId, string quality) {
-        var filePath = Path.Combine(_environment.WebRootPath, "hls", videoId, $"{quality}.m3u8");
+    public string? GetHlsQualityPlaylistPath(string routeId, Guid transcodeId, string quality) {
+        var filePath = Path.Combine(GetHlsDir(routeId, transcodeId), $"{quality}.m3u8");
         return File.Exists(filePath) ? filePath : null;
     }
 
-    public string? GetHlsSegmentPath(string videoId, string segment) {
-        if (!segment.EndsWith(".ts")) {
+    public string? GetHlsSegmentPath(string routeId, Guid transcodeId, string segment) {
+        if (!segment.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)) {
             return null;
         }
 
-        var filePath = Path.Combine(_environment.WebRootPath, "hls", videoId, segment);
+        var filePath = Path.Combine(GetHlsDir(routeId, transcodeId), segment);
         return File.Exists(filePath) ? filePath : null;
     }
 
-    public string? GetDashManifestPath(string videoId) {
-        var filePath = Path.Combine(_environment.WebRootPath, "dash", videoId, "manifest.mpd");
+    public string? GetDashManifestPath(string routeId, Guid transcodeId) {
+        var filePath = Path.Combine(GetDashDir(routeId, transcodeId), "manifest.mpd");
         return File.Exists(filePath) ? filePath : null;
     }
 
-    public string? GetDashSegmentPath(string videoId, string segment) {
-        if (!segment.EndsWith(".m4s") && !segment.EndsWith(".mp4")) {
+    public string? GetDashSegmentPath(string routeId, Guid transcodeId, string segment) {
+        if (!segment.EndsWith(".m4s", StringComparison.OrdinalIgnoreCase) &&
+            !segment.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)) {
             return null;
         }
 
-        var filePath = Path.Combine(_environment.WebRootPath, "dash", videoId, segment);
+        var filePath = Path.Combine(GetDashDir(routeId, transcodeId), segment);
         return File.Exists(filePath) ? filePath : null;
     }
 
-    public string GetHlsOutputDir(string videoId) {
-        return Path.Combine(_environment.WebRootPath, "hls", videoId);
+    public void EnsureSourceDir(string routeId) {
+        Directory.CreateDirectory(GetSourceDir(routeId));
     }
 
-    public string GetDashOutputDir(string videoId) {
-        return Path.Combine(_environment.WebRootPath, "dash", videoId);
+    public void EnsureHlsDir(string routeId, Guid transcodeId) {
+        Directory.CreateDirectory(GetHlsDir(routeId, transcodeId));
     }
 
-    public void EnsureHlsOutputDir(string videoId) {
-        Directory.CreateDirectory(GetHlsOutputDir(videoId));
+    public void EnsureDashDir(string routeId, Guid transcodeId) {
+        Directory.CreateDirectory(GetDashDir(routeId, transcodeId));
     }
 
-    public void EnsureDashOutputDir(string videoId) {
-        Directory.CreateDirectory(GetDashOutputDir(videoId));
+    public async Task SaveSourceAsync(string routeId, Stream content, CancellationToken cancellationToken = default) {
+        EnsureSourceDir(routeId);
+        var filePath = GetSourcePath(routeId);
+        await using var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await content.CopyToAsync(stream, cancellationToken);
+        _logger.LogInformation("Saved source for {RouteId} to {Path}", routeId, filePath);
     }
 
-    public bool HasHlsGenerated(string videoId) {
-        return GetHlsManifestPath(videoId) != null;
-    }
-
-    public bool HasDashGenerated(string videoId) {
-        return GetDashManifestPath(videoId) != null;
-    }
-
-    private static string SanitizeVideoId(string? videoId, string fileName) {
-        if (string.IsNullOrWhiteSpace(videoId)) {
-            videoId = Path.GetFileNameWithoutExtension(fileName);
-            videoId = string.Join("_", videoId.Split(Path.GetInvalidFileNameChars()));
-            return $"{videoId}_{DateTime.UtcNow:yyyyMMddHHmmss}";
+    public bool DeleteVideoTree(string routeId) {
+        var videoRoot = GetVideoRoot(routeId);
+        if (!Directory.Exists(videoRoot)) {
+            return false;
         }
 
-        return string.Join("_", videoId.Split(Path.GetInvalidFileNameChars()));
+        Directory.Delete(videoRoot, recursive: true);
+        _logger.LogInformation("Deleted video tree for {RouteId}", routeId);
+        return true;
     }
 
-    private static VideoUploadResult Fail(string errorCode, string message, string? videoId = null) {
-        return new VideoUploadResult {
-            Success = false,
-            ErrorCode = errorCode,
-            Message = message,
-            VideoId = videoId
-        };
+    private static string SanitizeSegment(string segment) {
+        return string.Join("_", segment.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
     }
 }
