@@ -6,7 +6,7 @@ export interface StreamingConfig {
   method: StreamingMethod;
   algorithm: AbrAlgorithm;
   apiUrl: string;
-  videoFileName: string;
+  routeId: string;
 }
 
 // Video Statistics Types

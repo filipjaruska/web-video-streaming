@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using WebWVideoStreamingAPI.Data;
 using WebWVideoStreamingAPI.Services;
+using WebWVideoStreamingAPI.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,10 +25,30 @@ builder.Services.AddCors(options => {
         });
 });
 
-var appDataDirectory = Path.Combine(builder.Environment.ContentRootPath, "App_Data");
-Directory.CreateDirectory(appDataDirectory);
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? $"Data Source={Path.Combine(appDataDirectory, "upload-sessions.db")}";
+var contentRoot = builder.Environment.ContentRootPath;
+var defaultAppData = Path.Combine(contentRoot, "App_Data");
+Directory.CreateDirectory(defaultAppData);
+
+var storageRoot = Environment.GetEnvironmentVariable("VIDEO_STORAGE_ROOT")
+    ?? builder.Configuration.GetSection(StorageOptions.SectionName)["RootPath"];
+if (string.IsNullOrWhiteSpace(storageRoot)) {
+    storageRoot = Path.Combine(defaultAppData, "media");
+}
+
+storageRoot = Path.GetFullPath(storageRoot);
+Directory.CreateDirectory(storageRoot);
+
+builder.Services.Configure<StorageOptions>(options => {
+    options.RootPath = storageRoot;
+});
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString)) {
+    connectionString = $"Data Source={Path.Combine(defaultAppData, "upload-sessions.db")}";
+}
+
+// Ensure SQLite parent directory exists when connection string points at a file path.
+EnsureSqliteDirectory(connectionString);
 
 builder.Services.AddDbContext<AppDbContext>(options => {
     options.UseSqlite(connectionString);
@@ -35,6 +56,9 @@ builder.Services.AddDbContext<AppDbContext>(options => {
 
 builder.Services.AddScoped<IUploadSessionService, UploadSessionService>();
 builder.Services.AddScoped<IVideoStorageService, VideoStorageService>();
+builder.Services.AddScoped<IVideoCatalogService, VideoCatalogService>();
+builder.Services.AddScoped<IVideoTranscodeJobService, VideoTranscodeJobService>();
+builder.Services.AddSingleton<IBackgroundTranscodeQueue, BackgroundTranscodeQueue>();
 builder.Services.AddSingleton<IFfmpegRunner, FfmpegRunner>();
 builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>();
 
@@ -77,4 +101,30 @@ using (var scope = app.Services.CreateScope()) {
     dbContext.Database.EnsureCreated();
 }
 
+app.Logger.LogInformation("Video storage root: {StorageRoot}", storageRoot);
+
 app.Run();
+
+static void EnsureSqliteDirectory(string connectionString) {
+    const string prefix = "Data Source=";
+    var start = connectionString.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+    if (start < 0) {
+        return;
+    }
+
+    var pathPart = connectionString[(start + prefix.Length)..].Trim();
+    var semicolon = pathPart.IndexOf(';');
+    if (semicolon >= 0) {
+        pathPart = pathPart[..semicolon];
+    }
+
+    pathPart = pathPart.Trim('"');
+    if (string.IsNullOrWhiteSpace(pathPart) || pathPart.Equals(":memory:", StringComparison.OrdinalIgnoreCase)) {
+        return;
+    }
+
+    var directory = Path.GetDirectoryName(Path.GetFullPath(pathPart));
+    if (!string.IsNullOrWhiteSpace(directory)) {
+        Directory.CreateDirectory(directory);
+    }
+}

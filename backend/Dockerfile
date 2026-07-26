@@ -23,9 +23,6 @@ RUN apt-get update && \
 # Copy published app
 COPY --from=build /app/publish .
 
-# Create directories for video storage
-RUN mkdir -p wwwroot/httprange wwwroot/hls wwwroot/dash
-
 # Expose port (Railway will set PORT env var)
 EXPOSE 5000
 

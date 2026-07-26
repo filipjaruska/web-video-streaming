@@ -11,7 +11,7 @@ import { useVideoStats } from '@/hooks/useVideoStats'
 import { getPublicApiUrl } from '@/lib/env'
 
 interface VideoStreamingClientProps {
-    videoFileName: string
+    routeId: string
 }
 
 function StatTile({
@@ -42,7 +42,7 @@ function StatTile({
     )
 }
 
-export function VideoStreamingClient({ videoFileName }: VideoStreamingClientProps) {
+export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     const apiUrl = getPublicApiUrl()
     const [streamingMethod, setStreamingMethod] = useState<StreamingMethod>('http-range')
     const [abrAlgorithm, setAbrAlgorithm] = useState<AbrAlgorithm>('hybrid')
@@ -66,7 +66,7 @@ export function VideoStreamingClient({ videoFileName }: VideoStreamingClientProp
                     streamingMethod={streamingMethod}
                     abrAlgorithm={abrAlgorithm}
                     apiUrl={apiUrl}
-                    videoFileName={videoFileName}
+                    routeId={routeId}
                     onStatsUpdate={updateStats}
                 />
 
@@ -74,7 +74,7 @@ export function VideoStreamingClient({ videoFileName }: VideoStreamingClientProp
                     streamingMethod={streamingMethod}
                     abrAlgorithm={abrAlgorithm}
                     apiUrl={apiUrl}
-                    videoFileName={videoFileName}
+                    routeId={routeId}
                 />
             </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,19 +11,29 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorBanner } from "@/components/error-banner";
 import { getPublicApiUrl } from "@/lib/env";
-import { type UploadSessionResponse, updateUploadSessionVideo } from "@/lib/videoApi";
+import {
+  type UploadSessionResponse,
+  getUploadSession,
+  updateUploadSessionVideo,
+  uploadSessionFile,
+} from "@/lib/videoApi";
 
 type UploadSessionPageProps = {
   initialSession: UploadSessionResponse;
 };
 
+const TERMINAL_STATUSES = new Set(["Completed", "Failed", "Expired"]);
+
 export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
   const [session, setSession] = useState(initialSession);
   const [title, setTitle] = useState(initialSession.video.title ?? "");
   const [description, setDescription] = useState(initialSession.video.description ?? "");
-  const [selectedFileName, setSelectedFileName] = useState(initialSession.video.originalFileName ?? "");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const statusTone = useMemo(() => {
     switch (session.session.status) {
@@ -35,6 +46,36 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
         return "secondary" as const;
     }
   }, [session.session.status]);
+
+  const canUpload =
+    !isUploading &&
+    (session.session.status === "AwaitingUpload" || session.session.status === "Failed");
+
+  useEffect(() => {
+    if (TERMINAL_STATUSES.has(session.session.status)) {
+      return;
+    }
+
+    if (
+      session.session.status !== "Processing" &&
+      session.session.status !== "Uploading" &&
+      session.session.status !== "Uploaded"
+    ) {
+      return;
+    }
+
+    const apiUrl = getPublicApiUrl();
+    const timer = window.setInterval(async () => {
+      try {
+        const next = await getUploadSession(apiUrl, session.sessionId);
+        setSession(next);
+      } catch {
+        // Keep last known state if poll fails.
+      }
+    }, 2500);
+
+    return () => window.clearInterval(timer);
+  }, [session.session.status, session.sessionId]);
 
   async function handleSaveMetadata() {
     try {
@@ -54,16 +95,44 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     }
   }
 
+  async function handleUpload() {
+    if (!selectedFile || !canUpload) {
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setUploadError(null);
+
+      const nextSession = await uploadSessionFile(
+        getPublicApiUrl(),
+        session.sessionId,
+        selectedFile,
+      );
+
+      setSession(nextSession);
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Failed to upload video");
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
       <div className="space-y-6">
         {saveError && <ErrorBanner title="Failed to save upload details" message={saveError} />}
+        {uploadError && <ErrorBanner title="Upload failed" message={uploadError} />}
 
         <Card>
           <CardHeader>
             <CardTitle>Upload details</CardTitle>
             <CardDescription>
-              This page is backed by a persisted upload session. Metadata saves now, while the file-transfer pipeline stays as boilerplate.
+              Save metadata, then upload a source file. Transcoding starts automatically after upload.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -90,15 +159,19 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
             <div className="space-y-2">
               <Label htmlFor="video-file">Upload file</Label>
               <Input
+                ref={fileInputRef}
                 id="video-file"
                 type="file"
                 accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm"
-                onChange={(event) => setSelectedFileName(event.target.files?.[0]?.name ?? "")}
+                disabled={!canUpload}
+                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
               />
               <p className="text-sm text-muted-foreground">
-                {selectedFileName
-                  ? `Selected file: ${selectedFileName}. File transfer is not wired yet.`
-                  : "File transfer is not wired yet. This input is here to reserve the future upload workflow."}
+                {selectedFile
+                  ? `Selected: ${selectedFile.name}`
+                  : session.video.originalFileName
+                    ? `Uploaded: ${session.video.originalFileName}`
+                    : "Choose an MP4, MOV, AVI, MKV, or WebM file (max 500 MB)."}
               </p>
             </div>
 
@@ -106,6 +179,19 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
               <Button type="button" onClick={handleSaveMetadata} disabled={isSaving}>
                 {isSaving ? "Saving..." : "Save details"}
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleUpload}
+                disabled={!selectedFile || !canUpload}
+              >
+                {isUploading ? "Uploading..." : "Upload video"}
+              </Button>
+              {session.session.status === "Completed" && (
+                <Button type="button" variant="outline" asChild>
+                  <Link href={`/${session.video.routeId}`}>Open video</Link>
+                </Button>
+              )}
               <span className="text-sm text-muted-foreground">
                 Session ID: <code>{session.sessionId}</code>
               </span>
@@ -118,7 +204,9 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
         <Card>
           <CardHeader>
             <CardTitle>Session status</CardTitle>
-            <CardDescription>Future pipeline workers can update this state without changing the page contract.</CardDescription>
+            <CardDescription>
+              Upload and transcode progress for this session.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-3">
@@ -130,7 +218,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
 
             <dl className="grid gap-3 text-sm">
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-muted-foreground">Future video route ID</dt>
+                <dt className="text-muted-foreground">Video route ID</dt>
                 <dd className="text-right font-mono text-xs">{session.video.routeId}</dd>
               </div>
               <div className="flex items-start justify-between gap-4">
@@ -152,12 +240,14 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
         <Card>
           <CardHeader>
             <CardTitle>Thumbnail preview</CardTitle>
-            <CardDescription>Placeholder area for the future extracted thumbnail or uploaded poster image.</CardDescription>
+            <CardDescription>
+              Generated after transcoding finishes.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {session.video.thumbnailUrl ? (
               <img
-                src={session.video.thumbnailUrl}
+                src={`${getPublicApiUrl()}${session.video.thumbnailUrl}`}
                 alt="Upload thumbnail preview"
                 className="aspect-video w-full rounded-md border object-cover"
               />

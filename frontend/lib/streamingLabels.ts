@@ -96,21 +96,19 @@ export function getActiveMethodName(
 }
 
 /**
- * Build manifest or video URL
+ * Build manifest or video URL for a published video route id.
  */
 export function getVideoUrl(
   method: StreamingMethod,
   apiUrl: string,
-  videoFileName: string,
+  routeId: string,
 ): string {
-  const videoId = videoFileName.replace(".mp4", "");
-
   switch (method) {
     case "http-range":
-      return `${apiUrl}/api/httprange/${videoId}`;
+      return `${apiUrl}/api/httprange/${routeId}`;
     case "hls":
-      return `${apiUrl}/api/hls/${videoId}/master.m3u8`;
+      return `${apiUrl}/api/hls/${routeId}/master.m3u8`;
     case "dash":
-      return `${apiUrl}/api/dash/${videoId}/manifest.mpd`;
+      return `${apiUrl}/api/dash/${routeId}/manifest.mpd`;
   }
 }

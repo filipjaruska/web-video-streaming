@@ -13,7 +13,7 @@ interface UseVideoPlayerProps {
   streamingMethod: StreamingMethod;
   abrAlgorithm: AbrAlgorithm;
   apiUrl: string;
-  videoFileName: string;
+  routeId: string;
   onStatsUpdate?: (stats: Partial<CurrentStats>) => void;
 }
 
@@ -25,7 +25,7 @@ export function useVideoPlayer({
   streamingMethod,
   abrAlgorithm,
   apiUrl,
-  videoFileName,
+  routeId,
   onStatsUpdate,
 }: UseVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -61,7 +61,7 @@ export function useVideoPlayer({
     return cleanupInstances;
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamingMethod, abrAlgorithm, apiUrl, videoFileName]);
+  }, [streamingMethod, abrAlgorithm, apiUrl, routeId]);
 
   function cleanupInstances() {
     if (videoRef.current) {
@@ -111,7 +111,7 @@ export function useVideoPlayer({
     if (Hls.isSupported()) {
       const hlsConfig = createHlsConfig(abrAlgorithm);
       const hls = new Hls(hlsConfig);
-      const hlsUrl = getVideoUrl("hls", apiUrl, videoFileName);
+      const hlsUrl = getVideoUrl("hls", apiUrl, routeId);
 
       hls.loadSource(hlsUrl);
       hls.attachMedia(videoRef.current);
@@ -145,7 +145,7 @@ export function useVideoPlayer({
       setHlsInstance(hls);
     } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
       // Native HLS support (Safari)
-      videoRef.current.src = getVideoUrl("hls", apiUrl, videoFileName);
+      videoRef.current.src = getVideoUrl("hls", apiUrl, routeId);
     } else {
       setError(
         "HLS is not supported in this browser. Please use a modern browser like Google Chrome or a Chromium-based alternative.",
@@ -163,7 +163,7 @@ export function useVideoPlayer({
     const dashjs = await import("dashjs");
     const dash = dashjs.MediaPlayer().create();
     const dashSettings = createDashSettings(abrAlgorithm);
-    const dashUrl = getVideoUrl("dash", apiUrl, videoFileName);
+    const dashUrl = getVideoUrl("dash", apiUrl, routeId);
 
     dash.updateSettings(dashSettings);
 
@@ -203,7 +203,7 @@ export function useVideoPlayer({
   function initializeHttpRange() {
     if (!videoRef.current) return;
 
-    const videoUrl = getVideoUrl("http-range", apiUrl, videoFileName);
+    const videoUrl = getVideoUrl("http-range", apiUrl, routeId);
     videoRef.current.src = videoUrl;
   }
 

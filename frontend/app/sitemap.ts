@@ -17,7 +17,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const { videos } = await listVideos();
     for (const video of videos) {
       entries.push({
-        url: `${siteUrl}/${video.videoId}`,
+        url: `${siteUrl}/${video.routeId}`,
         lastModified: video.createdAt ? new Date(video.createdAt) : new Date(),
         changeFrequency: "weekly",
         priority: 0.8,

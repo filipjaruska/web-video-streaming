@@ -14,6 +14,8 @@ bin/
 *.swo
 *~
 
-# Don't ignore wwwroot since we need it for video storage
-# but exclude any local test videos if they're too large
-# wwwroot/httprange/*.mp4
+# Local media + SQLite (prod uses Railway volume at /data)
+App_Data/
+wwwroot/httprange/
+wwwroot/hls/
+wwwroot/dash/

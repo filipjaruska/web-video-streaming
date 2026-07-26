@@ -7,10 +7,16 @@ namespace WebWVideoStreamingAPI.Api.UploadSessions;
 [ApiController]
 [Route("api/uploadSessions")]
 public class UploadSessionsController : ControllerBase {
-    private readonly IUploadSessionService _uploadSessionService;
+    private const long MaxFileSize = 500 * 1024 * 1024;
 
-    public UploadSessionsController(IUploadSessionService uploadSessionService) {
+    private readonly IUploadSessionService _uploadSessionService;
+    private readonly IBackgroundTranscodeQueue _transcodeQueue;
+
+    public UploadSessionsController(
+        IUploadSessionService uploadSessionService,
+        IBackgroundTranscodeQueue transcodeQueue) {
         _uploadSessionService = uploadSessionService;
+        _transcodeQueue = transcodeQueue;
     }
 
     [HttpPost]
@@ -44,6 +50,43 @@ public class UploadSessionsController : ControllerBase {
         }
 
         return Ok(ToResponse(session));
+    }
+
+    [HttpPost("{sessionId:guid}/upload")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
+    [RequestSizeLimit(MaxFileSize)]
+    public async Task<IActionResult> UploadFile(Guid sessionId, IFormFile file, CancellationToken cancellationToken) {
+        if (file == null) {
+            return BadRequest(new { message = "No file uploaded" });
+        }
+
+        await using var stream = file.OpenReadStream();
+        var result = await _uploadSessionService.UploadFileAsync(
+            sessionId,
+            stream,
+            file.FileName,
+            file.Length,
+            file.ContentType,
+            cancellationToken);
+
+        if (!result.Success) {
+            return result.ErrorCode switch {
+                "NotFound" => NotFound(new { message = result.Message }),
+                "TooLarge" => StatusCode(StatusCodes.Status413PayloadTooLarge, new { message = result.Message }),
+                "InvalidType" => BadRequest(new { message = result.Message, allowedTypes = result.AllowedExtensions }),
+                "InvalidState" => BadRequest(new { message = result.Message }),
+                _ => BadRequest(new { message = result.Message })
+            };
+        }
+
+        if (result.VideoId.HasValue) {
+            _transcodeQueue.Enqueue(result.VideoId.Value);
+        }
+
+        return Ok(ToResponse(result.Session!));
     }
 
     private static object ToResponse(UploadSession session) {
