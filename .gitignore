@@ -6,6 +6,7 @@
 wwwroot/
 sample.mp4
 hls/
+App_Data/
 
 # dotenv files
 .env

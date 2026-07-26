@@ -25,11 +25,12 @@ export async function generateMetadata({
 
   try {
     const { videos } = await listVideos();
-    const match = videos.find((v) => v.videoId === video);
+    const match = videos.find((v) => v.routeId === video);
     if (match) {
+      const label = match.title || match.fileName;
       return {
-        title: match.fileName,
-        description: `Stream ${match.fileName} with HTTP Range, HLS, and DASH protocols`,
+        title: label,
+        description: `Stream ${label} with HTTP Range, HLS, and DASH protocols`,
       };
     }
   } catch {
@@ -46,20 +47,21 @@ export async function generateMetadata({
 export default async function VideoPage({ params }: VideoPageProps) {
   const { video } = await params;
 
+  let displayName = video;
   try {
     const { videos } = await listVideos();
-    if (!videos.some((v) => v.videoId === video)) {
+    const match = videos.find((v) => v.routeId === video);
+    if (!match) {
       notFound();
     }
+    displayName = match.title || match.fileName || video;
   } catch {
     // If the catalog is unreachable, still render the player shell
   }
 
-  const videoFileName = `${video}.mp4`;
-
   return (
     <PageShell
-      title={video}
+      title={displayName}
       description="Compare HTTP Range, HLS, and DASH streaming protocols with different ABR algorithms"
       actionLabel="Display Analysis"
       breadcrumb={
@@ -72,14 +74,14 @@ export default async function VideoPage({ params }: VideoPageProps) {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{videoFileName}</BreadcrumbPage>
+              <BreadcrumbPage>{displayName}</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
       }
     >
       <Separator className="mb-6" />
-      <VideoStreamingClient videoFileName={videoFileName} />
+      <VideoStreamingClient routeId={video} />
     </PageShell>
   );
 }

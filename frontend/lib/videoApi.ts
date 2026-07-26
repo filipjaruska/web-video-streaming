@@ -1,14 +1,6 @@
 import { cache } from "react";
 import { getApiUrl } from "@/lib/env";
 
-export interface UploadVideoResponse {
-  message: string;
-  videoId: string;
-  hlsPath: string;
-  dashPath: string;
-  httpRangePath: string;
-}
-
 export interface UploadSessionVideo {
   routeId: string;
   title: string | null;
@@ -39,10 +31,12 @@ export interface UploadSessionResponse {
 }
 
 export interface VideoListItem {
-  videoId: string;
+  routeId: string;
+  title: string | null;
   fileName: string;
   size: number;
   createdAt: string;
+  publishedAt: string | null;
   hasHls: boolean;
   hasDash: boolean;
 }
@@ -55,27 +49,6 @@ export interface ListVideosResponse {
 export interface UpdateUploadSessionVideoRequest {
   title: string;
   description: string;
-}
-
-export async function uploadVideo(
-  apiUrl: string,
-  file: File,
-  videoId?: string,
-): Promise<UploadVideoResponse> {
-  const form = new FormData();
-  form.append("file", file);
-  if (videoId) form.append("videoId", videoId);
-
-  const res = await fetch(`${apiUrl}/api/videoUpload`, {
-    method: "POST",
-    body: form,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Upload failed: ${res.status}`);
-  }
-
-  return res.json() as Promise<UploadVideoResponse>;
 }
 
 export async function createUploadSession(
@@ -121,7 +94,32 @@ export async function updateUploadSessionVideo(
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to update upload session video: ${res.status}`);
+    throw new Error(`Failed to update upload session: ${res.status}`);
+  }
+
+  return res.json() as Promise<UploadSessionResponse>;
+}
+
+export async function uploadSessionFile(
+  apiUrl: string,
+  sessionId: string,
+  file: File,
+): Promise<UploadSessionResponse> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${apiUrl}/api/uploadSessions/${sessionId}/upload`, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const message =
+      body && typeof body === "object" && "message" in body
+        ? String((body as { message: unknown }).message)
+        : `Upload failed: ${res.status}`;
+    throw new Error(message);
   }
 
   return res.json() as Promise<UploadSessionResponse>;
@@ -129,7 +127,7 @@ export async function updateUploadSessionVideo(
 
 export const listVideos = cache(async (): Promise<ListVideosResponse> => {
   const apiUrl = getApiUrl();
-  const res = await fetch(`${apiUrl}/api/videoUpload/list`, {
+  const res = await fetch(`${apiUrl}/api/videos`, {
     next: { revalidate: 60, tags: ["videos"] },
   });
 

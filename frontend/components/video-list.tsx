@@ -27,13 +27,15 @@ export function VideoList({ videos }: VideoListProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 @min-[1400px]/page:grid-cols-4 gap-6">
       {videos.map((video) => (
-        <Link key={video.videoId} href={`/${video.videoId}`} className="group">
+        <Link key={video.routeId} href={`/${video.routeId}`} className="group">
           <Card className="h-full gap-0 py-0 overflow-hidden transition-all hover:border-primary/40 hover:shadow-md">
             <div className="aspect-video bg-muted flex items-center justify-center">
               <Play className="size-10 text-muted-foreground/50 transition-colors group-hover:text-primary/70" />
             </div>
             <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-base truncate">{video.fileName}</CardTitle>
+              <CardTitle className="text-base truncate">
+                {video.title || video.fileName}
+              </CardTitle>
               <CardDescription className="flex items-center gap-2 flex-wrap">
                 <span>{formatSize(video.size)}</span>
                 {video.hasHls && <Badge variant="secondary">HLS</Badge>}
@@ -42,7 +44,7 @@ export function VideoList({ videos }: VideoListProps) {
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0">
               <p className="text-xs text-muted-foreground truncate font-mono">
-                {video.videoId}
+                {video.routeId}
               </p>
             </CardContent>
           </Card>

@@ -13,17 +13,17 @@ interface ActiveStreamingStatusProps {
     streamingMethod: StreamingMethod
     abrAlgorithm: AbrAlgorithm
     apiUrl: string
-    videoFileName: string
+    routeId: string
 }
 
 function ActiveStreamingStatusComponent({
     streamingMethod,
     abrAlgorithm,
     apiUrl,
-    videoFileName,
+    routeId,
 }: ActiveStreamingStatusProps) {
     const showAbrAlgorithm = streamingMethod === 'hls' || streamingMethod === 'dash'
-    const url = getVideoUrl(streamingMethod, apiUrl, videoFileName)
+    const url = getVideoUrl(streamingMethod, apiUrl, routeId)
 
     return (
         <Card className="h-full">
