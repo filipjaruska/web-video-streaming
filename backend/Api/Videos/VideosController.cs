@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using WebWVideoStreamingAPI.Services;
+using WebWVideoStreamingAPI.Core;
 
 namespace WebWVideoStreamingAPI.Api.Videos;
 
@@ -8,17 +8,17 @@ namespace WebWVideoStreamingAPI.Api.Videos;
 public class VideosController : ControllerBase {
     private readonly IVideoCatalogService _catalog;
     private readonly IVideoStorageService _storage;
-    private readonly IVideoTranscodeJobService _transcodeJobs;
+    private readonly VideoProcessingPipeline _processing;
     private readonly ILogger<VideosController> _logger;
 
     public VideosController(
         IVideoCatalogService catalog,
         IVideoStorageService storage,
-        IVideoTranscodeJobService transcodeJobs,
+        VideoProcessingPipeline processing,
         ILogger<VideosController> logger) {
         _catalog = catalog;
         _storage = storage;
-        _transcodeJobs = transcodeJobs;
+        _processing = processing;
         _logger = logger;
     }
 
@@ -67,7 +67,7 @@ public class VideosController : ControllerBase {
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Transcode(string routeId, CancellationToken cancellationToken) {
         try {
-            var result = await _transcodeJobs.TranscodeByRouteIdAsync(routeId, cancellationToken);
+            var result = await _processing.RunByRouteIdAsync(routeId, cancellationToken);
             if (!result.Success && result.ErrorMessage == "Video not found") {
                 return NotFound(new { message = "Video not found" });
             }

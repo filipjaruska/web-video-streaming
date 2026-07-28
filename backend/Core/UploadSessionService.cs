@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using WebWVideoStreamingAPI.Data;
 using WebWVideoStreamingAPI.Models;
 
-namespace WebWVideoStreamingAPI.Services;
+namespace WebWVideoStreamingAPI.Core;
 
 public sealed class SessionUploadResult {
     public bool Success { get; init; }

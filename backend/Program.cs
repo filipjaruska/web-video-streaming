@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
+using WebWVideoStreamingAPI.Core;
 using WebWVideoStreamingAPI.Data;
-using WebWVideoStreamingAPI.Services;
-using WebWVideoStreamingAPI.Storage;
+using WebWVideoStreamingAPI.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,8 +57,9 @@ builder.Services.AddDbContext<AppDbContext>(options => {
 builder.Services.AddScoped<IUploadSessionService, UploadSessionService>();
 builder.Services.AddScoped<IVideoStorageService, VideoStorageService>();
 builder.Services.AddScoped<IVideoCatalogService, VideoCatalogService>();
-builder.Services.AddScoped<IVideoTranscodeJobService, VideoTranscodeJobService>();
-builder.Services.AddSingleton<IBackgroundTranscodeQueue, BackgroundTranscodeQueue>();
+builder.Services.AddScoped<VideoProcessingPipeline>();
+builder.Services.AddSingleton<IVideoProcessingQueue, VideoProcessingQueue>();
+builder.Services.AddHostedService<VideoProcessingWorker>();
 builder.Services.AddSingleton<IFfmpegRunner, FfmpegRunner>();
 builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>();
 

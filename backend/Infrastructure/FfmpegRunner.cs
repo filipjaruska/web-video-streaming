@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace WebWVideoStreamingAPI.Services;
+namespace WebWVideoStreamingAPI.Infrastructure;
 
 public class FfmpegRunResult {
     public bool Success { get; set; }

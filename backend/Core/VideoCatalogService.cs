@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using WebWVideoStreamingAPI.Data;
 using WebWVideoStreamingAPI.Models;
 
-namespace WebWVideoStreamingAPI.Services;
+namespace WebWVideoStreamingAPI.Core;
 
 public sealed class VideoListItem {
     public required string RouteId { get; init; }
