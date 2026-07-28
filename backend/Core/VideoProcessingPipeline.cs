@@ -33,15 +33,6 @@ public sealed class VideoProcessingPipeline {
         _logger = logger;
     }
 
-    public async Task<VideoProcessingResult> RunByRouteIdAsync(string routeId, CancellationToken cancellationToken = default) {
-        var video = await _dbContext.Videos.FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
-        if (video == null) {
-            return new VideoProcessingResult { Success = false, ErrorMessage = "Video not found" };
-        }
-
-        return await RunAsync(video.Id, cancellationToken);
-    }
-
     public async Task<VideoProcessingResult> RunAsync(Guid videoId, CancellationToken cancellationToken = default) {
         var video = await _dbContext.Videos
             .Include(item => item.UploadSessions)
