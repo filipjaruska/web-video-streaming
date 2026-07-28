@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using WebWVideoStreamingAPI.Core;
+using WebWVideoStreamingAPI.Infrastructure;
 using WebWVideoStreamingAPI.Models;
-using WebWVideoStreamingAPI.Services;
 
 namespace WebWVideoStreamingAPI.Api.UploadSessions;
 
@@ -10,13 +11,13 @@ public class UploadSessionsController : ControllerBase {
     private const long MaxFileSize = 500 * 1024 * 1024;
 
     private readonly IUploadSessionService _uploadSessionService;
-    private readonly IBackgroundTranscodeQueue _transcodeQueue;
+    private readonly IVideoProcessingQueue _processingQueue;
 
     public UploadSessionsController(
         IUploadSessionService uploadSessionService,
-        IBackgroundTranscodeQueue transcodeQueue) {
+        IVideoProcessingQueue processingQueue) {
         _uploadSessionService = uploadSessionService;
-        _transcodeQueue = transcodeQueue;
+        _processingQueue = processingQueue;
     }
 
     [HttpPost]
@@ -83,7 +84,7 @@ public class UploadSessionsController : ControllerBase {
         }
 
         if (result.VideoId.HasValue) {
-            _transcodeQueue.Enqueue(result.VideoId.Value);
+            _processingQueue.Enqueue(result.VideoId.Value);
         }
 
         return Ok(ToResponse(result.Session!));

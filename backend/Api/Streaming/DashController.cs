@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using WebWVideoStreamingAPI.Services;
+using WebWVideoStreamingAPI.Core;
 
 namespace WebWVideoStreamingAPI.Api.Streaming;
 
