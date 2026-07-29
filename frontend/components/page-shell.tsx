@@ -8,6 +8,8 @@ interface PageShellProps {
   breadcrumb?: ReactNode
   /** Optional header action — rendered once as a shadcn Button on the right */
   actionLabel?: string
+  /** Custom header action (takes precedence over actionLabel) */
+  action?: ReactNode
 }
 
 export function PageShell({
@@ -16,6 +18,7 @@ export function PageShell({
   children,
   breadcrumb,
   actionLabel,
+  action,
 }: PageShellProps) {
   return (
     <div className="p-8 min-h-[calc(100vh-3.5rem)]">
@@ -26,11 +29,11 @@ export function PageShell({
             <h1 className="text-3xl font-semibold mb-2 tracking-tight">{title}</h1>
             {description && <p className="text-muted-foreground">{description}</p>}
           </div>
-          {actionLabel && (
+          {action ?? (actionLabel && (
             <Button type="button" className="shrink-0 self-center">
               {actionLabel}
             </Button>
-          )}
+          ))}
         </header>
         {children}
       </div>

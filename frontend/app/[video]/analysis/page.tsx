@@ -1,9 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { VideoStreamingClient } from "@/components/video-streaming-client";
+import { AnalysisPageClient } from "@/feature/analysis/analysis-page-client";
 import { PageShell } from "@/components/page-shell";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
@@ -15,13 +14,13 @@ import {
 } from "@/components/ui/breadcrumb";
 import { listVideos } from "@/lib/videoApi";
 
-type VideoPageProps = {
+type AnalysisPageProps = {
   params: Promise<{ video: string }>;
 };
 
 export async function generateMetadata({
   params,
-}: VideoPageProps): Promise<Metadata> {
+}: AnalysisPageProps): Promise<Metadata> {
   const { video } = await params;
 
   try {
@@ -30,22 +29,21 @@ export async function generateMetadata({
     if (match) {
       const label = match.title || match.fileName;
       return {
-        title: label,
-        description: `Stream ${label} with HTTP Range, HLS, and DASH protocols`,
+        title: `${label} · Analysis`,
+        description: `Source analysis and quality metrics for ${label}`,
       };
     }
   } catch {
-    // Fall through to generic metadata
+    // Fall through
   }
 
   return {
-    title: video,
-    description:
-      "Compare HTTP Range, HLS, and DASH streaming protocols with different ABR algorithms",
+    title: `${video} · Analysis`,
+    description: "Source analysis and quality metrics",
   };
 }
 
-export default async function VideoPage({ params }: VideoPageProps) {
+export default async function AnalysisPage({ params }: AnalysisPageProps) {
   const { video } = await params;
 
   let displayName = video;
@@ -57,18 +55,13 @@ export default async function VideoPage({ params }: VideoPageProps) {
     }
     displayName = match.title || match.fileName || video;
   } catch {
-    // If the catalog is unreachable, still render the player shell
+    // If catalog is unreachable, still render the analysis shell
   }
 
   return (
     <PageShell
-      title={displayName}
-      description="Compare HTTP Range, HLS, and DASH streaming protocols with different ABR algorithms"
-      action={
-        <Button asChild className="shrink-0 self-center">
-          <Link href={`/${video}/analysis`}>Display Analysis</Link>
-        </Button>
-      }
+      title="Source analysis"
+      description={`MediaInfo-style metadata, SI/TI charts, and future quality tests for ${displayName}.`}
       breadcrumb={
         <Breadcrumb>
           <BreadcrumbList>
@@ -79,14 +72,20 @@ export default async function VideoPage({ params }: VideoPageProps) {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>{displayName}</BreadcrumbPage>
+              <BreadcrumbLink asChild>
+                <Link href={`/${video}`}>{displayName}</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Analysis</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
       }
     >
       <Separator className="mb-6" />
-      <VideoStreamingClient routeId={video} />
+      <AnalysisPageClient routeId={video} />
     </PageShell>
   );
 }
