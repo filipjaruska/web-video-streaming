@@ -45,7 +45,7 @@ builder.Services.Configure<StorageOptions>(options => {
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString)) {
-    connectionString = $"Data Source={Path.Combine(defaultAppData, "upload-sessions.db")}";
+    connectionString = $"Data Source={Path.Combine(defaultAppData, "app.db")}";
 }
 
 // Ensure SQLite parent directory exists when connection string points at a file path.
