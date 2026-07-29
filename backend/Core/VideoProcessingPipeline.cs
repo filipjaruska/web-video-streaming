@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using WebWVideoStreamingAPI.Data;
 using WebWVideoStreamingAPI.Infrastructure;
+using WebWVideoStreamingAPI.Infrastructure.Analysis;
 using WebWVideoStreamingAPI.Models;
 
 namespace WebWVideoStreamingAPI.Core;
@@ -20,16 +21,25 @@ public sealed class VideoProcessingPipeline {
     private readonly AppDbContext _dbContext;
     private readonly IVideoStorageService _storage;
     private readonly IVideoTranscodingService _transcoding;
+    private readonly IVideoSourceAnalysisService _analysis;
+    private readonly IMediaProbeService _mediaProbe;
+    private readonly ISitiAnalysisService _sitiAnalysis;
     private readonly ILogger<VideoProcessingPipeline> _logger;
 
     public VideoProcessingPipeline(
         AppDbContext dbContext,
         IVideoStorageService storage,
         IVideoTranscodingService transcoding,
+        IVideoSourceAnalysisService analysis,
+        IMediaProbeService mediaProbe,
+        ISitiAnalysisService sitiAnalysis,
         ILogger<VideoProcessingPipeline> logger) {
         _dbContext = dbContext;
         _storage = storage;
         _transcoding = transcoding;
+        _analysis = analysis;
+        _mediaProbe = mediaProbe;
+        _sitiAnalysis = sitiAnalysis;
         _logger = logger;
     }
 
@@ -73,6 +83,8 @@ public sealed class VideoProcessingPipeline {
         string? error = null;
 
         try {
+            await ExtractMediaInfoStepAsync(video, sourcePath, cancellationToken);
+            await RunSitiAnalysisStepAsync(video, sourcePath, cancellationToken);
             await ExtractThumbnailStepAsync(video, sourcePath, cancellationToken);
 
             var hlsResult = await GenerateHlsStepAsync(video.RouteId, transcode.Id, sourcePath, cancellationToken);
@@ -125,6 +137,95 @@ public sealed class VideoProcessingPipeline {
             HasHls = hasHls,
             HasDash = hasDash
         };
+    }
+
+    private async Task ExtractMediaInfoStepAsync(
+        Video video,
+        string sourcePath,
+        CancellationToken cancellationToken) {
+        try {
+            await _analysis.MarkSectionRunningAsync(
+                video.Id,
+                "general",
+                "General",
+                "ffprobe",
+                cancellationToken);
+
+            var probeResult = await _mediaProbe.ProbeAsync(sourcePath, cancellationToken);
+            if (!probeResult.Success || probeResult.ProbeData == null) {
+                await _analysis.MarkSectionFailedAsync(
+                    video.Id,
+                    "general",
+                    "General",
+                    "ffprobe",
+                    probeResult.ErrorMessage ?? "Media probe failed",
+                    cancellationToken);
+                _logger.LogWarning(
+                    "Media info step failed for {RouteId}: {Error}",
+                    video.RouteId,
+                    probeResult.ErrorMessage);
+                return;
+            }
+
+            using (probeResult.ProbeData) {
+                var sections = MediaInfoTreeBuilder.BuildSections(probeResult.ProbeData, sourcePath, video);
+                await _analysis.UpsertSectionsAsync(video.Id, sections, cancellationToken);
+            }
+
+            _logger.LogInformation("Media info step succeeded for {RouteId}", video.RouteId);
+        } catch (Exception ex) {
+            _logger.LogWarning(ex, "Media info step failed for {RouteId}", video.RouteId);
+            await _analysis.MarkSectionFailedAsync(
+                video.Id,
+                "general",
+                "General",
+                "ffprobe",
+                ex.Message,
+                cancellationToken);
+        }
+    }
+
+    private async Task RunSitiAnalysisStepAsync(
+        Video video,
+        string sourcePath,
+        CancellationToken cancellationToken) {
+        try {
+            await _analysis.MarkSectionRunningAsync(
+                video.Id,
+                "siti",
+                "SI/TI Analysis",
+                "ffmpeg-siti",
+                cancellationToken);
+
+            var sitiResult = await _sitiAnalysis.AnalyzeAsync(sourcePath, cancellationToken);
+            if (!sitiResult.Success || sitiResult.Series == null || sitiResult.Section == null) {
+                await _analysis.MarkSectionFailedAsync(
+                    video.Id,
+                    "siti",
+                    "SI/TI Analysis",
+                    "ffmpeg-siti",
+                    sitiResult.ErrorMessage ?? "SI/TI analysis failed",
+                    cancellationToken);
+                _logger.LogWarning(
+                    "SI/TI step failed for {RouteId}: {Error}",
+                    video.RouteId,
+                    sitiResult.ErrorMessage);
+                return;
+            }
+
+            await _analysis.SetSeriesAsync(video.Id, "siti", sitiResult.Series, cancellationToken);
+            await _analysis.UpsertSectionAsync(video.Id, sitiResult.Section, cancellationToken);
+            _logger.LogInformation("SI/TI step succeeded for {RouteId}", video.RouteId);
+        } catch (Exception ex) {
+            _logger.LogWarning(ex, "SI/TI step failed for {RouteId}", video.RouteId);
+            await _analysis.MarkSectionFailedAsync(
+                video.Id,
+                "siti",
+                "SI/TI Analysis",
+                "ffmpeg-siti",
+                ex.Message,
+                cancellationToken);
+        }
     }
 
     private async Task ExtractThumbnailStepAsync(
