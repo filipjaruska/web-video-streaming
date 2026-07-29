@@ -1,3 +1,5 @@
+using WebWVideoStreamingAPI.Infrastructure.Analysis.Models;
+
 namespace WebWVideoStreamingAPI.Models;
 
 public class Video {
@@ -16,6 +18,7 @@ public class Video {
     public DateTime? PublishedAtUtc { get; set; }
 
     public Transcode? ActiveTranscode { get; set; }
+    public VideoSourceAnalysis? SourceAnalysis { get; set; }
     public ICollection<UploadSession> UploadSessions { get; set; } = new List<UploadSession>();
     public ICollection<Transcode> Transcodes { get; set; } = new List<Transcode>();
 }

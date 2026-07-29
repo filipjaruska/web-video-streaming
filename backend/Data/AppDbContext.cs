@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using WebWVideoStreamingAPI.Infrastructure.Analysis.Models;
 using WebWVideoStreamingAPI.Models;
 
 namespace WebWVideoStreamingAPI.Data;
@@ -10,6 +11,7 @@ public class AppDbContext : DbContext {
     public DbSet<Video> Videos => Set<Video>();
     public DbSet<UploadSession> UploadSessions => Set<UploadSession>();
     public DbSet<Transcode> Transcodes => Set<Transcode>();
+    public DbSet<VideoSourceAnalysis> VideoSourceAnalyses => Set<VideoSourceAnalysis>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         modelBuilder.Entity<Video>(entity => {
@@ -31,6 +33,18 @@ public class AppDbContext : DbContext {
                 .WithMany()
                 .HasForeignKey(video => video.ActiveTranscodeId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(video => video.SourceAnalysis)
+                .WithOne(analysis => analysis.Video)
+                .HasForeignKey<VideoSourceAnalysis>(analysis => analysis.VideoId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VideoSourceAnalysis>(entity => {
+            entity.HasKey(analysis => analysis.VideoId);
+            entity.Property(analysis => analysis.TreeJson).HasColumnType("TEXT").IsRequired();
+            entity.Property(analysis => analysis.SeriesJson).HasColumnType("TEXT");
+            entity.Property(analysis => analysis.UpdatedAtUtc).IsRequired();
         });
 
         modelBuilder.Entity<UploadSession>(entity => {
