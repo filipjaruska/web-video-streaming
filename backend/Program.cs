@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using WebWVideoStreamingAPI.Core;
 using WebWVideoStreamingAPI.Data;
 using WebWVideoStreamingAPI.Infrastructure;
+using WebWVideoStreamingAPI.Infrastructure.Analysis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,11 +58,15 @@ builder.Services.AddDbContext<AppDbContext>(options => {
 builder.Services.AddScoped<IUploadSessionService, UploadSessionService>();
 builder.Services.AddScoped<IVideoStorageService, VideoStorageService>();
 builder.Services.AddScoped<IVideoCatalogService, VideoCatalogService>();
+builder.Services.AddScoped<IVideoSourceAnalysisService, VideoSourceAnalysisService>();
 builder.Services.AddScoped<VideoProcessingPipeline>();
 builder.Services.AddSingleton<IVideoProcessingQueue, VideoProcessingQueue>();
 builder.Services.AddHostedService<VideoProcessingWorker>();
+builder.Services.AddSingleton<IMediaProcessRunner, MediaProcessRunner>();
 builder.Services.AddSingleton<IFfmpegRunner, FfmpegRunner>();
 builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>();
+builder.Services.AddSingleton<IMediaProbeService, MediaProbeService>();
+builder.Services.AddSingleton<ISitiAnalysisService, SitiAnalysisService>();
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => {
     options.MultipartBodyLengthLimit = 524_288_000;
