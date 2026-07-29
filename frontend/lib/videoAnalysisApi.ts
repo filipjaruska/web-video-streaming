@@ -9,7 +9,8 @@ export interface AnalysisTreeNodeMeta {
   source?: string;
   status?: AnalysisSectionStatus;
   error?: string;
-  kind?: "section";
+  /** "section" = structural group; "series" = legacy (filtered out by normalizer). */
+  kind?: "section" | "series";
 }
 
 export interface AnalysisTreeNode {
