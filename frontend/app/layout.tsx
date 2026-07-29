@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ActionAuthProvider } from "@/components/action-auth-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Header } from "@/components/header";
 
@@ -37,9 +38,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <Header />
-          {children}
-          <Analytics />
+          <ActionAuthProvider>
+            <Header />
+            {children}
+            <Analytics />
+          </ActionAuthProvider>
         </ThemeProvider>
       </body>
     </html>

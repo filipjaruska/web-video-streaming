@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { useActionAuth } from "@/components/action-auth-provider";
 import { ErrorBanner } from "@/components/error-banner";
 import { getPublicApiUrl } from "@/lib/env";
 import {
@@ -25,6 +26,7 @@ type UploadSessionPageProps = {
 const TERMINAL_STATUSES = new Set(["Completed", "Failed", "Expired"]);
 
 export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
+  const { requireAuth } = useActionAuth();
   const [session, setSession] = useState(initialSession);
   const [title, setTitle] = useState(initialSession.video.title ?? "");
   const [description, setDescription] = useState(initialSession.video.description ?? "");
@@ -79,6 +81,11 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
 
   async function handleSaveMetadata() {
     try {
+      const allowed = await requireAuth();
+      if (!allowed) {
+        return;
+      }
+
       setIsSaving(true);
       setSaveError(null);
 
@@ -101,6 +108,11 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     }
 
     try {
+      const allowed = await requireAuth();
+      if (!allowed) {
+        return;
+      }
+
       setIsUploading(true);
       setUploadError(null);
 
