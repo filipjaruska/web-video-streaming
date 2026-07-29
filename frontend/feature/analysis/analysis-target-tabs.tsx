@@ -93,8 +93,12 @@ export function AnalysisTargetTabs({
             </CardHeader>
           </Card>
         ) : (
-          transcodes.map((target) => (
-            <TranscodeScaffoldCard key={target.id} target={target} />
+          transcodes.map((target, index) => (
+            <TranscodeScaffoldCard
+              key={target.id}
+              target={target}
+              transcodeNumber={index + 1}
+            />
           ))
         )}
       </TabsContent>
