@@ -169,7 +169,7 @@ public class VideoSourceAnalysisService : IVideoSourceAnalysisService {
             AnalysisTargetBuilder.BuildSourceTarget(tree, series)
         };
 
-        foreach (var transcode in video.Transcodes.OrderByDescending(item => item.CreatedAtUtc)) {
+        foreach (var transcode in video.Transcodes.OrderBy(item => item.CreatedAtUtc)) {
             targets.Add(AnalysisTargetBuilder.BuildTranscodeTarget(
                 transcode,
                 video.ActiveTranscodeId == transcode.Id));
