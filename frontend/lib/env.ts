@@ -1,6 +1,8 @@
 const DEFAULT_API_URL = "http://localhost:5000";
 const DEFAULT_SITE_URL = "http://localhost:3000";
 
+/** Also used (server-only): ACTION_PASSWORD — gates mutating UI actions via password popup. */
+
 /** Server-side API base (private URL preferred). */
 export function getApiUrl(): string {
   return (
