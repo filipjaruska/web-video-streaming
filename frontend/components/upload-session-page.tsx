@@ -13,6 +13,11 @@ import { useActionAuth } from "@/components/action-auth-provider";
 import { ErrorBanner } from "@/components/error-banner";
 import { getPublicApiUrl } from "@/lib/env";
 import {
+  clearStoredUploadSessionId,
+  isResumableUploadSession,
+  setStoredUploadSessionId,
+} from "@/lib/uploadSessionStorage";
+import {
   type UploadSessionResponse,
   getUploadSession,
   updateUploadSessionVideo,
@@ -52,6 +57,14 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
   const canUpload =
     !isUploading &&
     (session.session.status === "AwaitingUpload" || session.session.status === "Failed");
+
+  useEffect(() => {
+    setStoredUploadSessionId(session.sessionId);
+
+    if (!isResumableUploadSession(session.session.status)) {
+      clearStoredUploadSessionId();
+    }
+  }, [session.sessionId, session.session.status]);
 
   useEffect(() => {
     if (TERMINAL_STATUSES.has(session.session.status)) {
