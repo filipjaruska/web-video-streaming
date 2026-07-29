@@ -18,6 +18,7 @@ public interface IVideoStorageService {
     string GetSourcePath(string routeId);
     string GetSourceDir(string routeId);
     string GetThumbnailPath(string routeId);
+    string? ResolveThumbnailPath(string routeId);
     string GetTranscodeDir(string routeId, Guid transcodeId);
     string GetHlsDir(string routeId, Guid transcodeId);
     string GetDashDir(string routeId, Guid transcodeId);
@@ -59,7 +60,17 @@ public class VideoStorageService : IVideoStorageService {
     }
 
     public string GetThumbnailPath(string routeId) {
-        return Path.Combine(GetSourceDir(routeId), "thumb.jpg");
+        return Path.Combine(GetSourceDir(routeId), "thumb.webp");
+    }
+
+    public string? ResolveThumbnailPath(string routeId) {
+        var webp = GetThumbnailPath(routeId);
+        if (File.Exists(webp)) {
+            return webp;
+        }
+
+        var legacyJpg = Path.Combine(GetSourceDir(routeId), "thumb.jpg");
+        return File.Exists(legacyJpg) ? legacyJpg : null;
     }
 
     public string GetTranscodeDir(string routeId, Guid transcodeId) {

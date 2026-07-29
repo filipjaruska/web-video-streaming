@@ -29,6 +29,7 @@ public class VideosController : ControllerBase {
                 routeId = video.RouteId,
                 title = video.Title,
                 fileName = video.FileName,
+                thumbnailUrl = video.ThumbnailUrl,
                 size = video.Size,
                 createdAt = video.CreatedAtUtc,
                 publishedAt = video.PublishedAtUtc,
@@ -67,11 +68,14 @@ public class VideosController : ControllerBase {
             return NotFound();
         }
 
-        var path = _storage.GetThumbnailPath(routeId);
-        if (!System.IO.File.Exists(path)) {
+        var path = _storage.ResolveThumbnailPath(routeId);
+        if (path == null) {
             return NotFound();
         }
 
-        return PhysicalFile(path, "image/jpeg");
+        var contentType = path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
+            ? "image/webp"
+            : "image/jpeg";
+        return PhysicalFile(path, contentType);
     }
 }

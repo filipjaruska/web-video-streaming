@@ -8,6 +8,7 @@ public sealed class VideoListItem {
     public required string RouteId { get; init; }
     public string? Title { get; init; }
     public string? FileName { get; init; }
+    public string? ThumbnailUrl { get; init; }
     public long Size { get; init; }
     public DateTime CreatedAtUtc { get; init; }
     public DateTime? PublishedAtUtc { get; init; }
@@ -53,6 +54,7 @@ public class VideoCatalogService : IVideoCatalogService {
             RouteId = video.RouteId,
             Title = video.Title,
             FileName = video.OriginalFileName ?? "source.mp4",
+            ThumbnailUrl = video.ThumbnailUrl,
             Size = video.SourceSizeBytes ?? 0,
             CreatedAtUtc = video.CreatedAtUtc,
             PublishedAtUtc = video.PublishedAtUtc,

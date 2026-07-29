@@ -34,6 +34,7 @@ export interface VideoListItem {
   routeId: string;
   title: string | null;
   fileName: string;
+  thumbnailUrl: string | null;
   size: number;
   createdAt: string;
   publishedAt: string | null;

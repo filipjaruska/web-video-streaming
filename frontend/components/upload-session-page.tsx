@@ -249,6 +249,8 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
               <img
                 src={`${getPublicApiUrl()}${session.video.thumbnailUrl}`}
                 alt="Upload thumbnail preview"
+                loading="lazy"
+                decoding="async"
                 className="aspect-video w-full rounded-md border object-cover"
               />
             ) : (
