@@ -191,7 +191,9 @@ public class VideoTranscodingService : IVideoTranscodingService {
             }
 
             var seek = atSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            var ffmpegArgs = $@"-y -ss {seek} -i ""{inputPath}"" -frames:v 1 -q:v 2 ""{outputPath}""";
+            // Scale down for list/cards and encode WebP (~tens of KB vs ~1MB near-lossless JPEG).
+            var ffmpegArgs =
+                $@"-y -ss {seek} -i ""{inputPath}"" -frames:v 1 -vf ""scale='min(720,iw)':-2"" -c:v libwebp -quality 75 ""{outputPath}""";
 
             _logger.LogInformation("Extracting thumbnail from {InputPath} at {AtSeconds}s to {OutputPath}", inputPath, atSeconds, outputPath);
 

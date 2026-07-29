@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { getPublicApiUrl } from "@/lib/env";
 import type { VideoListItem } from "@/lib/videoApi";
 
 function formatSize(bytes: number) {
@@ -24,13 +25,40 @@ export function VideoList({ videos }: VideoListProps) {
     return <p className="text-muted-foreground">No videos uploaded yet.</p>;
   }
 
+  const apiUrl = getPublicApiUrl();
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 @min-[1400px]/page:grid-cols-4 gap-6">
       {videos.map((video) => (
         <Link key={video.routeId} href={`/${video.routeId}`} className="group">
           <Card className="h-full gap-0 py-0 overflow-hidden transition-all hover:border-primary/40 hover:shadow-md">
-            <div className="aspect-video bg-muted flex items-center justify-center">
-              <Play className="size-10 text-muted-foreground/50 transition-colors group-hover:text-primary/70" />
+            <div className="relative aspect-video bg-muted overflow-hidden">
+              {video.thumbnailUrl ? (
+                <img
+                  src={`${apiUrl}${video.thumbnailUrl}`}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="absolute inset-0 size-full object-cover"
+                />
+              ) : null}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  className={
+                    video.thumbnailUrl
+                      ? "flex size-12 items-center justify-center rounded-full bg-black/45 text-white shadow-sm transition-colors group-hover:bg-black/60"
+                      : undefined
+                  }
+                >
+                  <Play
+                    className={
+                      video.thumbnailUrl
+                        ? "size-6 fill-current"
+                        : "size-10 text-muted-foreground/50 transition-colors group-hover:text-primary/70"
+                    }
+                  />
+                </span>
+              </div>
             </div>
             <CardHeader className="p-4 pb-2">
               <CardTitle className="text-base truncate">

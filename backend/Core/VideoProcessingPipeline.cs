@@ -240,6 +240,11 @@ public sealed class VideoProcessingPipeline {
                 cancellationToken: cancellationToken);
 
             if (thumbResult.Success) {
+                var legacyJpg = Path.Combine(_storage.GetSourceDir(video.RouteId), "thumb.jpg");
+                if (File.Exists(legacyJpg)) {
+                    File.Delete(legacyJpg);
+                }
+
                 video.ThumbnailUrl = $"/api/videos/{video.RouteId}/thumbnail";
                 _logger.LogInformation("Thumbnail step succeeded for {RouteId}", video.RouteId);
             } else {
