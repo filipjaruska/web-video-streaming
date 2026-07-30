@@ -15,7 +15,7 @@ public sealed class VideoProcessingResult {
 }
 
 /// <summary>
-/// Post-upload processing steps for a video (thumbnail → HLS → DASH).
+/// Post-upload processing steps for a video (media info → SI/TI → thumbnail → HLS → DASH).
 /// </summary>
 public sealed class VideoProcessingPipeline {
     private readonly AppDbContext _dbContext;
@@ -67,32 +67,30 @@ public sealed class VideoProcessingPipeline {
         };
 
         _dbContext.Transcodes.Add(transcode);
-
-        foreach (var session in video.UploadSessions.Where(session =>
-                     session.Status is UploadSessionStatus.Uploaded or UploadSessionStatus.Processing)) {
-            session.Status = UploadSessionStatus.Processing;
-            session.ProgressPercent = Math.Max(session.ProgressPercent, 40);
-            session.UpdatedAtUtc = now;
-        }
-
-        video.UpdatedAtUtc = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await ReportSessionProgressAsync(video, 40, "Starting processing", cancellationToken);
 
         var hasHls = false;
         var hasDash = false;
         string? error = null;
 
         try {
+            await ReportSessionProgressAsync(video, 45, "Reading media info", cancellationToken);
             await ExtractMediaInfoStepAsync(video, sourcePath, cancellationToken);
+
+            await ReportSessionProgressAsync(video, 55, "SI/TI analysis", cancellationToken);
             await RunSitiAnalysisStepAsync(video, sourcePath, cancellationToken);
+
+            await ReportSessionProgressAsync(video, 65, "Generating thumbnail", cancellationToken);
             await ExtractThumbnailStepAsync(video, sourcePath, cancellationToken);
 
+            await ReportSessionProgressAsync(video, 75, "HLS transcoding", cancellationToken);
             var hlsResult = await GenerateHlsStepAsync(video.RouteId, transcode.Id, sourcePath, cancellationToken);
             hasHls = hlsResult.Success;
             if (!hlsResult.Success) {
                 error = hlsResult.ErrorMessage;
             }
 
+            await ReportSessionProgressAsync(video, 90, "DASH transcoding", cancellationToken);
             var dashResult = await GenerateDashStepAsync(video.RouteId, transcode.Id, sourcePath, cancellationToken);
             hasDash = dashResult.Success;
             if (!dashResult.Success) {
@@ -124,6 +122,7 @@ public sealed class VideoProcessingPipeline {
                      session.Status is UploadSessionStatus.Processing or UploadSessionStatus.Uploaded)) {
             session.Status = succeeded ? UploadSessionStatus.Completed : UploadSessionStatus.Failed;
             session.ProgressPercent = succeeded ? 100 : session.ProgressPercent;
+            session.CurrentStep = succeeded ? null : session.CurrentStep;
             session.CompletedAtUtc = completedAt;
             session.UpdatedAtUtc = completedAt;
         }
@@ -137,6 +136,27 @@ public sealed class VideoProcessingPipeline {
             HasHls = hasHls,
             HasDash = hasDash
         };
+    }
+
+    private async Task ReportSessionProgressAsync(
+        Video video,
+        int progressPercent,
+        string currentStep,
+        CancellationToken cancellationToken) {
+        var now = DateTime.UtcNow;
+
+        foreach (var session in video.UploadSessions.Where(session =>
+                     session.Status is UploadSessionStatus.Uploaded
+                         or UploadSessionStatus.Processing
+                         or UploadSessionStatus.Uploading)) {
+            session.Status = UploadSessionStatus.Processing;
+            session.ProgressPercent = Math.Max(session.ProgressPercent, progressPercent);
+            session.CurrentStep = currentStep;
+            session.UpdatedAtUtc = now;
+        }
+
+        video.UpdatedAtUtc = now;
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task ExtractMediaInfoStepAsync(

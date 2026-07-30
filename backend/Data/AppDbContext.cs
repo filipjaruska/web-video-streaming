@@ -51,6 +51,7 @@ public class AppDbContext : DbContext {
             entity.HasKey(session => session.Id);
             entity.Property(session => session.Status).HasConversion<string>().HasMaxLength(32);
             entity.Property(session => session.ProgressPercent).IsRequired();
+            entity.Property(session => session.CurrentStep).HasMaxLength(64);
             entity.Property(session => session.CreatedAtUtc).IsRequired();
             entity.Property(session => session.UpdatedAtUtc).IsRequired();
             entity.Property(session => session.ExpiresAtUtc).IsRequired();

@@ -16,6 +16,7 @@ export interface UploadSessionVideo {
 export interface UploadSessionState {
   status: string;
   progressPercent: number;
+  currentStep?: string | null;
   createdAtUtc: string;
   updatedAtUtc: string;
   expiresAtUtc: string;

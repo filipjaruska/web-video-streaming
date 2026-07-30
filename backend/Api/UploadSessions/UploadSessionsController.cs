@@ -97,6 +97,7 @@ public class UploadSessionsController : ControllerBase {
             session = new {
                 status = session.Status.ToString(),
                 progressPercent = session.ProgressPercent,
+                currentStep = session.CurrentStep,
                 createdAtUtc = session.CreatedAtUtc,
                 updatedAtUtc = session.UpdatedAtUtc,
                 expiresAtUtc = session.ExpiresAtUtc,

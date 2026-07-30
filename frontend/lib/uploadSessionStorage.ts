@@ -7,8 +7,11 @@ export function isResumableUploadSession(status: string): boolean {
   return !TERMINAL_STATUSES.has(status);
 }
 
-/** Idle label for the header Upload button based on session status. */
-export function uploadSessionButtonLabel(status: string | null): string {
+/** Idle label for the header Upload button based on session status / step. */
+export function uploadSessionButtonLabel(
+  status: string | null,
+  currentStep?: string | null,
+): string {
   switch (status) {
     case "AwaitingUpload":
     case "Failed":
@@ -17,10 +20,38 @@ export function uploadSessionButtonLabel(status: string | null): string {
       return "Uploading";
     case "Uploaded":
     case "Processing":
-      return "Processing";
+      return shortenProcessingStep(currentStep) ?? "Processing";
     default:
       return "Upload";
   }
+}
+
+function shortenProcessingStep(step: string | null | undefined): string | null {
+  if (!step) {
+    return null;
+  }
+
+  const normalized = step.toLowerCase();
+  if (normalized.includes("si/ti") || normalized.includes("siti")) {
+    return "SI/TI";
+  }
+  if (normalized.includes("media info") || normalized.includes("reading media")) {
+    return "Media info";
+  }
+  if (normalized.includes("thumbnail")) {
+    return "Thumbnail";
+  }
+  if (normalized.includes("hls")) {
+    return "HLS";
+  }
+  if (normalized.includes("dash")) {
+    return "DASH";
+  }
+  if (normalized.includes("queued") || normalized.includes("starting")) {
+    return "Processing";
+  }
+
+  return step.length > 18 ? `${step.slice(0, 16)}…` : step;
 }
 
 function notifyStorageChanged(): void {
