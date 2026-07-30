@@ -239,6 +239,13 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
               <span className="text-sm text-muted-foreground">{session.session.progressPercent}% complete</span>
             </div>
 
+            {session.session.currentStep && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Current step: </span>
+                {session.session.currentStep}
+              </p>
+            )}
+
             <Progress value={session.session.progressPercent} />
 
             <dl className="grid gap-3 text-sm">

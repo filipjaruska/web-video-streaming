@@ -152,6 +152,7 @@ public class UploadSessionService : IUploadSessionService {
         var now = DateTime.UtcNow;
         session.Status = UploadSessionStatus.Uploading;
         session.ProgressPercent = 10;
+        session.CurrentStep = "Uploading file";
         session.UpdatedAtUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -161,6 +162,7 @@ public class UploadSessionService : IUploadSessionService {
             var uploadedAt = DateTime.UtcNow;
             session.Status = UploadSessionStatus.Processing;
             session.ProgressPercent = 40;
+            session.CurrentStep = "Queued for processing";
             session.UploadedAtUtc = uploadedAt;
             session.UpdatedAtUtc = uploadedAt;
             session.Video.OriginalFileName = Path.GetFileName(fileName);
@@ -186,6 +188,7 @@ public class UploadSessionService : IUploadSessionService {
         } catch (Exception ex) {
             _logger.LogError(ex, "Upload failed for session {SessionId}", sessionId);
             session.Status = UploadSessionStatus.Failed;
+            session.CurrentStep = null;
             session.UpdatedAtUtc = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync(cancellationToken);
             return Fail("UploadFailed", ex.Message, session);

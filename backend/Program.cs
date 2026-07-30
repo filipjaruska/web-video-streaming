@@ -105,6 +105,7 @@ app.MapControllers();
 using (var scope = app.Services.CreateScope()) {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.EnsureCreated();
+    EnsureUploadSessionCurrentStepColumn(dbContext);
 }
 
 app.Logger.LogInformation("Video storage root: {StorageRoot}", storageRoot);
@@ -132,5 +133,19 @@ static void EnsureSqliteDirectory(string connectionString) {
     var directory = Path.GetDirectoryName(Path.GetFullPath(pathPart));
     if (!string.IsNullOrWhiteSpace(directory)) {
         Directory.CreateDirectory(directory);
+    }
+}
+
+/// <summary>
+/// EnsureCreated does not alter existing SQLite schemas; add CurrentStep when missing.
+/// </summary>
+static void EnsureUploadSessionCurrentStepColumn(AppDbContext dbContext) {
+    try {
+        dbContext.Database.ExecuteSqlRaw(
+            """
+            ALTER TABLE "UploadSessions" ADD COLUMN "CurrentStep" TEXT NULL
+            """);
+    } catch (Exception) {
+        // Column already exists (or table not yet created on non-SQLite providers).
     }
 }

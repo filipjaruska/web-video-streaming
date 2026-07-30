@@ -20,28 +20,35 @@ export function UploadSessionLauncher() {
   const { requireAuth } = useActionAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState<string | null>(null);
+
+  const clearActiveSession = useCallback(() => {
+    clearStoredUploadSessionId();
+    setSessionStatus(null);
+    setCurrentStep(null);
+  }, []);
 
   const refreshStoredSession = useCallback(async () => {
     const storedSessionId = getStoredUploadSessionId();
     if (!storedSessionId) {
       setSessionStatus(null);
+      setCurrentStep(null);
       return;
     }
 
     try {
       const existing = await getUploadSession(getPublicApiUrl(), storedSessionId);
       if (!isResumableUploadSession(existing.session.status)) {
-        clearStoredUploadSessionId();
-        setSessionStatus(null);
+        clearActiveSession();
         return;
       }
 
       setSessionStatus(existing.session.status);
+      setCurrentStep(existing.session.currentStep ?? null);
     } catch {
-      clearStoredUploadSessionId();
-      setSessionStatus(null);
+      clearActiveSession();
     }
-  }, []);
+  }, [clearActiveSession]);
 
   useEffect(() => {
     void refreshStoredSession();
@@ -72,9 +79,11 @@ export function UploadSessionLauncher() {
       return;
     }
 
+    // Poll faster while processing so step labels stay fresh.
+    const intervalMs = sessionStatus === "Processing" ? 2000 : 5000;
     const timer = window.setInterval(() => {
       void refreshStoredSession();
-    }, 5000);
+    }, intervalMs);
 
     return () => window.clearInterval(timer);
   }, [sessionStatus, refreshStoredSession]);
@@ -95,21 +104,21 @@ export function UploadSessionLauncher() {
           const existing = await getUploadSession(apiUrl, storedSessionId);
           if (isResumableUploadSession(existing.session.status)) {
             setSessionStatus(existing.session.status);
+            setCurrentStep(existing.session.currentStep ?? null);
             router.push(existing.redirectUrl);
             return;
           }
 
-          clearStoredUploadSessionId();
-          setSessionStatus(null);
+          clearActiveSession();
         } catch {
-          clearStoredUploadSessionId();
-          setSessionStatus(null);
+          clearActiveSession();
         }
       }
 
       const session = await createUploadSession(apiUrl);
       setStoredUploadSessionId(session.sessionId);
       setSessionStatus(session.session.status);
+      setCurrentStep(session.session.currentStep ?? null);
       router.push(session.redirectUrl);
     } catch (error) {
       console.error(error);
@@ -117,7 +126,7 @@ export function UploadSessionLauncher() {
     }
   }
 
-  const idleLabel = uploadSessionButtonLabel(sessionStatus);
+  const idleLabel = uploadSessionButtonLabel(sessionStatus, currentStep);
 
   return (
     <Button type="button" onClick={handleCreateSession} disabled={isLoading}>
