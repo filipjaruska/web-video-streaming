@@ -42,15 +42,19 @@ public static class AnalysisTargetBuilder {
         AnalysisSeriesDocument? series) {
         var created = transcode.CreatedAtUtc.ToString("u", CultureInfo.InvariantCulture);
         var activeLabel = isActive ? " (active)" : "";
+        var ladderLabel = transcode.LadderKind == LadderKind.Dynamic
+            ? "Dynamic ladder (VMAF crossover)"
+            : "Static ladder";
         var resolvedTree = tree ?? BuildPendingTranscodeTree(transcode);
         var resolvedSeries = series ?? new AnalysisSeriesDocument();
 
         return new AnalysisTarget {
             Id = $"transcode:{transcode.Id:N}",
-            Label = $"Transcode · {created}{activeLabel}",
+            Label = $"{ladderLabel} · {created}{activeLabel}",
             Kind = "transcode",
             Status = DeriveTranscodeStatus(transcode, resolvedTree),
             TranscodeId = transcode.Id.ToString("N"),
+            LadderKind = transcode.LadderKind == LadderKind.Dynamic ? "dynamic" : "static",
             Tree = resolvedTree,
             Series = resolvedSeries
         };

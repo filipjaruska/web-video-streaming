@@ -151,7 +151,7 @@ public class UploadSessionService : IUploadSessionService {
 
         var now = DateTime.UtcNow;
         session.Status = UploadSessionStatus.Uploading;
-        session.ProgressPercent = 10;
+        session.ProgressPercent = 5;
         session.CurrentStep = "Uploading file";
         session.UpdatedAtUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -161,7 +161,7 @@ public class UploadSessionService : IUploadSessionService {
 
             var uploadedAt = DateTime.UtcNow;
             session.Status = UploadSessionStatus.Processing;
-            session.ProgressPercent = 40;
+            session.ProgressPercent = 8;
             session.CurrentStep = "Queued for processing";
             session.UploadedAtUtc = uploadedAt;
             session.UpdatedAtUtc = uploadedAt;

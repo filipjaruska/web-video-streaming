@@ -70,6 +70,8 @@ builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>
 builder.Services.AddSingleton<IMediaProbeService, MediaProbeService>();
 builder.Services.AddSingleton<ISitiAnalysisService, SitiAnalysisService>();
 builder.Services.AddSingleton<IVmafAnalysisService, VmafAnalysisService>();
+builder.Services.AddScoped<IEncodeGridService, EncodeGridService>();
+builder.Services.AddScoped<ILadderDerivationService, LadderDerivationService>();
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => {
     options.MultipartBodyLengthLimit = 524_288_000;
@@ -108,11 +110,42 @@ app.MapControllers();
 using (var scope = app.Services.CreateScope()) {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.EnsureCreated();
+    EnsureTranscodeLadderColumns(dbContext);
 }
 
 app.Logger.LogInformation("Video storage root: {StorageRoot}", storageRoot);
 
 app.Run();
+
+static void EnsureTranscodeLadderColumns(AppDbContext dbContext) {
+    // EnsureCreated does not alter existing SQLite tables — add ladder columns if missing.
+    try {
+        dbContext.Database.ExecuteSqlRaw(
+            """
+            ALTER TABLE "Transcodes" ADD COLUMN "LadderKind" TEXT NOT NULL DEFAULT 'Static';
+            """);
+    } catch {
+        // Column already exists
+    }
+
+    try {
+        dbContext.Database.ExecuteSqlRaw(
+            """
+            ALTER TABLE "Transcodes" ADD COLUMN "ProfileJson" TEXT NULL;
+            """);
+    } catch {
+        // Column already exists
+    }
+
+    try {
+        dbContext.Database.ExecuteSqlRaw(
+            """
+            ALTER TABLE "Transcodes" ADD COLUMN "DerivedFromTranscodeId" TEXT NULL;
+            """);
+    } catch {
+        // Column already exists
+    }
+}
 
 static void EnsureSqliteDirectory(string connectionString) {
     const string prefix = "Data Source=";

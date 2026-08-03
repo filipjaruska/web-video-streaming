@@ -12,6 +12,7 @@ public interface ITranscodeAnalysisCollector {
         Guid transcodeId,
         bool hasHls,
         bool hasDash,
+        TranscodeProfile? profile = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -22,6 +23,7 @@ public interface ITranscodeAnalysisCollector {
         Guid transcodeId,
         bool hasHls,
         bool hasDash,
+        TranscodeProfile? profile = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -56,8 +58,9 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         Guid transcodeId,
         bool hasHls,
         bool hasDash,
+        TranscodeProfile? profile = null,
         CancellationToken cancellationToken = default) {
-        var profile = TranscodeProfile.Default;
+        profile ??= TranscodeProfile.Default;
         var sitiByFormat = new FormatSitiSeriesDocument();
         var reference = await ResolveReferenceAsync(routeId, cancellationToken);
 
@@ -113,8 +116,9 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         Guid transcodeId,
         bool hasHls,
         bool hasDash,
+        TranscodeProfile? profile = null,
         CancellationToken cancellationToken = default) {
-        var profile = TranscodeProfile.Default;
+        profile ??= TranscodeProfile.Default;
         var vmafByFormat = new FormatVmafSeriesDocument();
         var reference = await ResolveReferenceAsync(routeId, cancellationToken);
 

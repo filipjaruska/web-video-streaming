@@ -9,14 +9,15 @@ namespace WebWVideoStreamingAPI.Core;
 public sealed class VideoProcessingResult {
     public bool Success { get; init; }
     public Guid? TranscodeId { get; init; }
+    public Guid? DynamicTranscodeId { get; init; }
     public string? ErrorMessage { get; init; }
     public bool HasHls { get; init; }
     public bool HasDash { get; init; }
 }
 
 /// <summary>
-/// Post-upload processing steps for a video
-/// (media info → SI/TI → thumbnail → HLS → DASH → transcode SI/TI → VMAF).
+/// Post-upload pipeline: static ladder packaging + analysis → encode grid →
+/// crossover derivation → dynamic ladder second packaging.
 /// </summary>
 public sealed class VideoProcessingPipeline {
     private readonly AppDbContext _dbContext;
@@ -26,6 +27,8 @@ public sealed class VideoProcessingPipeline {
     private readonly ITranscodeAnalysisCollector _transcodeAnalysis;
     private readonly IMediaProbeService _mediaProbe;
     private readonly ISitiAnalysisService _sitiAnalysis;
+    private readonly IEncodeGridService _encodeGrid;
+    private readonly ILadderDerivationService _ladderDerivation;
     private readonly ILogger<VideoProcessingPipeline> _logger;
 
     public VideoProcessingPipeline(
@@ -36,6 +39,8 @@ public sealed class VideoProcessingPipeline {
         ITranscodeAnalysisCollector transcodeAnalysis,
         IMediaProbeService mediaProbe,
         ISitiAnalysisService sitiAnalysis,
+        IEncodeGridService encodeGrid,
+        ILadderDerivationService ladderDerivation,
         ILogger<VideoProcessingPipeline> logger) {
         _dbContext = dbContext;
         _storage = storage;
@@ -44,6 +49,8 @@ public sealed class VideoProcessingPipeline {
         _transcodeAnalysis = transcodeAnalysis;
         _mediaProbe = mediaProbe;
         _sitiAnalysis = sitiAnalysis;
+        _encodeGrid = encodeGrid;
+        _ladderDerivation = ladderDerivation;
         _logger = logger;
     }
 
@@ -61,83 +68,120 @@ public sealed class VideoProcessingPipeline {
             return new VideoProcessingResult { Success = false, ErrorMessage = "Source video not found" };
         }
 
-        var now = DateTime.UtcNow;
-        var transcode = new Transcode {
-            Id = Guid.NewGuid(),
-            VideoId = video.Id,
-            Status = TranscodeStatus.Running,
-            CreatedAtUtc = now,
-            StartedAtUtc = now
-        };
+        await ReportSessionProgressAsync(video, 8, "Starting processing", cancellationToken);
 
-        _dbContext.Transcodes.Add(transcode);
-        await ReportSessionProgressAsync(video, 40, "Starting processing", cancellationToken);
-
-        var hasHls = false;
-        var hasDash = false;
         string? error = null;
+        Guid? dynamicTranscodeId = null;
 
+        // —— Source analysis (once) ——
         try {
-            await ReportSessionProgressAsync(video, 45, "Reading media info", cancellationToken);
+            await ReportSessionProgressAsync(video, 10, "Reading media info", cancellationToken);
             await ExtractMediaInfoStepAsync(video, sourcePath, cancellationToken);
 
-            await ReportSessionProgressAsync(video, 50, "SI/TI analysis", cancellationToken);
+            await ReportSessionProgressAsync(video, 14, "SI/TI analysis", cancellationToken);
             await RunSitiAnalysisStepAsync(video, sourcePath, cancellationToken);
 
-            await ReportSessionProgressAsync(video, 55, "Generating thumbnail", cancellationToken);
+            await ReportSessionProgressAsync(video, 16, "Generating thumbnail", cancellationToken);
             await ExtractThumbnailStepAsync(video, sourcePath, cancellationToken);
-
-            await ReportSessionProgressAsync(video, 65, "HLS transcoding", cancellationToken);
-            var hlsResult = await GenerateHlsStepAsync(video.RouteId, transcode.Id, sourcePath, cancellationToken);
-            hasHls = hlsResult.Success;
-            if (!hlsResult.Success) {
-                error = hlsResult.ErrorMessage;
-            }
-
-            await ReportSessionProgressAsync(video, 75, "DASH transcoding", cancellationToken);
-            var dashResult = await GenerateDashStepAsync(video.RouteId, transcode.Id, sourcePath, cancellationToken);
-            hasDash = dashResult.Success;
-            if (!dashResult.Success) {
-                error = string.IsNullOrEmpty(error)
-                    ? dashResult.ErrorMessage
-                    : $"{error}; {dashResult.ErrorMessage}";
-            }
-
-            if (hasHls || hasDash) {
-                await ReportSessionProgressAsync(video, 85, "Analyzing transcodes (SI/TI)", cancellationToken);
-                await _transcodeAnalysis.CollectAsync(
-                    video.RouteId,
-                    transcode.Id,
-                    hasHls,
-                    hasDash,
-                    cancellationToken);
-
-                await ReportSessionProgressAsync(video, 92, "VMAF analysis", cancellationToken);
-                await _transcodeAnalysis.CollectVmafAsync(
-                    video.RouteId,
-                    transcode.Id,
-                    hasHls,
-                    hasDash,
-                    cancellationToken);
-            }
         } catch (Exception ex) {
-            _logger.LogError(ex, "Processing failed for video {VideoId}", videoId);
+            _logger.LogError(ex, "Source analysis failed for video {VideoId}", videoId);
             error = ex.Message;
         }
 
-        var completedAt = DateTime.UtcNow;
-        transcode.HasHls = hasHls;
-        transcode.HasDash = hasDash;
-        transcode.CompletedAtUtc = completedAt;
-        transcode.ErrorMessage = error;
+        // —— Transcode 1: static ladder ——
+        var staticProfile = TranscodeProfile.Default;
+        var staticPackage = await PackageAndAnalyzeAsync(
+            video,
+            sourcePath,
+            LadderKind.Static,
+            staticProfile,
+            derivedFrom: null,
+            hlsProgress: 22,
+            dashProgress: 28,
+            sitiProgress: 32,
+            vmafProgress: 40,
+            cancellationToken);
 
-        var succeeded = hasHls || hasDash;
-        transcode.Status = succeeded ? TranscodeStatus.Succeeded : TranscodeStatus.Failed;
-
-        if (succeeded) {
-            video.ActiveTranscodeId = transcode.Id;
+        if (!string.IsNullOrEmpty(staticPackage.ErrorMessage)) {
+            error = string.IsNullOrEmpty(error)
+                ? staticPackage.ErrorMessage
+                : $"{error}; {staticPackage.ErrorMessage}";
         }
 
+        if (staticPackage.Succeeded) {
+            video.ActiveTranscodeId = staticPackage.Transcode.Id;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            // —— Encode grid + derive dynamic ladder (soft-fail) ——
+            try {
+                await ReportSessionProgressAsync(video, 45, "Encode grid (CRF × resolution)", cancellationToken);
+                var grid = await _encodeGrid.RunAsync(
+                    video.RouteId,
+                    staticPackage.Transcode.Id,
+                    sourcePath,
+                    onProgress: async (done, total, ct) => {
+                        // Map grid completion across 45 → 76 (longest step).
+                        var pct = total <= 0
+                            ? 45
+                            : 45 + (int)Math.Round(31.0 * done / total);
+                        pct = Math.Clamp(pct, 45, 76);
+                        await ReportSessionProgressAsync(
+                            video,
+                            pct,
+                            $"Encode grid ({done}/{total})",
+                            ct);
+                    },
+                    cancellationToken);
+
+                if (grid.Success) {
+                    await ReportSessionProgressAsync(video, 78, "Deriving VMAF crossover ladder", cancellationToken);
+                    var derived = await _ladderDerivation.DeriveAsync(
+                        staticPackage.Transcode.Id,
+                        grid.Points,
+                        cancellationToken);
+
+                    if (derived.Success && derived.Profile != null) {
+                        var dynamicPackage = await PackageAndAnalyzeAsync(
+                            video,
+                            sourcePath,
+                            LadderKind.Dynamic,
+                            derived.Profile,
+                            derivedFrom: staticPackage.Transcode.Id,
+                            hlsProgress: 82,
+                            dashProgress: 86,
+                            sitiProgress: 90,
+                            vmafProgress: 95,
+                            cancellationToken);
+
+                        dynamicTranscodeId = dynamicPackage.Transcode.Id;
+                        if (dynamicPackage.Succeeded) {
+                            video.ActiveTranscodeId = dynamicPackage.Transcode.Id;
+                            await _dbContext.SaveChangesAsync(cancellationToken);
+                        } else if (!string.IsNullOrEmpty(dynamicPackage.ErrorMessage)) {
+                            _logger.LogWarning(
+                                "Dynamic ladder packaging failed for {RouteId}: {Error}",
+                                video.RouteId,
+                                dynamicPackage.ErrorMessage);
+                        }
+                    } else {
+                        _logger.LogWarning(
+                            "Ladder derivation failed for {RouteId}: {Error}",
+                            video.RouteId,
+                            derived.ErrorMessage);
+                    }
+                } else {
+                    _logger.LogWarning(
+                        "Encode grid failed for {RouteId}: {Error}",
+                        video.RouteId,
+                        grid.ErrorMessage);
+                }
+            } catch (Exception ex) {
+                _logger.LogWarning(ex, "Dynamic ladder path failed for {RouteId}", video.RouteId);
+            }
+        }
+
+        var completedAt = DateTime.UtcNow;
+        var succeeded = staticPackage.Succeeded;
         video.UpdatedAtUtc = completedAt;
 
         foreach (var session in video.UploadSessions.Where(session =>
@@ -153,10 +197,130 @@ public sealed class VideoProcessingPipeline {
 
         return new VideoProcessingResult {
             Success = succeeded,
-            TranscodeId = transcode.Id,
+            TranscodeId = staticPackage.Transcode.Id,
+            DynamicTranscodeId = dynamicTranscodeId,
             ErrorMessage = error,
+            HasHls = staticPackage.HasHls,
+            HasDash = staticPackage.HasDash
+        };
+    }
+
+    private sealed class PackageResult {
+        public required Transcode Transcode { get; init; }
+        public bool Succeeded { get; init; }
+        public bool HasHls { get; init; }
+        public bool HasDash { get; init; }
+        public string? ErrorMessage { get; init; }
+    }
+
+    private async Task<PackageResult> PackageAndAnalyzeAsync(
+        Video video,
+        string sourcePath,
+        LadderKind ladderKind,
+        TranscodeProfile profile,
+        Guid? derivedFrom,
+        int hlsProgress,
+        int dashProgress,
+        int sitiProgress,
+        int vmafProgress,
+        CancellationToken cancellationToken) {
+        var now = DateTime.UtcNow;
+        var transcode = new Transcode {
+            Id = Guid.NewGuid(),
+            VideoId = video.Id,
+            Status = TranscodeStatus.Running,
+            LadderKind = ladderKind,
+            ProfileJson = _ladderDerivation.SerializeProfile(profile),
+            DerivedFromTranscodeId = derivedFrom,
+            CreatedAtUtc = now,
+            StartedAtUtc = now
+        };
+
+        _dbContext.Transcodes.Add(transcode);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var hasHls = false;
+        var hasDash = false;
+        string? error = null;
+
+        try {
+            await ReportSessionProgressAsync(
+                video,
+                hlsProgress,
+                ladderKind == LadderKind.Dynamic ? "Dynamic HLS packaging" : "HLS transcoding",
+                cancellationToken);
+            var hlsResult = await GenerateHlsStepAsync(video.RouteId, transcode.Id, sourcePath, profile, cancellationToken);
+            hasHls = hlsResult.Success;
+            if (!hlsResult.Success) {
+                error = hlsResult.ErrorMessage;
+            }
+
+            await ReportSessionProgressAsync(
+                video,
+                dashProgress,
+                ladderKind == LadderKind.Dynamic ? "Dynamic DASH packaging" : "DASH transcoding",
+                cancellationToken);
+            var dashResult = await GenerateDashStepAsync(video.RouteId, transcode.Id, sourcePath, profile, cancellationToken);
+            hasDash = dashResult.Success;
+            if (!dashResult.Success) {
+                error = string.IsNullOrEmpty(error)
+                    ? dashResult.ErrorMessage
+                    : $"{error}; {dashResult.ErrorMessage}";
+            }
+
+            if (hasHls || hasDash) {
+                await ReportSessionProgressAsync(
+                    video,
+                    sitiProgress,
+                    ladderKind == LadderKind.Dynamic
+                        ? "Analyzing dynamic ladder (SI/TI)"
+                        : "Analyzing transcodes (SI/TI)",
+                    cancellationToken);
+                await _transcodeAnalysis.CollectAsync(
+                    video.RouteId,
+                    transcode.Id,
+                    hasHls,
+                    hasDash,
+                    profile,
+                    cancellationToken);
+
+                await ReportSessionProgressAsync(
+                    video,
+                    vmafProgress,
+                    ladderKind == LadderKind.Dynamic ? "Dynamic ladder VMAF" : "VMAF analysis",
+                    cancellationToken);
+                await _transcodeAnalysis.CollectVmafAsync(
+                    video.RouteId,
+                    transcode.Id,
+                    hasHls,
+                    hasDash,
+                    profile,
+                    cancellationToken);
+            }
+        } catch (Exception ex) {
+            _logger.LogError(
+                ex,
+                "{Ladder} packaging failed for video {VideoId}",
+                ladderKind,
+                video.Id);
+            error = ex.Message;
+        }
+
+        var completedAt = DateTime.UtcNow;
+        var succeeded = hasHls || hasDash;
+        transcode.HasHls = hasHls;
+        transcode.HasDash = hasDash;
+        transcode.CompletedAtUtc = completedAt;
+        transcode.ErrorMessage = error;
+        transcode.Status = succeeded ? TranscodeStatus.Succeeded : TranscodeStatus.Failed;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return new PackageResult {
+            Transcode = transcode,
+            Succeeded = succeeded,
             HasHls = hasHls,
-            HasDash = hasDash
+            HasDash = hasDash,
+            ErrorMessage = error
         };
     }
 
@@ -304,14 +468,16 @@ public sealed class VideoProcessingPipeline {
         string routeId,
         Guid transcodeId,
         string sourcePath,
+        TranscodeProfile profile,
         CancellationToken cancellationToken) {
         _storage.EnsureHlsDir(routeId, transcodeId);
-        _logger.LogInformation("HLS step started for {RouteId}", routeId);
+        _logger.LogInformation("HLS step started for {RouteId} profile={Profile}", routeId, profile.Name);
 
         var result = await _transcoding.GenerateHlsAsync(
             sourcePath,
             _storage.GetHlsDir(routeId, transcodeId),
-            cancellationToken: cancellationToken);
+            profile,
+            cancellationToken);
 
         if (result.Success) {
             _logger.LogInformation("HLS step succeeded for {RouteId}", routeId);
@@ -326,14 +492,16 @@ public sealed class VideoProcessingPipeline {
         string routeId,
         Guid transcodeId,
         string sourcePath,
+        TranscodeProfile profile,
         CancellationToken cancellationToken) {
         _storage.EnsureDashDir(routeId, transcodeId);
-        _logger.LogInformation("DASH step started for {RouteId}", routeId);
+        _logger.LogInformation("DASH step started for {RouteId} profile={Profile}", routeId, profile.Name);
 
         var result = await _transcoding.GenerateDashAsync(
             sourcePath,
             _storage.GetDashDir(routeId, transcodeId),
-            cancellationToken: cancellationToken);
+            profile,
+            cancellationToken);
 
         if (result.Success) {
             _logger.LogInformation("DASH step succeeded for {RouteId}", routeId);
