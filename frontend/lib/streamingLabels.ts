@@ -112,3 +112,12 @@ export function getVideoUrl(
       return `${apiUrl}/api/dash/${routeId}/manifest.mpd`;
   }
 }
+
+/** Direct media playlist for a single HLS ladder rung (e.g. 360p). */
+export function getHlsVariantUrl(
+  apiUrl: string,
+  routeId: string,
+  quality: string,
+): string {
+  return `${apiUrl}/api/hls/${routeId}/${quality}.m3u8`;
+}

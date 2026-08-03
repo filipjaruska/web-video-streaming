@@ -10,6 +10,8 @@ import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
 import { TranscodeAnalysisCard } from "@/feature/analysis/transcode-analysis-card";
 import { formatTargetStatus } from "@/lib/analysisLabels";
+import { getPublicApiUrl } from "@/lib/env";
+import { getHlsVariantUrl } from "@/lib/streamingLabels";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -21,11 +23,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface AnalysisTargetTabsProps {
+  routeId: string;
   targets: AnalysisTarget[];
   futureTests: FutureTestDescriptor[];
 }
 
 export function AnalysisTargetTabs({
+  routeId,
   targets,
   futureTests,
 }: AnalysisTargetTabsProps) {
@@ -40,6 +44,12 @@ export function AnalysisTargetTabs({
   );
   const hasSitiSeries =
     !!source?.series.siti && source.series.siti.si.length > 0;
+
+  // HLS 360p seeks reliably across the full timeline; progressive MP4 often stalls mid-file.
+  const videoSrc = useMemo(
+    () => getHlsVariantUrl(getPublicApiUrl(), routeId, "360p"),
+    [routeId],
+  );
 
   return (
     <Tabs defaultValue="source">
@@ -73,6 +83,8 @@ export function AnalysisTargetTabs({
               <SitiChart
                 data={source.series.siti}
                 stats={sitiNode}
+                videoSrc={videoSrc}
+                videoLabel="Preview (HLS 360p)"
               />
             )}
           </>
@@ -98,6 +110,7 @@ export function AnalysisTargetTabs({
               key={target.id}
               target={target}
               transcodeNumber={index + 1}
+              videoSrc={videoSrc}
             />
           ))
         )}

@@ -29,6 +29,8 @@ import {
 interface TranscodeAnalysisCardProps {
   target: AnalysisTarget;
   transcodeNumber: number;
+  /** Progressive source MP4 — used as a scene-time reference for SI/TI scrubbing. */
+  videoSrc?: string;
 }
 
 function sectionStatusBadge(status?: AnalysisSectionStatus) {
@@ -61,9 +63,11 @@ function sortRenditionLabels(labels: string[]) {
 function FormatSitiCharts({
   formatLabel,
   sitiByRendition,
+  videoSrc,
 }: {
   formatLabel: string;
   sitiByRendition: Record<string, SitiSeriesData>;
+  videoSrc?: string;
 }) {
   const labels = useMemo(
     () => sortRenditionLabels(Object.keys(sitiByRendition)),
@@ -102,6 +106,8 @@ function FormatSitiCharts({
           data={activeSeries}
           title={`${formatLabel} · ${active} SI/TI`}
           description={`Spatial and temporal information (ITU-T P.910) for the ${active} ${formatLabel} rendition.`}
+          videoSrc={videoSrc}
+          videoLabel="Scene reference (HLS 360p)"
         />
       )}
     </div>
@@ -111,9 +117,11 @@ function FormatSitiCharts({
 function FormatBox({
   section,
   sitiByRendition,
+  videoSrc,
 }: {
   section: AnalysisTreeNode;
   sitiByRendition?: Record<string, SitiSeriesData>;
+  videoSrc?: string;
 }) {
   const hasTree = (section.children?.length ?? 0) > 0;
   const hasSiti =
@@ -144,6 +152,7 @@ function FormatBox({
           <FormatSitiCharts
             formatLabel={section.label}
             sitiByRendition={sitiByRendition}
+            videoSrc={videoSrc}
           />
         )}
       </div>
@@ -154,6 +163,7 @@ function FormatBox({
 export function TranscodeAnalysisCard({
   target,
   transcodeNumber,
+  videoSrc,
 }: TranscodeAnalysisCardProps) {
   const isActive = target.label.includes("(active)");
   const hls = target.tree.children.find((child) => child.id === "hls");
@@ -197,6 +207,7 @@ export function TranscodeAnalysisCard({
               key={section.id}
               section={section}
               sitiByRendition={siti}
+              videoSrc={videoSrc}
             />
           ))
         ) : (
