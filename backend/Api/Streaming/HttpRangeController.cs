@@ -20,6 +20,7 @@ public class HttpRangeController : ControllerBase {
     }
 
     [HttpGet("{routeId}")]
+    [HttpHead("{routeId}")]
     public async Task<IActionResult> StreamVideo(string routeId, CancellationToken cancellationToken) {
         try {
             var video = await _catalog.GetByRouteIdAsync(routeId, cancellationToken);
@@ -34,9 +35,20 @@ public class HttpRangeController : ControllerBase {
                 return NotFound(new { message = "Video not found" });
             }
 
+            // Expose transferSize to cross-origin Resource Timing (stats panel).
+            Response.Headers["Timing-Allow-Origin"] = "*";
+
             var contentType = string.IsNullOrWhiteSpace(video.SourceContentType)
                 ? "video/mp4"
                 : video.SourceContentType;
+
+            if (HttpMethods.IsHead(Request.Method)) {
+                var fileInfo = new FileInfo(videoPath);
+                Response.ContentType = contentType;
+                Response.ContentLength = fileInfo.Length;
+                Response.Headers.AcceptRanges = "bytes";
+                return Ok();
+            }
 
             var fileStream = System.IO.File.OpenRead(videoPath);
             return File(fileStream, contentType, enableRangeProcessing: true);

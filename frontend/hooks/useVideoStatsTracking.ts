@@ -15,6 +15,19 @@ interface UseVideoStatsTrackingProps {
   onStatsUpdate?: (stats: Partial<CurrentStats>) => void;
 }
 
+interface HttpRangeThroughputState {
+  lastBytes: number;
+  lastTimestampMs: number;
+  lastBandwidthMbps: number;
+}
+
+interface HttpRangeBitrateState {
+  url: string | null;
+  contentLength: number | null;
+  bitrateBps: number | null;
+  fetchStarted: boolean;
+}
+
 export function useVideoStatsTracking({
   videoElement,
   streamingMethod,
@@ -22,7 +35,33 @@ export function useVideoStatsTracking({
   dashInstance,
   onStatsUpdate,
 }: UseVideoStatsTrackingProps) {
-  const hasStartedPlayingRef = useRef<boolean>(false);
+  const hasStartedPlayingRef = useRef(false);
+  const throughputStateRef = useRef<HttpRangeThroughputState>({
+    lastBytes: 0,
+    lastTimestampMs: 0,
+    lastBandwidthMbps: 0,
+  });
+  const bitrateStateRef = useRef<HttpRangeBitrateState>({
+    url: null,
+    contentLength: null,
+    bitrateBps: null,
+    fetchStarted: false,
+  });
+
+  useEffect(() => {
+    hasStartedPlayingRef.current = false;
+    throughputStateRef.current = {
+      lastBytes: 0,
+      lastTimestampMs: 0,
+      lastBandwidthMbps: 0,
+    };
+    bitrateStateRef.current = {
+      url: null,
+      contentLength: null,
+      bitrateBps: null,
+      fetchStarted: false,
+    };
+  }, [streamingMethod, videoElement]);
 
   useEffect(() => {
     if (!videoElement || !onStatsUpdate) return;
@@ -40,6 +79,8 @@ export function useVideoStatsTracking({
         streamingMethod,
         hlsInstance,
         dashInstance,
+        throughputStateRef.current,
+        bitrateStateRef.current,
       );
       onStatsUpdate(stats);
     }, 1000);
@@ -57,6 +98,8 @@ function collectStats(
   streamingMethod: StreamingMethod,
   hlsInstance: Hls | null,
   dashInstance: any,
+  throughputState: HttpRangeThroughputState,
+  bitrateState: HttpRangeBitrateState,
 ): Partial<CurrentStats> {
   const stats: Partial<CurrentStats> = {
     bufferLevel: getBufferLevel(video),
@@ -68,7 +111,7 @@ function collectStats(
   } else if (streamingMethod === "dash" && dashInstance) {
     collectDashStats(dashInstance, stats);
   } else if (streamingMethod === "http-range") {
-    collectHttpRangeStats(video, stats);
+    collectHttpRangeStats(video, stats, throughputState, bitrateState);
   }
 
   collectDroppedFramesStats(video, stats);
@@ -142,16 +185,149 @@ function collectDashStats(dash: any, stats: Partial<CurrentStats>) {
 function collectHttpRangeStats(
   video: HTMLVideoElement,
   stats: Partial<CurrentStats>,
+  throughputState: HttpRangeThroughputState,
+  bitrateState: HttpRangeBitrateState,
 ) {
-  const quality = getVideoElementQuality(video);
-  if (quality) {
-    stats.quality = quality;
-    // Convert bitrate from bps to Mbps
-    stats.bandwidth = quality.bitrate / 1000000;
+  ensureSourceBitrate(video, bitrateState);
+
+  const quality = getVideoElementQuality(video, bitrateState.bitrateBps);
+  stats.quality = quality;
+
+  const measured = measureHttpRangeThroughput(video, throughputState);
+  if (measured > 0) {
+    stats.bandwidth = measured;
+  } else if (throughputState.lastBandwidthMbps > 0) {
+    stats.bandwidth = throughputState.lastBandwidthMbps;
   } else {
-    stats.quality = null;
     stats.bandwidth = 0;
   }
+}
+
+function measureHttpRangeThroughput(
+  video: HTMLVideoElement,
+  state: HttpRangeThroughputState,
+): number {
+  const mediaUrl = video.currentSrc || video.src;
+  if (!mediaUrl || typeof performance === "undefined") {
+    return state.lastBandwidthMbps;
+  }
+
+  const totalBytes = sumResourceTransferBytes(mediaUrl);
+  const now = performance.now();
+
+  if (state.lastTimestampMs <= 0) {
+    state.lastBytes = totalBytes;
+    state.lastTimestampMs = now;
+    return state.lastBandwidthMbps;
+  }
+
+  const deltaBytes = totalBytes - state.lastBytes;
+  const deltaSeconds = (now - state.lastTimestampMs) / 1000;
+
+  state.lastBytes = totalBytes;
+  state.lastTimestampMs = now;
+
+  if (deltaBytes > 0 && deltaSeconds > 0) {
+    const mbps = (deltaBytes * 8) / deltaSeconds / 1_000_000;
+    state.lastBandwidthMbps = mbps;
+    return mbps;
+  }
+
+  return state.lastBandwidthMbps;
+}
+
+function sumResourceTransferBytes(mediaUrl: string): number {
+  try {
+    const entries = performance.getEntriesByType(
+      "resource",
+    ) as PerformanceResourceTiming[];
+
+    let total = 0;
+    for (const entry of entries) {
+      if (!resourceMatchesMediaUrl(entry.name, mediaUrl)) continue;
+      const bytes =
+        entry.transferSize > 0
+          ? entry.transferSize
+          : entry.encodedBodySize > 0
+            ? entry.encodedBodySize
+            : 0;
+      total += bytes;
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
+function resourceMatchesMediaUrl(entryName: string, mediaUrl: string): boolean {
+  if (entryName === mediaUrl) return true;
+
+  try {
+    const entry = new URL(entryName);
+    const media = new URL(mediaUrl, window.location.href);
+    return (
+      entry.origin === media.origin &&
+      entry.pathname === media.pathname &&
+      entry.pathname.includes("/api/httprange/")
+    );
+  } catch {
+    return (
+      entryName.includes("/api/httprange/") &&
+      mediaUrl.includes("/api/httprange/")
+    );
+  }
+}
+
+function ensureSourceBitrate(
+  video: HTMLVideoElement,
+  state: HttpRangeBitrateState,
+) {
+  const mediaUrl = video.currentSrc || video.src;
+  if (!mediaUrl) return;
+
+  if (state.url !== mediaUrl) {
+    state.url = mediaUrl;
+    state.contentLength = null;
+    state.bitrateBps = null;
+    state.fetchStarted = false;
+  }
+
+  if (
+    state.contentLength != null &&
+    state.bitrateBps == null &&
+    Number.isFinite(video.duration) &&
+    video.duration > 0
+  ) {
+    state.bitrateBps = Math.round((state.contentLength * 8) / video.duration);
+    return;
+  }
+
+  if (state.bitrateBps != null || state.fetchStarted) return;
+  state.fetchStarted = true;
+
+  void fetch(mediaUrl, { method: "HEAD" })
+    .then((res) => {
+      const lengthHeader = res.headers.get("content-length");
+      const length = lengthHeader ? Number(lengthHeader) : NaN;
+      if (!Number.isFinite(length) || length <= 0) {
+        if (state.url === mediaUrl) state.fetchStarted = false;
+        return;
+      }
+
+      // Ignore stale responses after the media URL changed.
+      if (state.url !== mediaUrl) return;
+
+      state.contentLength = length;
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        state.bitrateBps = Math.round((length * 8) / video.duration);
+      }
+    })
+    .catch(() => {
+      // Allow a later poll to retry if HEAD fails.
+      if (state.url === mediaUrl) {
+        state.fetchStarted = false;
+      }
+    });
 }
 
 function collectDroppedFramesStats(
@@ -244,53 +420,38 @@ function getDashQuality(dash: any): VideoQuality | null {
   return null;
 }
 
-function getVideoElementQuality(video: HTMLVideoElement): VideoQuality | null {
+function getVideoElementQuality(
+  video: HTMLVideoElement,
+  sourceBitrateBps: number | null,
+): VideoQuality | null {
   try {
-    // Check if video metadata is loaded
     if (video.readyState < 1) {
-      return null; // Metadata not loaded yet
+      return null;
     }
 
     if (video.videoWidth && video.videoHeight) {
-      // Better bitrate estimation based on resolution
-      const pixels = video.videoWidth * video.videoHeight;
-      let estimatedBitrate: number;
-
-      // More realistic bitrate estimates for common resolutions
-      if (pixels >= 3840 * 2160) {
-        estimatedBitrate = 20000000; // 4K ~20 Mbps
-      } else if (pixels >= 1920 * 1080) {
-        estimatedBitrate = 5000000; // 1080p ~5 Mbps
-      } else if (pixels >= 1280 * 720) {
-        estimatedBitrate = 2500000; // 720p ~2.5 Mbps
-      } else if (pixels >= 854 * 480) {
-        estimatedBitrate = 1000000; // 480p ~1 Mbps
-      } else if (pixels >= 640 * 360) {
-        estimatedBitrate = 800000; // 360p ~800 Kbps
-      } else {
-        estimatedBitrate = 500000; // Lower ~500 Kbps
-      }
+      const bitrate =
+        sourceBitrateBps != null && sourceBitrateBps > 0
+          ? sourceBitrateBps
+          : estimateBitrateFromResolution(video.videoWidth, video.videoHeight);
 
       let codec: string | undefined;
 
-      // Try multiple methods to get codec info
       const videoTracks = (video as any).videoTracks;
       if (videoTracks && videoTracks.length > 0) {
         codec = videoTracks[0].configuration?.codec;
       }
 
-      // Fallback: try to get from source type
       if (!codec && video.currentSrc) {
-        // Most likely H.264 for MP4 files
-        if (video.currentSrc.includes(".mp4")) {
-          codec = "avc1.64001f"; // H.264 High Profile
+        if (video.currentSrc.includes(".mp4") || video.currentSrc.includes("/api/httprange/")) {
+          codec = "avc1.64001f";
         }
       }
 
       return {
         width: video.videoWidth,
         height: video.videoHeight,
-        bitrate: estimatedBitrate,
+        bitrate,
         label: formatQualityLabel(video.videoWidth, video.videoHeight),
         codec: codec || "H.264",
       };
@@ -299,4 +460,14 @@ function getVideoElementQuality(video: HTMLVideoElement): VideoQuality | null {
     console.error("Error getting video element quality:", e);
   }
   return null;
+}
+
+function estimateBitrateFromResolution(width: number, height: number): number {
+  const pixels = width * height;
+  if (pixels >= 3840 * 2160) return 20_000_000;
+  if (pixels >= 1920 * 1080) return 5_000_000;
+  if (pixels >= 1280 * 720) return 2_500_000;
+  if (pixels >= 854 * 480) return 1_000_000;
+  if (pixels >= 640 * 360) return 800_000;
+  return 500_000;
 }
