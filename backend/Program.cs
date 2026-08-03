@@ -69,6 +69,7 @@ builder.Services.AddSingleton<IFfmpegRunner, FfmpegRunner>();
 builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>();
 builder.Services.AddSingleton<IMediaProbeService, MediaProbeService>();
 builder.Services.AddSingleton<ISitiAnalysisService, SitiAnalysisService>();
+builder.Services.AddSingleton<IVmafAnalysisService, VmafAnalysisService>();
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => {
     options.MultipartBodyLengthLimit = 524_288_000;
