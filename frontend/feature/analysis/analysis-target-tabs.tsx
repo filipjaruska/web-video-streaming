@@ -11,6 +11,7 @@ import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
 import { VmafChart } from "@/feature/analysis/vmaf-chart";
+import { RdScatterChart } from "@/feature/analysis/rd-scatter-chart";
 import { TranscodeAnalysisCard } from "@/feature/analysis/transcode-analysis-card";
 import { formatTargetStatus } from "@/lib/analysisLabels";
 import { getPublicApiUrl } from "@/lib/env";
@@ -120,23 +121,26 @@ export function AnalysisTargetTabs({
 }: AnalysisTargetTabsProps) {
   const source = targets.find((target) => target.kind === "source");
   const transcodes = targets.filter((target) => target.kind === "transcode");
-  const activeTranscode =
-    transcodes.find((target) => target.label.includes("(active)")) ??
-    transcodes[0];
+  const staticTranscode =
+    transcodes.find((t) => t.ladderKind === "static") ??
+    transcodes.find((t) => t.series.encodeGrid?.length);
+  const dynamicTranscode = transcodes.find((t) => t.ladderKind === "dynamic");
+  const packagedWithVmaf = transcodes.filter(
+    (t) => collectVmafEntries(t.series.vmafByFormat).length > 0,
+  );
 
-  const vmafEntries = useMemo(() => {
-    const fromActive = collectVmafEntries(activeTranscode?.series.vmafByFormat);
-    if (fromActive.length > 0) {
-      return fromActive;
-    }
-    for (const target of transcodes) {
-      const entries = collectVmafEntries(target.series.vmafByFormat);
-      if (entries.length > 0) {
-        return entries;
-      }
-    }
-    return [];
-  }, [activeTranscode, transcodes]);
+  const [selectedTranscodeId, setSelectedTranscodeId] = useState<string | null>(
+    null,
+  );
+  const selectedTranscode =
+    packagedWithVmaf.find((t) => t.id === selectedTranscodeId) ??
+    packagedWithVmaf.find((t) => t.label.includes("(active)")) ??
+    packagedWithVmaf[0];
+
+  const vmafEntries = useMemo(
+    () => collectVmafEntries(selectedTranscode?.series.vmafByFormat),
+    [selectedTranscode],
+  );
 
   const formats = useMemo(() => {
     const set = new Set<FormatKey>();
@@ -161,6 +165,9 @@ export function AnalysisTargetTabs({
           (entry) =>
             entry.format === resolvedFormat && entry.label === resolvedLabel,
         )?.data;
+
+  const encodeGrid = staticTranscode?.series.encodeGrid ?? [];
+  const derivedLadder = staticTranscode?.series.derivedLadder;
 
   const { mediaNodes, sitiNode } = useMemo(
     () =>
@@ -226,7 +233,8 @@ export function AnalysisTargetTabs({
               <CardTitle className="text-base">No transcodes yet</CardTitle>
               <CardDescription>
                 After HLS/DASH packaging finishes, each transcode appears here
-                with probe metadata and per-rendition SI/TI.
+                with probe metadata and per-rendition SI/TI. A second dynamic
+                ladder packaging may follow encode-grid derivation.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -243,16 +251,74 @@ export function AnalysisTargetTabs({
       </TabsContent>
 
       <TabsContent value="quality" className="mt-4 space-y-4">
+        {(encodeGrid.length > 0 || derivedLadder) && (
+          <>
+            <RdScatterChart
+              encodeGrid={encodeGrid}
+              derivedLadder={derivedLadder}
+            />
+            {derivedLadder && derivedLadder.variants.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Derived ladder ({derivedLadder.name})
+                  </CardTitle>
+                  <CardDescription>
+                    Crossover-selected CBR targets used for the second
+                    (dynamic) packaging run
+                    {dynamicTranscode ? " — see Transcodes tab." : "."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b text-muted-foreground">
+                          <th className="py-2 pr-3 font-medium">Rung</th>
+                          <th className="py-2 pr-3 font-medium">Resolution</th>
+                          <th className="py-2 pr-3 font-medium">Bitrate</th>
+                          <th className="py-2 font-medium">Pred. VMAF</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {derivedLadder.variants.map((v) => (
+                          <tr
+                            key={v.label}
+                            className="border-b border-border/50 last:border-b-0"
+                          >
+                            <td className="py-1.5 pr-3 font-mono text-xs">
+                              {v.label}
+                            </td>
+                            <td className="py-1.5 pr-3 font-mono text-xs">
+                              {v.resolution.replace(":", "×")}
+                            </td>
+                            <td className="py-1.5 pr-3 font-mono text-xs">
+                              {v.bitrate}
+                            </td>
+                            <td className="py-1.5 font-mono text-xs">
+                              {v.predictedVmaf != null
+                                ? v.predictedVmaf.toFixed(2)
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        )}
+
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <CardTitle className="text-base">VMAF</CardTitle>
+                <CardTitle className="text-base">Packaged ladder VMAF</CardTitle>
                 <CardDescription>
-                  Full-reference scores comparing each HLS/DASH ladder rung to
-                  the source upload. Computed automatically during upload
-                  processing (after packaging). Mean VMAF and bitrate are the RD
-                  points for later ladder derivation.
+                  Full-reference scores for each packaged HLS/DASH rung vs
+                  source. Compare static vs dynamic ladders when both exist.
                 </CardDescription>
               </div>
               <Badge variant={vmafEntries.length === 0 ? "secondary" : "outline"}>
@@ -261,6 +327,31 @@ export function AnalysisTargetTabs({
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {packagedWithVmaf.length > 1 && (
+              <div className="flex flex-wrap gap-2">
+                {packagedWithVmaf.map((t) => (
+                  <Button
+                    key={t.id}
+                    size="sm"
+                    variant={
+                      selectedTranscode?.id === t.id ? "default" : "outline"
+                    }
+                    onClick={() => {
+                      setSelectedTranscodeId(t.id);
+                      setSelectedFormat(null);
+                      setSelectedLabel(null);
+                    }}
+                  >
+                    {t.ladderKind === "dynamic"
+                      ? "Dynamic"
+                      : t.ladderKind === "static"
+                        ? "Static"
+                        : t.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+
             {vmafEntries.length > 0 ? (
               <>
                 <div>
@@ -315,9 +406,9 @@ export function AnalysisTargetTabs({
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No VMAF series yet. Re-upload a video — the pipeline runs VMAF
-                after HLS/DASH packaging (progress step ~92%). Requires ffmpeg
-                with libvmaf.
+                No packaged VMAF yet. Re-upload — the pipeline packages a static
+                ladder (VMAF ~40%), then runs encode-grid (~45–76%) + crossover and a
+                second dynamic packaging when derivation succeeds.
               </p>
             )}
           </CardContent>

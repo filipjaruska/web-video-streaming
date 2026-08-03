@@ -60,10 +60,37 @@ export interface FormatVmafSeries {
   dash?: Record<string, VmafSeriesData>;
 }
 
+export interface EncodeGridPoint {
+  label: string;
+  width: number;
+  height: number;
+  crf: number;
+  bitrateBps: number;
+  vmafMean: number;
+  vmafHarmonicMean?: number;
+  vmafMin?: number;
+  error?: string;
+}
+
+export interface DerivedLadderVariant {
+  label: string;
+  resolution: string;
+  bitrate: string;
+  bitrateBps: number;
+  predictedVmaf?: number;
+}
+
+export interface DerivedLadderDocument {
+  name: string;
+  variants: DerivedLadderVariant[];
+}
+
 export interface AnalysisSeriesDocument {
   siti?: SitiSeriesData;
   sitiByFormat?: FormatSitiSeries;
   vmafByFormat?: FormatVmafSeries;
+  encodeGrid?: EncodeGridPoint[];
+  derivedLadder?: DerivedLadderDocument;
 }
 
 export type AnalysisTargetKind = "source" | "transcode" | "futureTest";
@@ -81,6 +108,7 @@ export interface AnalysisTarget {
   kind: AnalysisTargetKind;
   status: AnalysisTargetStatus;
   transcodeId?: string;
+  ladderKind?: "static" | "dynamic";
   tree: AnalysisTreeDocument;
   series: AnalysisSeriesDocument;
 }
