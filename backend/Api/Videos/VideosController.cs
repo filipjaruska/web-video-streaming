@@ -39,6 +39,30 @@ public class VideosController : ControllerBase {
         });
     }
 
+    [HttpGet("{routeId}/transcodes")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListTranscodes(string routeId, CancellationToken cancellationToken) {
+        var response = await _catalog.ListTranscodesAsync(routeId, cancellationToken);
+        if (response == null) {
+            return NotFound(new { message = "Video not found" });
+        }
+
+        return Ok(new {
+            activeTranscodeId = response.ActiveTranscodeId,
+            transcodes = response.Transcodes.Select(item => new {
+                id = item.Id,
+                ladderKind = item.LadderKind,
+                label = item.Label,
+                hasHls = item.HasHls,
+                hasDash = item.HasDash,
+                isActive = item.IsActive,
+                status = item.Status,
+                createdAtUtc = item.CreatedAtUtc
+            })
+        });
+    }
+
     [HttpDelete("{routeId}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

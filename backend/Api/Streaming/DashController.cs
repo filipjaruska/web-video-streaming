@@ -16,9 +16,46 @@ public class DashController : ControllerBase {
         _storage = storage;
     }
 
+    [HttpGet("{routeId}/t/{transcodeId}/manifest.mpd")]
+    public async Task<IActionResult> GetManifestForTranscode(
+        string routeId,
+        string transcodeId,
+        CancellationToken cancellationToken) {
+        var id = await ResolveTranscodeIdAsync(routeId, transcodeId, cancellationToken);
+        if (id == null) {
+            return NotFound();
+        }
+
+        var filePath = _storage.GetDashManifestPath(routeId, id.Value);
+        return filePath == null ? NotFound() : PhysicalFile(filePath, "application/dash+xml");
+    }
+
+    [HttpGet("{routeId}/t/{transcodeId}/{segment}")]
+    public async Task<IActionResult> GetSegmentForTranscode(
+        string routeId,
+        string transcodeId,
+        string segment,
+        CancellationToken cancellationToken) {
+        var id = await ResolveTranscodeIdAsync(routeId, transcodeId, cancellationToken);
+        if (id == null) {
+            return segment.EndsWith(".m4s") || segment.EndsWith(".mp4")
+                ? NotFound()
+                : BadRequest("Invalid segment");
+        }
+
+        var filePath = _storage.GetDashSegmentPath(routeId, id.Value, segment);
+        if (filePath == null) {
+            return segment.EndsWith(".m4s") || segment.EndsWith(".mp4")
+                ? NotFound()
+                : BadRequest("Invalid segment");
+        }
+
+        return PhysicalFile(filePath, "video/mp4");
+    }
+
     [HttpGet("{routeId}/manifest.mpd")]
     public async Task<IActionResult> GetManifest(string routeId, CancellationToken cancellationToken) {
-        var transcodeId = await ResolveActiveTranscodeIdAsync(routeId, requireDash: true, cancellationToken);
+        var transcodeId = await ResolveTranscodeIdAsync(routeId, requestedTranscodeId: null, cancellationToken);
         if (transcodeId == null) {
             return NotFound();
         }
@@ -29,7 +66,7 @@ public class DashController : ControllerBase {
 
     [HttpGet("{routeId}/{segment}")]
     public async Task<IActionResult> GetSegment(string routeId, string segment, CancellationToken cancellationToken) {
-        var transcodeId = await ResolveActiveTranscodeIdAsync(routeId, requireDash: true, cancellationToken);
+        var transcodeId = await ResolveTranscodeIdAsync(routeId, requestedTranscodeId: null, cancellationToken);
         if (transcodeId == null) {
             return segment.EndsWith(".m4s") || segment.EndsWith(".mp4")
                 ? NotFound()
@@ -46,16 +83,24 @@ public class DashController : ControllerBase {
         return PhysicalFile(filePath, "video/mp4");
     }
 
-    private async Task<Guid?> ResolveActiveTranscodeIdAsync(string routeId, bool requireDash, CancellationToken cancellationToken) {
-        var video = await _catalog.GetByRouteIdAsync(routeId, cancellationToken);
-        if (video?.ActiveTranscodeId == null) {
-            return null;
+    private async Task<Guid?> ResolveTranscodeIdAsync(
+        string routeId,
+        string? requestedTranscodeId,
+        CancellationToken cancellationToken) {
+        Guid? parsed = null;
+        if (!string.IsNullOrWhiteSpace(requestedTranscodeId)) {
+            if (!Guid.TryParse(requestedTranscodeId, out var guid)) {
+                return null;
+            }
+
+            parsed = guid;
         }
 
-        if (requireDash && video.ActiveTranscode?.HasDash != true) {
-            return null;
-        }
-
-        return video.ActiveTranscodeId;
+        return await _catalog.ResolveStreamTranscodeIdAsync(
+            routeId,
+            parsed,
+            requireHls: false,
+            requireDash: true,
+            cancellationToken);
     }
 }

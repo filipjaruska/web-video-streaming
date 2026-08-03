@@ -14,6 +14,7 @@ interface UseVideoPlayerProps {
   abrAlgorithm: AbrAlgorithm;
   apiUrl: string;
   routeId: string;
+  transcodeId?: string | null;
   onStatsUpdate?: (stats: Partial<CurrentStats>) => void;
 }
 
@@ -26,13 +27,18 @@ export function useVideoPlayer({
   abrAlgorithm,
   apiUrl,
   routeId,
+  transcodeId = null,
   onStatsUpdate,
 }: UseVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const dashRef = useRef<any>(null);
+  const playListenerRef = useRef<((e: Event) => void) | null>(null);
+  const sessionRef = useRef(0);
+
   const [hlsInstance, setHlsInstance] = useState<Hls | null>(null);
   const [dashInstance, setDashInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const playListenerRef = useRef<(() => void) | null>(null);
 
   useVideoStatsTracking({
     videoElement: videoRef.current,
@@ -43,109 +49,116 @@ export function useVideoPlayer({
   });
 
   useEffect(() => {
-    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
 
+    const session = ++sessionRef.current;
     setError(null);
-
-    cleanupInstances();
+    teardownPlayers(video);
 
     if (streamingMethod === "hls") {
-      initializeHls();
+      setupHls(video, session);
     } else if (streamingMethod === "dash") {
-      initializeDash();
+      void setupDash(video, session);
     } else {
-      initializeHttpRange();
+      setupHttpRange(video);
     }
 
-    // Cleanup on unmount or when dependencies change
-    return cleanupInstances;
-
+    return () => {
+      sessionRef.current += 1;
+      teardownPlayers(video);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamingMethod, abrAlgorithm, apiUrl, routeId]);
+  }, [streamingMethod, abrAlgorithm, apiUrl, routeId, transcodeId]);
 
-  function cleanupInstances() {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.currentTime = 0;
-    }
-
-    if (playListenerRef.current && videoRef.current) {
-      videoRef.current.removeEventListener("play", playListenerRef.current);
+  function removePlayListener(video: HTMLVideoElement) {
+    if (playListenerRef.current) {
+      video.removeEventListener("play", playListenerRef.current);
       playListenerRef.current = null;
-    }
-
-    if (hlsInstance) {
-      try {
-        hlsInstance.destroy();
-      } catch (e) {
-        console.error("Error destroying HLS instance:", e);
-      }
-      setHlsInstance(null);
-    }
-
-    if (dashInstance) {
-      try {
-        // Only reset if the player is actually initialized
-        if (dashInstance.isReady && dashInstance.isReady()) {
-          dashInstance.reset();
-        }
-      } catch (e) {
-        // Silently ignore reset errors - player may not be fully initialized
-      }
-      setDashInstance(null);
-    }
-
-    // Clear video src for clean state
-    if (videoRef.current) {
-      videoRef.current.removeAttribute("src");
-      videoRef.current.load();
     }
   }
 
-  /**
-   * Initialize HLS streaming
-   */
-  function initializeHls() {
-    if (!videoRef.current) return;
+  function teardownPlayers(video: HTMLVideoElement) {
+    removePlayListener(video);
 
+    const hls = hlsRef.current;
+    if (hls) {
+      hlsRef.current = null;
+      setHlsInstance(null);
+      try {
+        hls.destroy();
+      } catch {
+        // ignore
+      }
+    }
+
+    const dash = dashRef.current;
+    if (dash) {
+      dashRef.current = null;
+      setDashInstance(null);
+      try {
+        if (typeof dash.reset === "function") {
+          dash.reset();
+        }
+        if (typeof dash.destroy === "function") {
+          dash.destroy();
+        }
+      } catch {
+        // dash.js may log SourceBuffer noise during teardown
+      }
+    }
+
+    try {
+      video.pause();
+    } catch {
+      // ignore
+    }
+
+    // Clear src without load() — load() races MSE teardown and causes
+    // CHUNK_DEMUXER / SourceBuffer append failures on the next init.
+    try {
+      video.removeAttribute("src");
+      video.srcObject = null;
+    } catch {
+      // ignore
+    }
+  }
+
+  function setupHls(video: HTMLVideoElement, session: number) {
     if (Hls.isSupported()) {
-      const hlsConfig = createHlsConfig(abrAlgorithm);
-      const hls = new Hls(hlsConfig);
-      const hlsUrl = getVideoUrl("hls", apiUrl, routeId);
+      const hls = new Hls(createHlsConfig(abrAlgorithm));
+      const hlsUrl = getVideoUrl("hls", apiUrl, routeId, transcodeId);
+
+      hlsRef.current = hls;
+      setHlsInstance(hls);
 
       hls.loadSource(hlsUrl);
-      hls.attachMedia(videoRef.current);
+      hls.attachMedia(video);
 
-      // Start loading only when user interacts (play button)
       const startLoad = () => {
+        if (sessionRef.current !== session) return;
         hls.startLoad();
-        if (playListenerRef.current && videoRef.current) {
-          videoRef.current.removeEventListener("play", playListenerRef.current);
-          playListenerRef.current = null;
-        }
+        removePlayListener(video);
       };
       playListenerRef.current = startLoad;
-      videoRef.current.addEventListener("play", startLoad);
+      video.addEventListener("play", startLoad);
 
-      // Lock to highest quality for baseline mode
       if (abrAlgorithm === "baseline") {
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (sessionRef.current !== session) return;
           hls.currentLevel = hls.levels.length - 1;
         });
       }
 
-      // Handle errors
       hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (sessionRef.current !== session) return;
         if (data.fatal) {
           console.error("HLS error:", data);
           setError(`HLS Error: ${data.type} - ${data.details}`);
         }
       });
-
-      setHlsInstance(hls);
-    } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
-      // Native HLS support (Safari)
-      videoRef.current.src = getVideoUrl("hls", apiUrl, routeId);
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = getVideoUrl("hls", apiUrl, routeId, transcodeId);
     } else {
       setError(
         "HLS is not supported in this browser. Please use a modern browser like Google Chrome or a Chromium-based alternative.",
@@ -153,58 +166,68 @@ export function useVideoPlayer({
     }
   }
 
-  /**
-   * Initialize DASH streaming
-   */
-  async function initializeDash() {
-    if (!videoRef.current) return;
-
-    // Dynamically import dashjs only on client side
+  async function setupDash(video: HTMLVideoElement, session: number) {
     const dashjs = await import("dashjs");
+    if (sessionRef.current !== session || videoRef.current !== video) {
+      return;
+    }
+
     const dash = dashjs.MediaPlayer().create();
-    const dashSettings = createDashSettings(abrAlgorithm);
-    const dashUrl = getVideoUrl("dash", apiUrl, routeId);
+    const dashUrl = getVideoUrl("dash", apiUrl, routeId, transcodeId);
 
-    dash.updateSettings(dashSettings);
+    dash.updateSettings(createDashSettings(abrAlgorithm));
 
-    // Set up video element first - use a data URL to make play button work
-    const dataUrl =
-      "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMQAAAAhmcmVlAAAAG21kYXQAAAGzABAHAAABthADAowdbb9/AAAC6W1vb3YAAABsbXZoZAAAAAB8JbCAfCWwgAAAA+gAAAAAAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAIVdHJhawAAAFx0a2hkAAAAD3wlsIB8JbCAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAIAAAACAAAAAABsW1kaWEAAAAgbWRoZAAAAAB8JbCAfCWwgAAAA+gAAAAAVcQAAAAAAC1oZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAAXxtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAE8c3RibAAAALhzdHNkAAAAAAAAAAEAAACobXA0dgAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAIAAgASAAAAEgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAAFJlc2RzAAAAAANEAAEABDwgEQAAAAADDUAAAAAABS0AAAGwAQAAAbWJEwAAAQAAAAEgAMSNiB9FAEQBFGMAAAGyTGF2YzUyLjg3LjQGAQIAAAAYc3R0cwAAAAAAAAABAAAAAQAAAAAAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAEAAAABAAAAFHN0c3oAAAAAAAAAEwAAAAEAAAAUc3RjbwAAAAAAAAABAAAALAAAAGB1ZHRhAAAAWG1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAAK2lsc3QAAAAjqXRvbwAAABtkYXRhAAAAAQAAAABMYXZmNTIuNzguMw==";
+    dashRef.current = dash;
+    setDashInstance(dash);
 
-    videoRef.current.src = dataUrl;
-
-    // When play is clicked, prevent default and initialize DASH instead
-    const onPlay = (e: Event) => {
-      e.preventDefault();
-      if (!videoRef.current) return;
-      videoRef.current.pause();
-      // DASH will take over the video element
-      dash.initialize(videoRef.current, dashUrl, true);
-      if (playListenerRef.current && videoRef.current) {
-        videoRef.current.removeEventListener("play", playListenerRef.current);
-        playListenerRef.current = null;
-      }
-    };
-    playListenerRef.current = onPlay as () => void;
-    videoRef.current.addEventListener("play", onPlay);
-
-    // Handle errors
     dash.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
-      console.error("DASH error:", e);
-      setError(`DASH Error: ${e.error?.code || "Unknown error"}`);
+      if (sessionRef.current !== session || dashRef.current !== dash) return;
+      const message = formatDashError(e);
+      console.error("DASH error:", message, e);
+      setError(`DASH Error: ${message}`);
     });
 
-    setDashInstance(dash);
+    // Placeholder only so native controls show Play — do not fetch the MPD
+    // or buffer segments until the user actually presses play (same intent as
+    // HLS autoStartLoad: false). Cleared before MSE attach below.
+    video.src = DASH_PLAY_PLACEHOLDER;
+
+    const onPlay = (e: Event) => {
+      e.preventDefault();
+      if (sessionRef.current !== session || !videoRef.current) return;
+      if (dashRef.current !== dash) return;
+
+      removePlayListener(video);
+
+      try {
+        video.pause();
+      } catch {
+        // ignore
+      }
+
+      // Fully reset the progressive placeholder pipeline before MSE attach.
+      try {
+        video.removeAttribute("src");
+        video.srcObject = null;
+        video.load();
+      } catch {
+        // ignore
+      }
+
+      // Let the reset settle one frame, then start DASH (still only after Play).
+      requestAnimationFrame(() => {
+        if (sessionRef.current !== session || dashRef.current !== dash) return;
+        if (!videoRef.current) return;
+        dash.initialize(videoRef.current, dashUrl, true);
+      });
+    };
+
+    playListenerRef.current = onPlay;
+    video.addEventListener("play", onPlay);
   }
 
-  /**
-   * Initialize HTTP Range streaming (progressive download)
-   */
-  function initializeHttpRange() {
-    if (!videoRef.current) return;
-
-    const videoUrl = getVideoUrl("http-range", apiUrl, routeId);
-    videoRef.current.src = videoUrl;
+  function setupHttpRange(video: HTMLVideoElement) {
+    video.src = getVideoUrl("http-range", apiUrl, routeId);
   }
 
   return {
@@ -213,4 +236,21 @@ export function useVideoPlayer({
     hlsInstance,
     dashInstance,
   };
+}
+
+/** Minimal MP4 so <video controls> exposes Play without starting DASH fetch. */
+const DASH_PLAY_PLACEHOLDER =
+  "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMQAAAAhmcmVlAAAAG21kYXQAAAGzABAHAAABthADAowdbb9/AAAC6W1vb3YAAABsbXZoZAAAAAB8JbCAfCWwgAAAA+gAAAAAAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAIVdHJhawAAAFx0a2hkAAAAD3wlsIB8JbCAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAIAAAACAAAAAABsW1kaWEAAAAgbWRoZAAAAAB8JbCAfCWwgAAAA+gAAAAAVcQAAAAAAC1oZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAAXxtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAE8c3RibAAAALhzdHNkAAAAAAAAAAEAAACobXA0dgAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAIAAgASAAAAEgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABj//wAAAFJlc2RzAAAAAANEAAEABDwgEQAAAAADDUAAAAAABS0AAAGwAQAAAbWJEwAAAQAAAAEgAMSNiB9FAEQBFGMAAAGyTGF2YzUyLjg3LjQGAQIAAAAYc3R0cwAAAAAAAAABAAAAAQAAAAAAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAEAAAABAAAAFHN0c3oAAAAAAAAAEwAAAAEAAAAUc3RjbwAAAAAAAAABAAAALAAAAGB1ZHRhAAAAWG1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAAK2lsc3QAAAAjqXRvbwAAABtkYXRhAAAAAQAAAABMYXZmNTIuNzguMw==";
+
+function formatDashError(e: any): string {
+  const err = e?.error ?? e;
+  if (typeof err === "string") return err;
+  if (err?.message) return String(err.message);
+  if (err?.code != null) return String(err.code);
+  if (e?.event?.error?.message) return String(e.event.error.message);
+  try {
+    return JSON.stringify(err) || "Unknown error";
+  } catch {
+    return "Unknown error";
+  }
 }

@@ -146,14 +146,18 @@ public class VideoTranscodingService : IVideoTranscodingService {
 
                 ffmpegArgs.Append($@"-map ""[v{i}]"" ");
                 ffmpegArgs.Append($@"-c:v:{i} {profile.VideoCodec} -b:v:{i} {variant.Bitrate} -maxrate:{i} {variant.Bitrate} -bufsize:{i} {bitrateNum * 2}k ");
-                ffmpegArgs.Append($@"-map 0:a? ");
-                ffmpegArgs.Append($@"-c:a:{i} {profile.AudioCodec} -b:a:{i} {profile.AudioBitrate} ");
             }
+
+            // Single stereo audio AdaptationSet (matches HLS). Mapping audio per
+            // rung produces broken multi-AS MPDs and preserves 5.1 that MSE rejects.
+            ffmpegArgs.Append($@"-map 0:a:0? ");
+            ffmpegArgs.Append($@"-c:a:0 {profile.AudioCodec} -b:a:0 {profile.AudioBitrate} -ac 2 ");
 
             ffmpegArgs.Append($@"-f dash ");
             ffmpegArgs.Append($@"-seg_duration {profile.SegmentDurationSeconds} ");
             ffmpegArgs.Append($@"-use_template 1 ");
             ffmpegArgs.Append($@"-use_timeline 1 ");
+            ffmpegArgs.Append($@"-adaptation_sets ""id=0,streams=v id=1,streams=a"" ");
             ffmpegArgs.Append($@"-init_seg_name ""init-$RepresentationID$.m4s"" ");
             ffmpegArgs.Append($@"-media_seg_name ""chunk-$RepresentationID$-$Number%05d$.m4s"" ");
             ffmpegArgs.Append($@"""{manifestPath}""");

@@ -158,4 +158,9 @@
         transparent
       );
   }
+
+  /* Watch page: keep native video controls readable on the chrome strip */
+  video::-webkit-media-controls-panel {
+    background-image: linear-gradient(transparent, oklch(0 0 0 / 0.55));
+  }
 }

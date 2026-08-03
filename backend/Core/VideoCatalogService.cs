@@ -16,9 +16,32 @@ public sealed class VideoListItem {
     public bool HasDash { get; init; }
 }
 
+public sealed class VideoTranscodeListItem {
+    public required string Id { get; init; }
+    public required string LadderKind { get; init; }
+    public required string Label { get; init; }
+    public bool HasHls { get; init; }
+    public bool HasDash { get; init; }
+    public bool IsActive { get; init; }
+    public required string Status { get; init; }
+    public DateTime CreatedAtUtc { get; init; }
+}
+
+public sealed class VideoTranscodesResponse {
+    public string? ActiveTranscodeId { get; init; }
+    public required IReadOnlyList<VideoTranscodeListItem> Transcodes { get; init; }
+}
+
 public interface IVideoCatalogService {
     Task<Video?> GetByRouteIdAsync(string routeId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<VideoListItem>> ListPublishedAsync(CancellationToken cancellationToken = default);
+    Task<VideoTranscodesResponse?> ListTranscodesAsync(string routeId, CancellationToken cancellationToken = default);
+    Task<Guid?> ResolveStreamTranscodeIdAsync(
+        string routeId,
+        Guid? requestedTranscodeId,
+        bool requireHls,
+        bool requireDash,
+        CancellationToken cancellationToken = default);
     Task<bool> DeleteByRouteIdAsync(string routeId, CancellationToken cancellationToken = default);
 }
 
@@ -62,6 +85,92 @@ public class VideoCatalogService : IVideoCatalogService {
             HasDash = video.ActiveTranscode?.HasDash == true
         }).ToList();
     }
+
+    public async Task<VideoTranscodesResponse?> ListTranscodesAsync(
+        string routeId,
+        CancellationToken cancellationToken = default) {
+        var video = await _dbContext.Videos
+            .AsNoTracking()
+            .Include(item => item.Transcodes)
+            .FirstOrDefaultAsync(
+                item => item.RouteId == routeId && item.PublishedAtUtc != null,
+                cancellationToken);
+
+        if (video == null) {
+            return null;
+        }
+
+        var items = video.Transcodes
+            .Where(item =>
+                item.Status is TranscodeStatus.Succeeded or TranscodeStatus.Running)
+            .OrderBy(item => item.CreatedAtUtc)
+            .Select(item => new VideoTranscodeListItem {
+                Id = item.Id.ToString("N"),
+                LadderKind = item.LadderKind == LadderKind.Dynamic ? "dynamic" : "static",
+                Label = FormatLadderLabel(item.LadderKind),
+                HasHls = item.HasHls,
+                HasDash = item.HasDash,
+                IsActive = video.ActiveTranscodeId == item.Id,
+                Status = item.Status.ToString().ToLowerInvariant(),
+                CreatedAtUtc = item.CreatedAtUtc
+            })
+            .ToList();
+
+        return new VideoTranscodesResponse {
+            ActiveTranscodeId = video.ActiveTranscodeId?.ToString("N"),
+            Transcodes = items
+        };
+    }
+
+    public async Task<Guid?> ResolveStreamTranscodeIdAsync(
+        string routeId,
+        Guid? requestedTranscodeId,
+        bool requireHls,
+        bool requireDash,
+        CancellationToken cancellationToken = default) {
+        var video = await _dbContext.Videos
+            .AsNoTracking()
+            .Include(item => item.ActiveTranscode)
+            .Include(item => item.Transcodes)
+            .FirstOrDefaultAsync(
+                item => item.RouteId == routeId && item.PublishedAtUtc != null,
+                cancellationToken);
+
+        if (video == null) {
+            return null;
+        }
+
+        Transcode? transcode;
+        if (requestedTranscodeId == null) {
+            if (video.ActiveTranscodeId == null) {
+                return null;
+            }
+
+            transcode = video.ActiveTranscode
+                ?? video.Transcodes.FirstOrDefault(item => item.Id == video.ActiveTranscodeId);
+        } else {
+            transcode = video.Transcodes.FirstOrDefault(item => item.Id == requestedTranscodeId.Value);
+        }
+
+        if (transcode == null || transcode.Status != TranscodeStatus.Succeeded) {
+            return null;
+        }
+
+        if (requireHls && !transcode.HasHls) {
+            return null;
+        }
+
+        if (requireDash && !transcode.HasDash) {
+            return null;
+        }
+
+        return transcode.Id;
+    }
+
+    private static string FormatLadderLabel(LadderKind ladderKind) =>
+        ladderKind == LadderKind.Dynamic
+            ? "Dynamic ladder (VMAF crossover)"
+            : "Static ladder";
 
     public async Task<bool> DeleteByRouteIdAsync(string routeId, CancellationToken cancellationToken = default) {
         var video = await _dbContext.Videos
