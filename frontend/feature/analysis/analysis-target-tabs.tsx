@@ -8,7 +8,7 @@ import type {
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
-import { TranscodeScaffoldCard } from "@/feature/analysis/transcode-scaffold-card";
+import { TranscodeAnalysisCard } from "@/feature/analysis/transcode-analysis-card";
 import { formatTargetStatus } from "@/lib/analysisLabels";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -87,14 +87,14 @@ export function AnalysisTargetTabs({
             <CardHeader>
               <CardTitle className="text-base">No transcodes yet</CardTitle>
               <CardDescription>
-                After HLS/DASH processing finishes, each transcode will appear here
-                with planned probe scaffolds.
+                After HLS/DASH packaging finishes, each transcode appears here
+                with probe metadata and per-rendition SI/TI.
               </CardDescription>
             </CardHeader>
           </Card>
         ) : (
           transcodes.map((target, index) => (
-            <TranscodeScaffoldCard
+            <TranscodeAnalysisCard
               key={target.id}
               target={target}
               transcodeNumber={index + 1}

@@ -89,6 +89,8 @@ function buildStatsFromSeries(data: SitiSeriesData): AnalysisTreeNode {
 interface SitiChartProps {
   data?: SitiSeriesData | null;
   stats?: AnalysisTreeNode | null;
+  title?: string;
+  description?: string;
 }
 
 function SitiStatsList({ node }: { node: AnalysisTreeNode }) {
@@ -129,7 +131,12 @@ function SitiStatsList({ node }: { node: AnalysisTreeNode }) {
   );
 }
 
-export function SitiChart({ data, stats }: SitiChartProps) {
+export function SitiChart({
+  data,
+  stats,
+  title = "Spatial Information (SI) and Temporal Information (TI) analysis results",
+  description = "Spatial and temporal information (ITU-T P.910) for the source video.",
+}: SitiChartProps) {
   const hasSeries = !!data && data.si.length > 0;
   const points = React.useMemo(
     () => (hasSeries && data ? buildSeriesPoints(data) : []),
@@ -152,13 +159,8 @@ export function SitiChart({ data, stats }: SitiChartProps) {
   return (
     <Card className="pt-0">
       <CardHeader className="border-b py-5">
-        <CardTitle>
-          Spatial Information (SI) and Temporal Information (TI) analysis
-          results
-        </CardTitle>
-        <CardDescription>
-          Spatial and temporal information (ITU-T P.910) for the source video.
-        </CardDescription>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 px-2 pt-4 sm:px-6 sm:pt-6">
         {statsNode && <SitiStatsList node={statsNode} />}

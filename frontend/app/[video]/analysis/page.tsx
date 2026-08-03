@@ -61,7 +61,7 @@ export default async function AnalysisPage({ params }: AnalysisPageProps) {
   return (
     <PageShell
       title="Source analysis"
-      description={`MediaInfo-style metadata, SI/TI charts, and future quality tests for ${displayName}.`}
+      description={`MediaInfo-style metadata, SI/TI charts, and transcode analysis for ${displayName}.`}
       breadcrumb={
         <Breadcrumb>
           <BreadcrumbList>
