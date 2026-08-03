@@ -15,13 +15,14 @@ public sealed class VideoProcessingResult {
 }
 
 /// <summary>
-/// Post-upload processing steps for a video (media info → SI/TI → thumbnail → HLS → DASH).
+/// Post-upload processing steps for a video (media info → SI/TI → thumbnail → HLS → DASH → transcode analysis).
 /// </summary>
 public sealed class VideoProcessingPipeline {
     private readonly AppDbContext _dbContext;
     private readonly IVideoStorageService _storage;
     private readonly IVideoTranscodingService _transcoding;
     private readonly IVideoSourceAnalysisService _analysis;
+    private readonly ITranscodeAnalysisCollector _transcodeAnalysis;
     private readonly IMediaProbeService _mediaProbe;
     private readonly ISitiAnalysisService _sitiAnalysis;
     private readonly ILogger<VideoProcessingPipeline> _logger;
@@ -31,6 +32,7 @@ public sealed class VideoProcessingPipeline {
         IVideoStorageService storage,
         IVideoTranscodingService transcoding,
         IVideoSourceAnalysisService analysis,
+        ITranscodeAnalysisCollector transcodeAnalysis,
         IMediaProbeService mediaProbe,
         ISitiAnalysisService sitiAnalysis,
         ILogger<VideoProcessingPipeline> logger) {
@@ -38,6 +40,7 @@ public sealed class VideoProcessingPipeline {
         _storage = storage;
         _transcoding = transcoding;
         _analysis = analysis;
+        _transcodeAnalysis = transcodeAnalysis;
         _mediaProbe = mediaProbe;
         _sitiAnalysis = sitiAnalysis;
         _logger = logger;
@@ -97,6 +100,16 @@ public sealed class VideoProcessingPipeline {
                 error = string.IsNullOrEmpty(error)
                     ? dashResult.ErrorMessage
                     : $"{error}; {dashResult.ErrorMessage}";
+            }
+
+            if (hasHls || hasDash) {
+                await ReportSessionProgressAsync(video, 95, "Analyzing transcodes", cancellationToken);
+                await _transcodeAnalysis.CollectAsync(
+                    video.RouteId,
+                    transcode.Id,
+                    hasHls,
+                    hasDash,
+                    cancellationToken);
             }
         } catch (Exception ex) {
             _logger.LogError(ex, "Processing failed for video {VideoId}", videoId);

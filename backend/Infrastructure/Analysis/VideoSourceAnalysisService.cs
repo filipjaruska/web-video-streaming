@@ -152,6 +152,7 @@ public class VideoSourceAnalysisService : IVideoSourceAnalysisService {
             .AsNoTracking()
             .Include(item => item.SourceAnalysis)
             .Include(item => item.Transcodes)
+                .ThenInclude(transcode => transcode.Analysis)
             .FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
 
         if (video == null) {
@@ -169,16 +170,31 @@ public class VideoSourceAnalysisService : IVideoSourceAnalysisService {
             AnalysisTargetBuilder.BuildSourceTarget(tree, series)
         };
 
+        DateTime? latestUpdate = video.SourceAnalysis?.UpdatedAtUtc;
+
         foreach (var transcode in video.Transcodes.OrderBy(item => item.CreatedAtUtc)) {
+            AnalysisTreeDocument? transcodeTree = null;
+            AnalysisSeriesDocument? transcodeSeries = null;
+
+            if (transcode.Analysis != null) {
+                transcodeTree = AnalysisTreeNormalizer.Normalize(DeserializeTree(transcode.Analysis.TreeJson));
+                transcodeSeries = DeserializeSeries(transcode.Analysis.SeriesJson) ?? new AnalysisSeriesDocument();
+                if (latestUpdate == null || transcode.Analysis.UpdatedAtUtc > latestUpdate) {
+                    latestUpdate = transcode.Analysis.UpdatedAtUtc;
+                }
+            }
+
             targets.Add(AnalysisTargetBuilder.BuildTranscodeTarget(
                 transcode,
-                video.ActiveTranscodeId == transcode.Id));
+                video.ActiveTranscodeId == transcode.Id,
+                transcodeTree,
+                transcodeSeries));
         }
 
         return new VideoAnalysisDto {
             RouteId = routeId,
             SchemaVersion = 2,
-            UpdatedAtUtc = video.SourceAnalysis?.UpdatedAtUtc,
+            UpdatedAtUtc = latestUpdate,
             Targets = targets,
             FutureTests = AnalysisTargetBuilder.BuildFutureTests()
         };

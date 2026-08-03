@@ -12,6 +12,7 @@ public class AppDbContext : DbContext {
     public DbSet<UploadSession> UploadSessions => Set<UploadSession>();
     public DbSet<Transcode> Transcodes => Set<Transcode>();
     public DbSet<VideoSourceAnalysis> VideoSourceAnalyses => Set<VideoSourceAnalysis>();
+    public DbSet<VideoTranscodeAnalysis> VideoTranscodeAnalyses => Set<VideoTranscodeAnalysis>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         modelBuilder.Entity<Video>(entity => {
@@ -76,7 +77,19 @@ public class AppDbContext : DbContext {
                 .HasForeignKey(transcode => transcode.VideoId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasOne(transcode => transcode.Analysis)
+                .WithOne(analysis => analysis.Transcode)
+                .HasForeignKey<VideoTranscodeAnalysis>(analysis => analysis.TranscodeId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             entity.HasIndex(transcode => new { transcode.VideoId, transcode.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<VideoTranscodeAnalysis>(entity => {
+            entity.HasKey(analysis => analysis.TranscodeId);
+            entity.Property(analysis => analysis.TreeJson).HasColumnType("TEXT").IsRequired();
+            entity.Property(analysis => analysis.SeriesJson).HasColumnType("TEXT");
+            entity.Property(analysis => analysis.UpdatedAtUtc).IsRequired();
         });
     }
 }
