@@ -13,12 +13,23 @@ public interface ITranscodeAnalysisCollector {
         bool hasHls,
         bool hasDash,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Scores each HLS/DASH rung with full-reference VMAF vs source (upload pipeline step).
+    /// </summary>
+    Task CollectVmafAsync(
+        string routeId,
+        Guid transcodeId,
+        bool hasHls,
+        bool hasDash,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
     private readonly IVideoStorageService _storage;
     private readonly IMediaProbeService _mediaProbe;
     private readonly ISitiAnalysisService _sitiAnalysis;
+    private readonly IVmafAnalysisService _vmafAnalysis;
     private readonly IFfmpegRunner _ffmpeg;
     private readonly IVideoTranscodeAnalysisService _analysis;
     private readonly ILogger<TranscodeAnalysisCollector> _logger;
@@ -27,12 +38,14 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         IVideoStorageService storage,
         IMediaProbeService mediaProbe,
         ISitiAnalysisService sitiAnalysis,
+        IVmafAnalysisService vmafAnalysis,
         IFfmpegRunner ffmpeg,
         IVideoTranscodeAnalysisService analysis,
         ILogger<TranscodeAnalysisCollector> logger) {
         _storage = storage;
         _mediaProbe = mediaProbe;
         _sitiAnalysis = sitiAnalysis;
+        _vmafAnalysis = vmafAnalysis;
         _ffmpeg = ffmpeg;
         _analysis = analysis;
         _logger = logger;
@@ -46,12 +59,22 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         CancellationToken cancellationToken = default) {
         var profile = TranscodeProfile.Default;
         var sitiByFormat = new FormatSitiSeriesDocument();
+        var reference = await ResolveReferenceAsync(routeId, cancellationToken);
 
         if (hasHls) {
-            var hlsSeries = new Dictionary<string, SitiSeriesData>(StringComparer.OrdinalIgnoreCase);
-            await CollectHlsAsync(routeId, transcodeId, profile, hlsSeries, cancellationToken);
-            if (hlsSeries.Count > 0) {
-                sitiByFormat.Hls = hlsSeries;
+            var hlsSiti = new Dictionary<string, SitiSeriesData>(StringComparer.OrdinalIgnoreCase);
+            await CollectHlsAsync(
+                routeId,
+                transcodeId,
+                profile,
+                reference,
+                hlsSiti,
+                vmafByRendition: null,
+                runSiti: true,
+                runVmaf: false,
+                cancellationToken);
+            if (hlsSiti.Count > 0) {
+                sitiByFormat.Hls = hlsSiti;
             }
         } else {
             await _analysis.UpsertSectionAsync(
@@ -61,10 +84,19 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         }
 
         if (hasDash) {
-            var dashSeries = new Dictionary<string, SitiSeriesData>(StringComparer.OrdinalIgnoreCase);
-            await CollectDashAsync(routeId, transcodeId, profile, dashSeries, cancellationToken);
-            if (dashSeries.Count > 0) {
-                sitiByFormat.Dash = dashSeries;
+            var dashSiti = new Dictionary<string, SitiSeriesData>(StringComparer.OrdinalIgnoreCase);
+            await CollectDashAsync(
+                routeId,
+                transcodeId,
+                profile,
+                reference,
+                dashSiti,
+                vmafByRendition: null,
+                runSiti: true,
+                runVmaf: false,
+                cancellationToken);
+            if (dashSiti.Count > 0) {
+                sitiByFormat.Dash = dashSiti;
             }
         } else {
             await _analysis.UpsertSectionAsync(
@@ -73,59 +105,158 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
                 cancellationToken);
         }
 
-        if (sitiByFormat.Hls != null || sitiByFormat.Dash != null) {
-            await _analysis.SetSeriesAsync(
+        await PersistSeriesAsync(transcodeId, sitiByFormat, vmafByFormat: null, cancellationToken);
+    }
+
+    public async Task CollectVmafAsync(
+        string routeId,
+        Guid transcodeId,
+        bool hasHls,
+        bool hasDash,
+        CancellationToken cancellationToken = default) {
+        var profile = TranscodeProfile.Default;
+        var vmafByFormat = new FormatVmafSeriesDocument();
+        var reference = await ResolveReferenceAsync(routeId, cancellationToken);
+
+        if (hasHls) {
+            var hlsVmaf = new Dictionary<string, VmafSeriesData>(StringComparer.OrdinalIgnoreCase);
+            await CollectHlsAsync(
+                routeId,
                 transcodeId,
-                new AnalysisSeriesDocument { SitiByFormat = sitiByFormat },
+                profile,
+                reference,
+                sitiByRendition: null,
+                vmafByRendition: hlsVmaf,
+                runSiti: false,
+                runVmaf: true,
                 cancellationToken);
+            if (hlsVmaf.Count > 0) {
+                vmafByFormat.Hls = hlsVmaf;
+            }
         }
+
+        if (hasDash) {
+            var dashVmaf = new Dictionary<string, VmafSeriesData>(StringComparer.OrdinalIgnoreCase);
+            await CollectDashAsync(
+                routeId,
+                transcodeId,
+                profile,
+                reference,
+                sitiByRendition: null,
+                vmafByRendition: dashVmaf,
+                runSiti: false,
+                runVmaf: true,
+                cancellationToken);
+            if (dashVmaf.Count > 0) {
+                vmafByFormat.Dash = dashVmaf;
+            }
+        }
+
+        await _analysis.SetSeriesAsync(
+            transcodeId,
+            new AnalysisSeriesDocument { VmafByFormat = vmafByFormat },
+            cancellationToken);
+    }
+
+    private async Task PersistSeriesAsync(
+        Guid transcodeId,
+        FormatSitiSeriesDocument? sitiByFormat,
+        FormatVmafSeriesDocument? vmafByFormat,
+        CancellationToken cancellationToken) {
+        var hasSiti = sitiByFormat is { Hls: not null } or { Dash: not null };
+        var hasVmaf = vmafByFormat is { Hls: not null } or { Dash: not null };
+        if (!hasSiti && !hasVmaf) {
+            return;
+        }
+
+        await _analysis.SetSeriesAsync(
+            transcodeId,
+            new AnalysisSeriesDocument {
+                SitiByFormat = hasSiti ? sitiByFormat : null,
+                VmafByFormat = hasVmaf ? vmafByFormat : null
+            },
+            cancellationToken);
     }
 
     private async Task CollectHlsAsync(
         string routeId,
         Guid transcodeId,
         TranscodeProfile profile,
-        Dictionary<string, SitiSeriesData> sitiByRendition,
+        ReferenceVideoInfo? reference,
+        Dictionary<string, SitiSeriesData>? sitiByRendition,
+        Dictionary<string, VmafSeriesData>? vmafByRendition,
+        bool runSiti,
+        bool runVmaf,
         CancellationToken cancellationToken) {
-        await _analysis.MarkSectionRunningAsync(
-            transcodeId,
-            "hls",
-            "HLS",
-            "ffprobe-transcode",
-            cancellationToken);
+        if (runSiti) {
+            await _analysis.MarkSectionRunningAsync(
+                transcodeId,
+                "hls",
+                "HLS",
+                "ffprobe-transcode",
+                cancellationToken);
+        }
 
         try {
             var hlsDir = _storage.GetHlsDir(routeId, transcodeId);
             var sitiAverages = new Dictionary<string, (double AvgSi, double AvgTi)>(StringComparer.OrdinalIgnoreCase);
+            var vmafSummaries = new Dictionary<string, VmafSummary>(StringComparer.OrdinalIgnoreCase);
             var children = new List<AnalysisTreeNode> {
                 BuildHlsGeneralSection(profile, hlsDir)
             };
 
             foreach (var variant in profile.Variants) {
                 var playlistPath = Path.Combine(hlsDir, $"{variant.Label}.m3u8");
-                children.Add(await BuildHlsVariantSectionAsync(variant, playlistPath, profile, cancellationToken));
+                if (runSiti) {
+                    children.Add(await BuildHlsVariantSectionAsync(variant, playlistPath, profile, cancellationToken));
+                }
 
-                var sitiResult = await AnalyzeHlsRenditionSitiAsync(playlistPath, variant.Label, cancellationToken);
-                RecordSitiResult(variant.Label, sitiResult, sitiByRendition, sitiAverages);
+                await AnalyzeHlsRenditionAsync(
+                    playlistPath,
+                    variant,
+                    reference,
+                    sitiByRendition,
+                    vmafByRendition,
+                    sitiAverages,
+                    vmafSummaries,
+                    runSiti,
+                    runVmaf,
+                    cancellationToken);
             }
 
-            children.Add(BuildSitiSummarySection("hls.siti", "SI/TI (per rendition)", "hls", sitiAverages, profile));
+            if (runSiti) {
+                children.Add(BuildSitiSummarySection("hls.siti", "SI/TI (per rendition)", "hls", sitiAverages, profile));
+            }
 
-            await _analysis.UpsertSectionAsync(
-                transcodeId,
-                CompletedFormatSection("hls", "HLS", children),
-                cancellationToken);
+            var vmafSection = BuildVmafSummarySection("hls.vmaf", "VMAF (per rendition)", "hls", vmafSummaries, profile, runVmaf);
+            children.Add(vmafSection);
+
+            if (runSiti) {
+                await _analysis.UpsertSectionAsync(
+                    transcodeId,
+                    CompletedFormatSection("hls", "HLS", children),
+                    cancellationToken);
+            } else if (runVmaf) {
+                await UpsertVmafIntoExistingFormatSectionAsync(
+                    transcodeId,
+                    "hls",
+                    "HLS",
+                    vmafSection,
+                    cancellationToken);
+            }
 
             _logger.LogInformation("HLS analysis completed for {RouteId}/{TranscodeId}", routeId, transcodeId);
         } catch (Exception ex) {
             _logger.LogWarning(ex, "HLS analysis failed for {RouteId}/{TranscodeId}", routeId, transcodeId);
-            await _analysis.MarkSectionFailedAsync(
-                transcodeId,
-                "hls",
-                "HLS",
-                "ffprobe-transcode",
-                ex.Message,
-                cancellationToken);
+            if (runSiti) {
+                await _analysis.MarkSectionFailedAsync(
+                    transcodeId,
+                    "hls",
+                    "HLS",
+                    "ffprobe-transcode",
+                    ex.Message,
+                    cancellationToken);
+            }
         }
     }
 
@@ -133,58 +264,321 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         string routeId,
         Guid transcodeId,
         TranscodeProfile profile,
-        Dictionary<string, SitiSeriesData> sitiByRendition,
+        ReferenceVideoInfo? reference,
+        Dictionary<string, SitiSeriesData>? sitiByRendition,
+        Dictionary<string, VmafSeriesData>? vmafByRendition,
+        bool runSiti,
+        bool runVmaf,
         CancellationToken cancellationToken) {
-        await _analysis.MarkSectionRunningAsync(
-            transcodeId,
-            "dash",
-            "DASH",
-            "ffprobe-transcode",
-            cancellationToken);
+        if (runSiti) {
+            await _analysis.MarkSectionRunningAsync(
+                transcodeId,
+                "dash",
+                "DASH",
+                "ffprobe-transcode",
+                cancellationToken);
+        }
 
         try {
             var dashDir = _storage.GetDashDir(routeId, transcodeId);
             var manifestPath = Path.Combine(dashDir, "manifest.mpd");
             var sitiAverages = new Dictionary<string, (double AvgSi, double AvgTi)>(StringComparer.OrdinalIgnoreCase);
+            var vmafSummaries = new Dictionary<string, VmafSummary>(StringComparer.OrdinalIgnoreCase);
             var children = new List<AnalysisTreeNode>();
 
             var reps = ParseDashVideoRepresentations(manifestPath, profile);
-            children.Add(BuildDashGeneralSection(profile, manifestPath, reps));
+            if (runSiti) {
+                children.Add(BuildDashGeneralSection(profile, manifestPath, reps));
+            }
 
             foreach (var variant in profile.Variants) {
                 var rep = reps.FirstOrDefault(item =>
                     string.Equals(item.Label, variant.Label, StringComparison.OrdinalIgnoreCase));
-                children.Add(BuildDashVariantSection(variant, profile, rep));
+                if (runSiti) {
+                    children.Add(BuildDashVariantSection(variant, profile, rep));
+                }
 
                 if (rep == null) {
                     continue;
                 }
 
-                var sitiResult = await AnalyzeDashRenditionSitiAsync(
+                await AnalyzeDashRenditionAsync(
                     dashDir,
                     rep.RepresentationId,
-                    variant.Label,
+                    variant,
+                    reference,
+                    sitiByRendition,
+                    vmafByRendition,
+                    sitiAverages,
+                    vmafSummaries,
+                    runSiti,
+                    runVmaf,
                     cancellationToken);
-                RecordSitiResult(variant.Label, sitiResult, sitiByRendition, sitiAverages);
             }
 
-            children.Add(BuildSitiSummarySection("dash.siti", "SI/TI (per rendition)", "dash", sitiAverages, profile));
+            if (runSiti) {
+                children.Add(BuildSitiSummarySection("dash.siti", "SI/TI (per rendition)", "dash", sitiAverages, profile));
+            }
 
-            await _analysis.UpsertSectionAsync(
-                transcodeId,
-                CompletedFormatSection("dash", "DASH", children),
-                cancellationToken);
+            var vmafSection = BuildVmafSummarySection("dash.vmaf", "VMAF (per rendition)", "dash", vmafSummaries, profile, runVmaf);
+            children.Add(vmafSection);
+
+            if (runSiti) {
+                await _analysis.UpsertSectionAsync(
+                    transcodeId,
+                    CompletedFormatSection("dash", "DASH", children),
+                    cancellationToken);
+            } else if (runVmaf) {
+                await UpsertVmafIntoExistingFormatSectionAsync(
+                    transcodeId,
+                    "dash",
+                    "DASH",
+                    vmafSection,
+                    cancellationToken);
+            }
 
             _logger.LogInformation("DASH analysis completed for {RouteId}/{TranscodeId}", routeId, transcodeId);
         } catch (Exception ex) {
             _logger.LogWarning(ex, "DASH analysis failed for {RouteId}/{TranscodeId}", routeId, transcodeId);
-            await _analysis.MarkSectionFailedAsync(
+            if (runSiti) {
+                await _analysis.MarkSectionFailedAsync(
+                    transcodeId,
+                    "dash",
+                    "DASH",
+                    "ffprobe-transcode",
+                    ex.Message,
+                    cancellationToken);
+            }
+        }
+    }
+
+    private async Task UpsertVmafIntoExistingFormatSectionAsync(
+        Guid transcodeId,
+        string formatId,
+        string formatLabel,
+        AnalysisTreeNode? vmafSection,
+        CancellationToken cancellationToken) {
+        if (vmafSection == null) {
+            return;
+        }
+
+        var docs = await _analysis.TryGetDocumentsAsync(transcodeId, cancellationToken);
+        if (docs == null) {
+            await _analysis.UpsertSectionAsync(
                 transcodeId,
-                "dash",
-                "DASH",
-                "ffprobe-transcode",
-                ex.Message,
+                CompletedFormatSection(formatId, formatLabel, [vmafSection]),
                 cancellationToken);
+            return;
+        }
+
+        var tree = docs.Value.Tree;
+        var index = tree.Children.FindIndex(node => node.Id == formatId);
+        if (index < 0) {
+            await _analysis.UpsertSectionAsync(
+                transcodeId,
+                CompletedFormatSection(formatId, formatLabel, [vmafSection]),
+                cancellationToken);
+            return;
+        }
+
+        var existing = tree.Children[index];
+        var children = existing.Children?.ToList() ?? [];
+        children.RemoveAll(child => child.Id == vmafSection.Id);
+        children.Add(vmafSection);
+
+        await _analysis.UpsertSectionAsync(
+            transcodeId,
+            CompletedFormatSection(formatId, formatLabel, children),
+            cancellationToken);
+    }
+
+    private async Task AnalyzeHlsRenditionAsync(
+        string playlistPath,
+        TranscodeVariant variant,
+        ReferenceVideoInfo? reference,
+        Dictionary<string, SitiSeriesData>? sitiByRendition,
+        Dictionary<string, VmafSeriesData>? vmafByRendition,
+        Dictionary<string, (double AvgSi, double AvgTi)> sitiAverages,
+        Dictionary<string, VmafSummary> vmafSummaries,
+        bool runSiti,
+        bool runVmaf,
+        CancellationToken cancellationToken) {
+        if (!File.Exists(playlistPath)) {
+            _logger.LogWarning("Playlist not found for HLS {Label}", variant.Label);
+            return;
+        }
+
+        var tempDir = Path.Combine(Path.GetTempPath(), $"transcode-analysis-hls-{Guid.NewGuid():N}");
+        var tempMp4 = Path.Combine(tempDir, $"{variant.Label}.mp4");
+
+        try {
+            Directory.CreateDirectory(tempDir);
+            await _ffmpeg.EnsureAvailableAsync(cancellationToken);
+
+            var remux = await _ffmpeg.RunAsync(
+                $@"-y -i ""{playlistPath}"" -c copy ""{tempMp4}""",
+                workingDirectory: Path.GetDirectoryName(playlistPath),
+                timeout: TimeSpan.FromMinutes(10),
+                cancellationToken: cancellationToken);
+
+            if (!remux.Success || !File.Exists(tempMp4)) {
+                _logger.LogWarning(
+                    "Failed to remux HLS {Label}: {Error}",
+                    variant.Label,
+                    remux.ErrorMessage ?? remux.StdErr);
+                return;
+            }
+
+            if (runSiti && sitiByRendition != null) {
+                var sitiResult = await _sitiAnalysis.AnalyzeAsync(tempMp4, cancellationToken);
+                RecordSitiResult(variant.Label, sitiResult, sitiByRendition, sitiAverages);
+            }
+
+            if (runVmaf && vmafByRendition != null) {
+                await RunVmafForTempAsync(
+                    tempMp4,
+                    variant,
+                    reference,
+                    vmafByRendition,
+                    vmafSummaries,
+                    cancellationToken);
+            }
+        } catch (Exception ex) {
+            _logger.LogWarning(ex, "HLS rendition analysis failed for {Label}", variant.Label);
+        } finally {
+            TryDeleteDirectory(tempDir);
+        }
+    }
+
+    private async Task AnalyzeDashRenditionAsync(
+        string dashDir,
+        string representationId,
+        TranscodeVariant variant,
+        ReferenceVideoInfo? reference,
+        Dictionary<string, SitiSeriesData>? sitiByRendition,
+        Dictionary<string, VmafSeriesData>? vmafByRendition,
+        Dictionary<string, (double AvgSi, double AvgTi)> sitiAverages,
+        Dictionary<string, VmafSummary> vmafSummaries,
+        bool runSiti,
+        bool runVmaf,
+        CancellationToken cancellationToken) {
+        var initPath = Path.Combine(dashDir, $"init-{representationId}.m4s");
+        if (!File.Exists(initPath)) {
+            _logger.LogWarning("Init segment not found for DASH {Label} (id={Id})", variant.Label, representationId);
+            return;
+        }
+
+        var chunks = Directory.GetFiles(dashDir, $"chunk-{representationId}-*.m4s")
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (chunks.Count == 0) {
+            _logger.LogWarning("No media chunks found for DASH {Label} (id={Id})", variant.Label, representationId);
+            return;
+        }
+
+        var tempDir = Path.Combine(Path.GetTempPath(), $"transcode-analysis-dash-{Guid.NewGuid():N}");
+        var tempMp4 = Path.Combine(tempDir, $"{variant.Label}.mp4");
+
+        try {
+            Directory.CreateDirectory(tempDir);
+
+            await using (var output = File.Create(tempMp4)) {
+                await CopyFileToAsync(initPath, output, cancellationToken);
+                foreach (var chunk in chunks) {
+                    await CopyFileToAsync(chunk, output, cancellationToken);
+                }
+            }
+
+            if (runSiti && sitiByRendition != null) {
+                var sitiResult = await _sitiAnalysis.AnalyzeAsync(tempMp4, cancellationToken);
+                RecordSitiResult(variant.Label, sitiResult, sitiByRendition, sitiAverages);
+            }
+
+            if (runVmaf && vmafByRendition != null) {
+                await RunVmafForTempAsync(
+                    tempMp4,
+                    variant,
+                    reference,
+                    vmafByRendition,
+                    vmafSummaries,
+                    cancellationToken);
+            }
+        } catch (Exception ex) {
+            _logger.LogWarning(ex, "DASH rendition analysis failed for {Label}", variant.Label);
+        } finally {
+            TryDeleteDirectory(tempDir);
+        }
+    }
+
+    private async Task RunVmafForTempAsync(
+        string tempMp4,
+        TranscodeVariant variant,
+        ReferenceVideoInfo? reference,
+        Dictionary<string, VmafSeriesData> vmafByRendition,
+        Dictionary<string, VmafSummary> vmafSummaries,
+        CancellationToken cancellationToken) {
+        if (reference == null) {
+            _logger.LogWarning("Skipping VMAF for {Label}: source reference unavailable", variant.Label);
+            return;
+        }
+
+        ParseVariantResolution(variant.Resolution, out var distW, out var distH);
+        var bitrateBps = (long)TranscodeProfile.ParseBitrateKbps(variant.Bitrate) * 1000;
+
+        var result = await _vmafAnalysis.AnalyzeAsync(
+            new VmafAnalysisRequest {
+                ReferencePath = reference.Path,
+                DistortedPath = tempMp4,
+                ReferenceWidth = reference.Width,
+                ReferenceHeight = reference.Height,
+                DistortedWidth = distW,
+                DistortedHeight = distH,
+                BitrateBps = bitrateBps
+            },
+            cancellationToken);
+
+        if (!result.Success || result.Series == null) {
+            _logger.LogWarning(
+                "VMAF failed for {Label}: {Error}",
+                variant.Label,
+                result.ErrorMessage);
+            return;
+        }
+
+        vmafByRendition[variant.Label] = result.Series;
+        vmafSummaries[variant.Label] = result.Series.Summary;
+    }
+
+    private async Task<ReferenceVideoInfo?> ResolveReferenceAsync(
+        string routeId,
+        CancellationToken cancellationToken) {
+        var sourcePath = _storage.ResolveSourcePath(routeId);
+        if (sourcePath == null || !File.Exists(sourcePath)) {
+            _logger.LogWarning("Source path missing for VMAF reference {RouteId}", routeId);
+            return null;
+        }
+
+        var probe = await _mediaProbe.ProbeAsync(sourcePath, cancellationToken);
+        if (!probe.Success || probe.ProbeData == null) {
+            _logger.LogWarning(
+                "Failed to probe source for VMAF reference {RouteId}: {Error}",
+                routeId,
+                probe.ErrorMessage);
+            return null;
+        }
+
+        using (probe.ProbeData) {
+            if (!TryGetVideoResolution(probe.ProbeData, out var width, out var height)) {
+                _logger.LogWarning("Could not read source resolution for VMAF {RouteId}", routeId);
+                return null;
+            }
+
+            return new ReferenceVideoInfo {
+                Path = sourcePath,
+                Width = width,
+                Height = height
+            };
         }
     }
 
@@ -265,109 +659,13 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         return Section($"dash.{variant.Label}", variant.Label, "ffprobe-transcode", AnalysisSectionStatus.Completed, children);
     }
 
-    private async Task<SitiAnalysisResult> AnalyzeHlsRenditionSitiAsync(
-        string playlistPath,
-        string label,
-        CancellationToken cancellationToken) {
-        if (!File.Exists(playlistPath)) {
-            return new SitiAnalysisResult {
-                Success = false,
-                ErrorMessage = $"Playlist not found for {label}"
-            };
-        }
-
-        // Remux HLS playlist to a continuous temp file — lavfi movie filter needs a seekable input.
-        var tempDir = Path.Combine(Path.GetTempPath(), $"transcode-siti-hls-{Guid.NewGuid():N}");
-        var tempMp4 = Path.Combine(tempDir, $"{label}.mp4");
-
-        try {
-            Directory.CreateDirectory(tempDir);
-            await _ffmpeg.EnsureAvailableAsync(cancellationToken);
-
-            var remux = await _ffmpeg.RunAsync(
-                $@"-y -i ""{playlistPath}"" -c copy ""{tempMp4}""",
-                workingDirectory: Path.GetDirectoryName(playlistPath),
-                timeout: TimeSpan.FromMinutes(10),
-                cancellationToken: cancellationToken);
-
-            if (!remux.Success || !File.Exists(tempMp4)) {
-                _logger.LogWarning(
-                    "Failed to remux HLS {Label} for SI/TI: {Error}",
-                    label,
-                    remux.ErrorMessage ?? remux.StdErr);
-                return new SitiAnalysisResult {
-                    Success = false,
-                    ErrorMessage = remux.ErrorMessage ?? $"Failed to remux HLS {label} for SI/TI"
-                };
-            }
-
-            return await _sitiAnalysis.AnalyzeAsync(tempMp4, cancellationToken);
-        } catch (Exception ex) {
-            return new SitiAnalysisResult {
-                Success = false,
-                ErrorMessage = ex.Message
-            };
-        } finally {
-            TryDeleteDirectory(tempDir);
-        }
-    }
-
-    private async Task<SitiAnalysisResult> AnalyzeDashRenditionSitiAsync(
-        string dashDir,
-        string representationId,
-        string label,
-        CancellationToken cancellationToken) {
-        var initPath = Path.Combine(dashDir, $"init-{representationId}.m4s");
-        if (!File.Exists(initPath)) {
-            return new SitiAnalysisResult {
-                Success = false,
-                ErrorMessage = $"Init segment not found for DASH {label} (id={representationId})"
-            };
-        }
-
-        var chunks = Directory.GetFiles(dashDir, $"chunk-{representationId}-*.m4s")
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (chunks.Count == 0) {
-            return new SitiAnalysisResult {
-                Success = false,
-                ErrorMessage = $"No media chunks found for DASH {label} (id={representationId})"
-            };
-        }
-
-        // Binary-concat init + media segments into a temporary fMP4, then run siti.
-        var tempDir = Path.Combine(Path.GetTempPath(), $"transcode-siti-dash-{Guid.NewGuid():N}");
-        var tempMp4 = Path.Combine(tempDir, $"{label}.mp4");
-
-        try {
-            Directory.CreateDirectory(tempDir);
-
-            await using (var output = File.Create(tempMp4)) {
-                await CopyFileToAsync(initPath, output, cancellationToken);
-                foreach (var chunk in chunks) {
-                    await CopyFileToAsync(chunk, output, cancellationToken);
-                }
-            }
-
-            return await _sitiAnalysis.AnalyzeAsync(tempMp4, cancellationToken);
-        } catch (Exception ex) {
-            return new SitiAnalysisResult {
-                Success = false,
-                ErrorMessage = ex.Message
-            };
-        } finally {
-            TryDeleteDirectory(tempDir);
-        }
-    }
-
     private void TryDeleteDirectory(string tempDir) {
         try {
             if (Directory.Exists(tempDir)) {
                 Directory.Delete(tempDir, recursive: true);
             }
         } catch (Exception ex) {
-            _logger.LogWarning(ex, "Failed to delete temp SI/TI directory {Path}", tempDir);
+            _logger.LogWarning(ex, "Failed to delete temp analysis directory {Path}", tempDir);
         }
     }
 
@@ -421,7 +719,7 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
             Leaf("dash.general.profile", "Transcode profile", profile.Name),
             Leaf("dash.general.manifest_present", "Manifest present", File.Exists(manifestPath) ? "Yes" : "No"),
             Leaf(
-                "dash.general.representations_found",
+                "dash.general.reps_found",
                 "Representations found",
                 reps.Count.ToString(CultureInfo.InvariantCulture))
         };
@@ -614,6 +912,55 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         return Section(id, label, "ffmpeg-siti", status, children);
     }
 
+    private static AnalysisTreeNode BuildVmafSummarySection(
+        string id,
+        string label,
+        string idPrefix,
+        IReadOnlyDictionary<string, VmafSummary> summaries,
+        TranscodeProfile profile,
+        bool ranVmaf) {
+        var children = new List<AnalysisTreeNode>();
+
+        foreach (var variant in profile.Variants) {
+            if (summaries.TryGetValue(variant.Label, out var summary)) {
+                children.Add(Leaf(
+                    $"{idPrefix}.vmaf.{variant.Label}_mean",
+                    $"{variant.Label} Mean VMAF",
+                    summary.Mean.ToString("0.####", CultureInfo.InvariantCulture)));
+                children.Add(Leaf(
+                    $"{idPrefix}.vmaf.{variant.Label}_harmonic_mean",
+                    $"{variant.Label} Harmonic mean VMAF",
+                    summary.HarmonicMean.ToString("0.####", CultureInfo.InvariantCulture)));
+                children.Add(Leaf(
+                    $"{idPrefix}.vmaf.{variant.Label}_min",
+                    $"{variant.Label} Min VMAF",
+                    summary.Min.ToString("0.####", CultureInfo.InvariantCulture)));
+                if (summary.BitrateBps != null) {
+                    children.Add(Leaf(
+                        $"{idPrefix}.vmaf.{variant.Label}_bitrate",
+                        $"{variant.Label} Target bitrate",
+                        FormatBitRate(summary.BitrateBps.Value)));
+                }
+            } else {
+                children.Add(Leaf(
+                    $"{idPrefix}.vmaf.{variant.Label}_mean",
+                    $"{variant.Label} Mean VMAF",
+                    "—"));
+            }
+        }
+
+        AnalysisSectionStatus status;
+        if (summaries.Count > 0) {
+            status = AnalysisSectionStatus.Completed;
+        } else if (ranVmaf) {
+            status = AnalysisSectionStatus.Failed;
+        } else {
+            status = AnalysisSectionStatus.Pending;
+        }
+
+        return Section(id, label, "ffmpeg-libvmaf", status, children);
+    }
+
     private static AnalysisTreeNode CompletedFormatSection(
         string id,
         string label,
@@ -697,6 +1044,50 @@ public sealed class TranscodeAnalysisCollector : ITranscodeAnalysisCollector {
         }
 
         return $"{seconds:0.###} s";
+    }
+
+    private static bool TryGetVideoResolution(JsonDocument probeData, out int width, out int height) {
+        width = 0;
+        height = 0;
+        if (!probeData.RootElement.TryGetProperty("streams", out var streams)) {
+            return false;
+        }
+
+        foreach (var stream in streams.EnumerateArray()) {
+            var codecType = stream.TryGetProperty("codec_type", out var typeEl) ? typeEl.GetString() : null;
+            if (codecType != "video") {
+                continue;
+            }
+
+            if (stream.TryGetProperty("width", out var w) &&
+                stream.TryGetProperty("height", out var h) &&
+                w.TryGetInt32(out width) &&
+                h.TryGetInt32(out height) &&
+                width > 0 &&
+                height > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void ParseVariantResolution(string resolution, out int? width, out int? height) {
+        width = null;
+        height = null;
+        var parts = resolution.Split(':', 'x', 'X');
+        if (parts.Length == 2 &&
+            int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var w) &&
+            int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var h)) {
+            width = w;
+            height = h;
+        }
+    }
+
+    private sealed class ReferenceVideoInfo {
+        public required string Path { get; init; }
+        public required int Width { get; init; }
+        public required int Height { get; init; }
     }
 
     private sealed class DashRepresentationInfo {

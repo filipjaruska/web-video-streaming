@@ -171,6 +171,7 @@ public class VideoSourceAnalysisService : IVideoSourceAnalysisService {
         };
 
         DateTime? latestUpdate = video.SourceAnalysis?.UpdatedAtUtc;
+        var schemaVersion = 3;
 
         foreach (var transcode in video.Transcodes.OrderBy(item => item.CreatedAtUtc)) {
             AnalysisTreeDocument? transcodeTree = null;
@@ -181,6 +182,10 @@ public class VideoSourceAnalysisService : IVideoSourceAnalysisService {
                 transcodeSeries = DeserializeSeries(transcode.Analysis.SeriesJson) ?? new AnalysisSeriesDocument();
                 if (latestUpdate == null || transcode.Analysis.UpdatedAtUtc > latestUpdate) {
                     latestUpdate = transcode.Analysis.UpdatedAtUtc;
+                }
+
+                if (transcode.Analysis.SchemaVersion > schemaVersion) {
+                    schemaVersion = transcode.Analysis.SchemaVersion;
                 }
             }
 
@@ -193,7 +198,7 @@ public class VideoSourceAnalysisService : IVideoSourceAnalysisService {
 
         return new VideoAnalysisDto {
             RouteId = routeId,
-            SchemaVersion = 2,
+            SchemaVersion = schemaVersion,
             UpdatedAtUtc = latestUpdate,
             Targets = targets,
             FutureTests = AnalysisTargetBuilder.BuildFutureTests()

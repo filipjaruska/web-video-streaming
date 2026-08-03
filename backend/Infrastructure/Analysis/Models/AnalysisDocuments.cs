@@ -81,12 +81,63 @@ public sealed class FormatSitiSeriesDocument {
     public Dictionary<string, SitiSeriesData>? Dash { get; set; }
 }
 
+/// <summary>
+/// Aggregated VMAF statistics for one ladder rung — RD-curve coordinates for later encode-grid work.
+/// </summary>
+public sealed class VmafSummary {
+    [JsonPropertyName("mean")]
+    public double Mean { get; set; }
+
+    [JsonPropertyName("harmonicMean")]
+    public double HarmonicMean { get; set; }
+
+    [JsonPropertyName("min")]
+    public double Min { get; set; }
+
+    [JsonPropertyName("max")]
+    public double Max { get; set; }
+
+    [JsonPropertyName("model")]
+    public string? Model { get; set; }
+
+    [JsonPropertyName("width")]
+    public int? Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public int? Height { get; set; }
+
+    [JsonPropertyName("bitrateBps")]
+    public long? BitrateBps { get; set; }
+}
+
+public sealed class VmafSeriesData {
+    [JsonPropertyName("scores")]
+    public List<double> Scores { get; set; } = [];
+
+    [JsonPropertyName("timeSec")]
+    public List<double>? TimeSec { get; set; }
+
+    [JsonPropertyName("summary")]
+    public VmafSummary Summary { get; set; } = new();
+}
+
+public sealed class FormatVmafSeriesDocument {
+    [JsonPropertyName("hls")]
+    public Dictionary<string, VmafSeriesData>? Hls { get; set; }
+
+    [JsonPropertyName("dash")]
+    public Dictionary<string, VmafSeriesData>? Dash { get; set; }
+}
+
 public sealed class AnalysisSeriesDocument {
     [JsonPropertyName("siti")]
     public SitiSeriesData? Siti { get; set; }
 
     [JsonPropertyName("sitiByFormat")]
     public FormatSitiSeriesDocument? SitiByFormat { get; set; }
+
+    [JsonPropertyName("vmafByFormat")]
+    public FormatVmafSeriesDocument? VmafByFormat { get; set; }
 }
 
 public sealed class AnalysisTarget {
@@ -125,7 +176,7 @@ public sealed class FutureTestDescriptor {
 
 public sealed class VideoAnalysisDto {
     public required string RouteId { get; init; }
-    public int SchemaVersion { get; init; } = 2;
+    public int SchemaVersion { get; init; } = 3;
     public DateTime? UpdatedAtUtc { get; init; }
     public List<AnalysisTarget> Targets { get; init; } = [];
     public List<FutureTestDescriptor> FutureTests { get; init; } = [];
