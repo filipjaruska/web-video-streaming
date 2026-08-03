@@ -52,7 +52,7 @@ public class AppDbContext : DbContext {
             entity.HasKey(session => session.Id);
             entity.Property(session => session.Status).HasConversion<string>().HasMaxLength(32);
             entity.Property(session => session.ProgressPercent).IsRequired();
-            entity.Property(session => session.CurrentStep).HasMaxLength(64);
+            entity.Property(session => session.CurrentStep).HasMaxLength(96);
             entity.Property(session => session.CreatedAtUtc).IsRequired();
             entity.Property(session => session.UpdatedAtUtc).IsRequired();
             entity.Property(session => session.ExpiresAtUtc).IsRequired();
@@ -69,6 +69,8 @@ public class AppDbContext : DbContext {
         modelBuilder.Entity<Transcode>(entity => {
             entity.HasKey(transcode => transcode.Id);
             entity.Property(transcode => transcode.Status).HasConversion<string>().HasMaxLength(32);
+            entity.Property(transcode => transcode.LadderKind).HasConversion<string>().HasMaxLength(32);
+            entity.Property(transcode => transcode.ProfileJson).HasColumnType("TEXT");
             entity.Property(transcode => transcode.ErrorMessage).HasMaxLength(2000);
             entity.Property(transcode => transcode.CreatedAtUtc).IsRequired();
 
@@ -83,6 +85,7 @@ public class AppDbContext : DbContext {
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(transcode => new { transcode.VideoId, transcode.CreatedAtUtc });
+            entity.HasIndex(transcode => new { transcode.VideoId, transcode.LadderKind });
         });
 
         modelBuilder.Entity<VideoTranscodeAnalysis>(entity => {

@@ -49,6 +49,17 @@ public interface IVideoTranscodingService {
         string outputPath,
         double atSeconds = 1,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Encode a single MP4 at resolution + CRF for encode-grid RD sampling (not HLS/DASH).
+    /// </summary>
+    Task<TranscodeResult> EncodeCrfAsync(
+        string inputPath,
+        string outputPath,
+        string resolution,
+        int crf,
+        string preset = "medium",
+        CancellationToken cancellationToken = default);
 }
 
 public class VideoTranscodingService : IVideoTranscodingService {
@@ -215,6 +226,55 @@ public class VideoTranscodingService : IVideoTranscodingService {
             _logger.LogInformation("Successfully extracted thumbnail to {OutputPath}", outputPath);
         } catch (Exception ex) {
             _logger.LogError(ex, "Failed to extract thumbnail from {InputPath}", inputPath);
+            result.Success = false;
+            result.ErrorMessage = ex.Message;
+        }
+
+        return result;
+    }
+
+    public async Task<TranscodeResult> EncodeCrfAsync(
+        string inputPath,
+        string outputPath,
+        string resolution,
+        int crf,
+        string preset = "medium",
+        CancellationToken cancellationToken = default) {
+        var result = new TranscodeResult { Success = true };
+
+        try {
+            if (!File.Exists(inputPath)) {
+                throw new FileNotFoundException($"Input video not found: {inputPath}");
+            }
+
+            var dir = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(dir)) {
+                Directory.CreateDirectory(dir);
+            }
+
+            await _ffmpeg.EnsureAvailableAsync(cancellationToken);
+
+            // Video-only CRF sample — audio omitted to speed encode-grid sweeps.
+            var ffmpegArgs =
+                $@"-y -i ""{inputPath}"" " +
+                $@"-vf scale={resolution} " +
+                $@"-c:v libx264 -crf {crf} -preset {preset} -pix_fmt yuv420p " +
+                $@"-an ""{outputPath}""";
+
+            var runResult = await _ffmpeg.RunAsync(
+                ffmpegArgs,
+                timeout: TimeSpan.FromMinutes(30),
+                cancellationToken: cancellationToken);
+
+            if (!runResult.Success || !File.Exists(outputPath)) {
+                result.Success = false;
+                result.ErrorMessage = runResult.ErrorMessage ?? runResult.StdErr ?? "CRF encode failed";
+                return result;
+            }
+
+            result.GeneratedFiles.Add(Path.GetFileName(outputPath));
+        } catch (Exception ex) {
+            _logger.LogError(ex, "Failed CRF encode for {InputPath} crf={Crf}", inputPath, crf);
             result.Success = false;
             result.ErrorMessage = ex.Message;
         }

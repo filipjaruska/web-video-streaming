@@ -6,6 +6,9 @@ public class Transcode {
     public Guid Id { get; set; }
     public Guid VideoId { get; set; }
     public TranscodeStatus Status { get; set; }
+    public LadderKind LadderKind { get; set; } = LadderKind.Static;
+    public string? ProfileJson { get; set; }
+    public Guid? DerivedFromTranscodeId { get; set; }
     public bool HasHls { get; set; }
     public bool HasDash { get; set; }
     public string? ErrorMessage { get; set; }

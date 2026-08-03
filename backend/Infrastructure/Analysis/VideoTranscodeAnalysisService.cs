@@ -40,7 +40,7 @@ public class VideoTranscodeAnalysisService : IVideoTranscodeAnalysisService {
 
         var report = new VideoTranscodeAnalysis {
             TranscodeId = transcodeId,
-            SchemaVersion = 3,
+            SchemaVersion = 4,
             TreeJson = SerializeTree(new AnalysisTreeDocument {
                 Id = $"transcode-{transcodeId:N}",
                 Label = "Transcode analysis"
@@ -88,7 +88,7 @@ public class VideoTranscodeAnalysisService : IVideoTranscodeAnalysisService {
         }
 
         report.TreeJson = SerializeTree(tree);
-        report.SchemaVersion = 3;
+        report.SchemaVersion = 4;
         report.UpdatedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -100,13 +100,13 @@ public class VideoTranscodeAnalysisService : IVideoTranscodeAnalysisService {
         var report = await GetOrCreateAsync(transcodeId, cancellationToken);
         var existing = DeserializeSeries(report.SeriesJson) ?? new AnalysisSeriesDocument();
         report.SeriesJson = SerializeSeries(MergeSeries(existing, series));
-        report.SchemaVersion = 3;
+        report.SchemaVersion = 4;
         report.UpdatedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
-    /// Merges incoming series fields into existing so SI/TI and VMAF can be written independently.
+    /// Merges incoming series fields into existing so SI/TI, VMAF, and encode-grid can be written independently.
     /// </summary>
     internal static AnalysisSeriesDocument MergeSeries(
         AnalysisSeriesDocument existing,
@@ -114,7 +114,9 @@ public class VideoTranscodeAnalysisService : IVideoTranscodeAnalysisService {
         return new AnalysisSeriesDocument {
             Siti = incoming.Siti ?? existing.Siti,
             SitiByFormat = MergeFormatSiti(existing.SitiByFormat, incoming.SitiByFormat),
-            VmafByFormat = MergeFormatVmaf(existing.VmafByFormat, incoming.VmafByFormat)
+            VmafByFormat = MergeFormatVmaf(existing.VmafByFormat, incoming.VmafByFormat),
+            EncodeGrid = incoming.EncodeGrid ?? existing.EncodeGrid,
+            DerivedLadder = incoming.DerivedLadder ?? existing.DerivedLadder
         };
     }
 

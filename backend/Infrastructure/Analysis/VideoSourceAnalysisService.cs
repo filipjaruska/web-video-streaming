@@ -171,7 +171,7 @@ public class VideoSourceAnalysisService : IVideoSourceAnalysisService {
         };
 
         DateTime? latestUpdate = video.SourceAnalysis?.UpdatedAtUtc;
-        var schemaVersion = 3;
+            var schemaVersion = 4;
 
         foreach (var transcode in video.Transcodes.OrderBy(item => item.CreatedAtUtc)) {
             AnalysisTreeDocument? transcodeTree = null;

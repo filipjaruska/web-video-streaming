@@ -129,6 +129,63 @@ public sealed class FormatVmafSeriesDocument {
     public Dictionary<string, VmafSeriesData>? Dash { get; set; }
 }
 
+/// <summary>
+/// One resolution×CRF encode-grid sample — RD point for convex-hull / crossover derivation.
+/// </summary>
+public sealed class EncodeGridPoint {
+    [JsonPropertyName("label")]
+    public string Label { get; set; } = "";
+
+    [JsonPropertyName("width")]
+    public int Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public int Height { get; set; }
+
+    [JsonPropertyName("crf")]
+    public int Crf { get; set; }
+
+    [JsonPropertyName("bitrateBps")]
+    public long BitrateBps { get; set; }
+
+    [JsonPropertyName("vmafMean")]
+    public double VmafMean { get; set; }
+
+    [JsonPropertyName("vmafHarmonicMean")]
+    public double? VmafHarmonicMean { get; set; }
+
+    [JsonPropertyName("vmafMin")]
+    public double? VmafMin { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+public sealed class DerivedLadderVariant {
+    [JsonPropertyName("label")]
+    public string Label { get; set; } = "";
+
+    [JsonPropertyName("resolution")]
+    public string Resolution { get; set; } = "";
+
+    [JsonPropertyName("bitrate")]
+    public string Bitrate { get; set; } = "";
+
+    [JsonPropertyName("bitrateBps")]
+    public long BitrateBps { get; set; }
+
+    [JsonPropertyName("predictedVmaf")]
+    public double? PredictedVmaf { get; set; }
+}
+
+public sealed class DerivedLadderDocument {
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "vmaf-crossover";
+
+    [JsonPropertyName("variants")]
+    public List<DerivedLadderVariant> Variants { get; set; } = [];
+}
+
 public sealed class AnalysisSeriesDocument {
     [JsonPropertyName("siti")]
     public SitiSeriesData? Siti { get; set; }
@@ -138,6 +195,12 @@ public sealed class AnalysisSeriesDocument {
 
     [JsonPropertyName("vmafByFormat")]
     public FormatVmafSeriesDocument? VmafByFormat { get; set; }
+
+    [JsonPropertyName("encodeGrid")]
+    public List<EncodeGridPoint>? EncodeGrid { get; set; }
+
+    [JsonPropertyName("derivedLadder")]
+    public DerivedLadderDocument? DerivedLadder { get; set; }
 }
 
 public sealed class AnalysisTarget {
@@ -155,6 +218,9 @@ public sealed class AnalysisTarget {
 
     [JsonPropertyName("transcodeId")]
     public string? TranscodeId { get; init; }
+
+    [JsonPropertyName("ladderKind")]
+    public string? LadderKind { get; init; }
 
     [JsonPropertyName("tree")]
     public AnalysisTreeDocument Tree { get; init; } = new();
@@ -176,7 +242,7 @@ public sealed class FutureTestDescriptor {
 
 public sealed class VideoAnalysisDto {
     public required string RouteId { get; init; }
-    public int SchemaVersion { get; init; } = 3;
+    public int SchemaVersion { get; init; } = 4;
     public DateTime? UpdatedAtUtc { get; init; }
     public List<AnalysisTarget> Targets { get; init; } = [];
     public List<FutureTestDescriptor> FutureTests { get; init; } = [];

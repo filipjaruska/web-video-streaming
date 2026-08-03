@@ -66,11 +66,11 @@
   --border: oklch(0.9 0.015 295);
   --input: oklch(0.9 0.015 295);
   --ring: oklch(0.55 0.08 295);
-  --chart-1: oklch(0.55 0.18 295);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --chart-1: oklch(0.42 0.16 295);
+  --chart-2: oklch(0.5 0.17 295);
+  --chart-3: oklch(0.58 0.14 295);
+  --chart-4: oklch(0.66 0.11 295);
+  --chart-5: oklch(0.74 0.08 295);
   --sidebar: oklch(0.975 0.01 295);
   --sidebar-foreground: oklch(0.18 0.02 295);
   --sidebar-primary: oklch(0.32 0.06 295);
@@ -100,11 +100,11 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.55 0.08 295);
-  --chart-1: oklch(0.55 0.18 295);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  --chart-1: oklch(0.72 0.14 295);
+  --chart-2: oklch(0.66 0.15 295);
+  --chart-3: oklch(0.6 0.16 295);
+  --chart-4: oklch(0.54 0.14 295);
+  --chart-5: oklch(0.48 0.12 295);
   --sidebar: oklch(0.2 0.025 295);
   --sidebar-foreground: oklch(0.97 0.01 295);
   --sidebar-primary: oklch(0.55 0.18 295);
@@ -123,15 +123,39 @@
     @apply text-foreground min-h-screen;
     background-color: var(--background);
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, oklch(0.7 0.08 295 / 0.12), transparent),
-      radial-gradient(ellipse 60% 40% at 100% 100%, oklch(0.65 0.06 280 / 0.08), transparent),
-      radial-gradient(ellipse 50% 30% at 0% 80%, oklch(0.7 0.05 310 / 0.06), transparent);
+      radial-gradient(
+        ellipse 80% 50% at 50% -20%,
+        oklch(0.7 0.08 295 / 0.12),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 60% 40% at 100% 100%,
+        oklch(0.65 0.06 280 / 0.08),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 50% 30% at 0% 80%,
+        oklch(0.7 0.05 310 / 0.06),
+        transparent
+      );
     background-attachment: fixed;
   }
   .dark body {
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, oklch(0.4 0.1 295 / 0.25), transparent),
-      radial-gradient(ellipse 60% 40% at 100% 100%, oklch(0.35 0.08 280 / 0.15), transparent),
-      radial-gradient(ellipse 50% 30% at 0% 80%, oklch(0.35 0.06 310 / 0.12), transparent);
+      radial-gradient(
+        ellipse 80% 50% at 50% -20%,
+        oklch(0.4 0.1 295 / 0.25),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 60% 40% at 100% 100%,
+        oklch(0.35 0.08 280 / 0.15),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 50% 30% at 0% 80%,
+        oklch(0.35 0.06 310 / 0.12),
+        transparent
+      );
   }
 }

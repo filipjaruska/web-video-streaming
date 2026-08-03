@@ -4,7 +4,7 @@ namespace WebWVideoStreamingAPI.Infrastructure.Analysis.Models;
 
 public class VideoTranscodeAnalysis {
     public Guid TranscodeId { get; set; }
-    public int SchemaVersion { get; set; } = 3;
+    public int SchemaVersion { get; set; } = 4;
     public string TreeJson { get; set; } = "{}";
     public string? SeriesJson { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
