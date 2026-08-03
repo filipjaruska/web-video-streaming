@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace WebWVideoStreamingAPI.Infrastructure.Analysis.Models;
@@ -10,12 +11,20 @@ public enum AnalysisSectionStatus {
     NotImplemented
 }
 
+/// <summary>
+/// Serializes enums as camelCase strings for the analysis API/frontend.
+/// </summary>
+public sealed class CamelCaseEnumConverter : JsonStringEnumConverter {
+    public CamelCaseEnumConverter() : base(JsonNamingPolicy.CamelCase) {
+    }
+}
+
 public sealed class AnalysisTreeNodeMeta {
     [JsonPropertyName("source")]
     public string? Source { get; set; }
 
     [JsonPropertyName("status")]
-    [JsonConverter(typeof(JsonStringEnumConverter))]
+    [JsonConverter(typeof(CamelCaseEnumConverter))]
     public AnalysisSectionStatus Status { get; set; } = AnalysisSectionStatus.Pending;
 
     [JsonPropertyName("error")]
@@ -64,9 +73,20 @@ public sealed class SitiSeriesData {
     public List<double>? TimeSec { get; set; }
 }
 
+public sealed class FormatSitiSeriesDocument {
+    [JsonPropertyName("hls")]
+    public Dictionary<string, SitiSeriesData>? Hls { get; set; }
+
+    [JsonPropertyName("dash")]
+    public Dictionary<string, SitiSeriesData>? Dash { get; set; }
+}
+
 public sealed class AnalysisSeriesDocument {
     [JsonPropertyName("siti")]
     public SitiSeriesData? Siti { get; set; }
+
+    [JsonPropertyName("sitiByFormat")]
+    public FormatSitiSeriesDocument? SitiByFormat { get; set; }
 }
 
 public sealed class AnalysisTarget {

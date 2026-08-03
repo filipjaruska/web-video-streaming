@@ -33,8 +33,14 @@ export interface SitiSeriesData {
   timeSec?: number[];
 }
 
+export interface FormatSitiSeries {
+  hls?: Record<string, SitiSeriesData>;
+  dash?: Record<string, SitiSeriesData>;
+}
+
 export interface AnalysisSeriesDocument {
   siti?: SitiSeriesData;
+  sitiByFormat?: FormatSitiSeries;
 }
 
 export type AnalysisTargetKind = "source" | "transcode" | "futureTest";

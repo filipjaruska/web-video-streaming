@@ -26,7 +26,7 @@ function statusBadge(status?: string) {
     case "pending":
       return <Badge variant="outline">Pending</Badge>;
     case "notImplemented":
-      return <Badge variant="secondary">Temp scaffold</Badge>;
+      return <Badge variant="secondary">Not implemented</Badge>;
     default:
       return null;
   }

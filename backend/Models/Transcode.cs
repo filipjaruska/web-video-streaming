@@ -1,3 +1,5 @@
+using WebWVideoStreamingAPI.Infrastructure.Analysis.Models;
+
 namespace WebWVideoStreamingAPI.Models;
 
 public class Transcode {
@@ -12,4 +14,5 @@ public class Transcode {
     public DateTime? CompletedAtUtc { get; set; }
 
     public Video Video { get; set; } = null!;
+    public VideoTranscodeAnalysis? Analysis { get; set; }
 }

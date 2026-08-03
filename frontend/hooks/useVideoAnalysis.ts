@@ -8,15 +8,23 @@ import {
 import { getPublicApiUrl } from "@/lib/env";
 
 function hasRunningSections(response: VideoAnalysisResponse) {
-  return response.targets.some(
-    (target) =>
-      target.status === "running" ||
-      target.tree.children.some(
-        (section) =>
-          section.meta?.status === "running" ||
-          section.meta?.status === "pending",
-      ),
-  );
+  return response.targets.some((target) => {
+    if (target.status === "running") {
+      return true;
+    }
+
+    // Only treat pending sections as in-flight when the target itself is pending
+    // (avoids polling forever on legacy completed packaging without analysis).
+    if (target.status !== "pending") {
+      return false;
+    }
+
+    return target.tree.children.some(
+      (section) =>
+        section.meta?.status === "running" ||
+        section.meta?.status === "pending",
+    );
+  });
 }
 
 export function useVideoAnalysis(routeId: string) {

@@ -13,8 +13,11 @@ public class TranscodeProfile {
     public static TranscodeProfile Default { get; } = new() {
         Name = "default",
         Variants = new[] {
-            new TranscodeVariant("1920:1080", "5000k", "1080p"),
-            new TranscodeVariant("640:360", "800k", "360p")
+            new TranscodeVariant("1920:1080", "4500k", "1080p"),
+            new TranscodeVariant("1280:720", "2500k", "720p"),
+            new TranscodeVariant("854:480", "1200k", "480p"),
+            new TranscodeVariant("640:360", "800k", "360p"),
+            new TranscodeVariant("426:240", "400k", "240p")
         }
     };
 
@@ -87,7 +90,7 @@ public class VideoTranscodingService : IVideoTranscodingService {
                 return result;
             }
 
-            await GenerateHlsMasterPlaylistAsync(outputDir, profile.Variants);
+            await GenerateHlsMasterPlaylistAsync(outputDir, profile.Variants, profile);
             result.GeneratedFiles.Add("master.m3u8");
 
             _logger.LogInformation("Successfully generated HLS streams in {OutputDir}", outputDir);
@@ -262,16 +265,20 @@ public class VideoTranscodingService : IVideoTranscodingService {
         return result;
     }
 
-    private async Task GenerateHlsMasterPlaylistAsync(string outputDir, IReadOnlyList<TranscodeVariant> variants) {
+    private async Task GenerateHlsMasterPlaylistAsync(
+        string outputDir,
+        IReadOnlyList<TranscodeVariant> variants,
+        TranscodeProfile profile) {
         var masterPlaylistPath = Path.Combine(outputDir, "master.m3u8");
+        var audioBitrateBps = TranscodeProfile.ParseBitrateKbps(profile.AudioBitrate) * 1000;
 
         var lines = new List<string> { "#EXTM3U", "#EXT-X-VERSION:3" };
 
         foreach (var variant in variants) {
-            var bitrate = TranscodeProfile.ParseBitrateKbps(variant.Bitrate) * 1000;
+            var bandwidth = TranscodeProfile.ParseBitrateKbps(variant.Bitrate) * 1000 + audioBitrateBps;
             var resolution = variant.Resolution.Replace(":", "x");
 
-            lines.Add($"#EXT-X-STREAM-INF:BANDWIDTH={bitrate},RESOLUTION={resolution}");
+            lines.Add($"#EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={resolution}");
             lines.Add($"{variant.Label}.m3u8");
         }
 
