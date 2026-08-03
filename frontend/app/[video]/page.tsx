@@ -31,7 +31,7 @@ export async function generateMetadata({
       const label = match.title || match.fileName;
       return {
         title: label,
-        description: `Stream ${label} with HTTP Range, HLS, and DASH protocols`,
+        description: `Watch ${label}`,
       };
     }
   } catch {
@@ -40,8 +40,7 @@ export async function generateMetadata({
 
   return {
     title: video,
-    description:
-      "Compare HTTP Range, HLS, and DASH streaming protocols with different ABR algorithms",
+    description: "Watch video with Best or manual streaming settings",
   };
 }
 
@@ -63,10 +62,9 @@ export default async function VideoPage({ params }: VideoPageProps) {
   return (
     <PageShell
       title={displayName}
-      description="Compare HTTP Range, HLS, and DASH streaming protocols with different ABR algorithms"
       action={
         <Button asChild className="shrink-0 self-center">
-          <Link href={`/${video}/analysis`}>Display Analysis</Link>
+          <Link href={`/${video}/analysis`}>Analysis</Link>
         </Button>
       }
       breadcrumb={

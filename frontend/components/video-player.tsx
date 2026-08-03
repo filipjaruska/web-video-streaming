@@ -9,15 +9,17 @@ interface VideoPlayerProps {
     abrAlgorithm: AbrAlgorithm
     apiUrl: string
     routeId: string
+    transcodeId?: string | null
     onStatsUpdate?: (stats: Partial<CurrentStats>) => void
 }
 
-export function VideoPlayer({ streamingMethod, abrAlgorithm, apiUrl, routeId, onStatsUpdate }: VideoPlayerProps) {
+export function VideoPlayer({ streamingMethod, abrAlgorithm, apiUrl, routeId, transcodeId = null, onStatsUpdate }: VideoPlayerProps) {
     const { videoRef, error } = useVideoPlayer({
         streamingMethod,
         abrAlgorithm,
         apiUrl,
         routeId,
+        transcodeId,
         onStatsUpdate,
     })
 

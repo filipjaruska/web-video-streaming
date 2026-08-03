@@ -7,24 +7,32 @@ import { Card, CardContent } from "@/components/ui/card";
 export function VideoPlayerSkeleton() {
   return (
     <SkeletonTheme baseColor="var(--muted)" highlightColor="var(--accent)">
-      <div className="space-y-6">
+      <div className="space-y-4">
         <Card>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <Skeleton height={40} />
-              <Skeleton height={40} />
+          <CardContent className="pt-5">
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton height={28} width={160} />
+              <Skeleton height={24} width={220} />
             </div>
           </CardContent>
         </Card>
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-          <div className="aspect-video w-full">
-            <Skeleton
-              className="!h-full !rounded-md"
-              containerClassName="block h-full leading-none"
-            />
-          </div>
-          <Skeleton height={280} className="!rounded-md" />
+        <div className="aspect-video w-full">
+          <Skeleton
+            className="!h-full !rounded-md"
+            containerClassName="block h-full leading-none"
+          />
         </div>
+        <Skeleton height={28} width="60%" />
+        <Card>
+          <CardContent className="pt-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Skeleton height={72} />
+              <Skeleton height={72} />
+              <Skeleton height={72} />
+              <Skeleton height={72} />
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </SkeletonTheme>
   );
