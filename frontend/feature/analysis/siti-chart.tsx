@@ -1,7 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import Hls from "hls.js";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type { AnalysisTreeNode, SitiSeriesData } from "@/lib/videoAnalysisApi";
 import { buildSeriesPoints, downsampleSeries } from "@/lib/analysisDownsample";
 import { formatSeconds } from "@/lib/analysisLabels";
@@ -91,6 +99,10 @@ interface SitiChartProps {
   stats?: AnalysisTreeNode | null;
   title?: string;
   description?: string;
+  /** Progressive source MP4 URL for click-to-seek scrubbing. */
+  videoSrc?: string;
+  /** Label above the scrubber video (e.g. "Source preview"). */
+  videoLabel?: string;
 }
 
 function SitiStatsList({ node }: { node: AnalysisTreeNode }) {
@@ -136,6 +148,8 @@ export function SitiChart({
   stats,
   title = "Spatial Information (SI) and Temporal Information (TI) analysis results",
   description = "Spatial and temporal information (ITU-T P.910) for the source video.",
+  videoSrc,
+  videoLabel = "Source preview",
 }: SitiChartProps) {
   const hasSeries = !!data && data.si.length > 0;
   const points = React.useMemo(
@@ -156,6 +170,198 @@ export function SitiChart({
     return null;
   }, [stats, data, hasSeries]);
 
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const pendingSeekRef = React.useRef<number | null>(null);
+  const hoverTimeRef = React.useRef<number | null>(null);
+  const isPointerDownRef = React.useRef(false);
+  const [scrubTime, setScrubTime] = React.useState<number | null>(null);
+  const [previewError, setPreviewError] = React.useState<string | null>(null);
+  const canScrub = Boolean(videoSrc) && hasSeries;
+  const isHlsSrc = Boolean(videoSrc?.includes(".m3u8"));
+
+  const chartMaxTime = React.useMemo(() => {
+    if (chartData.length === 0) {
+      return undefined;
+    }
+    return Math.max(...chartData.map((point) => point.timeSec));
+  }, [chartData]);
+
+  const applySeek = React.useCallback(
+    (timeSec: number) => {
+      const video = videoRef.current;
+      if (!video || !Number.isFinite(timeSec)) {
+        return;
+      }
+
+      const duration =
+        Number.isFinite(video.duration) && video.duration > 0
+          ? video.duration
+          : undefined;
+      // Prefer chart extent when media duration is missing/incomplete (common with progressive MP4).
+      const maxTime = duration ?? chartMaxTime;
+      const clamped =
+        maxTime != null
+          ? Math.min(Math.max(0, timeSec), maxTime)
+          : Math.max(0, timeSec);
+
+      setScrubTime(clamped);
+      pendingSeekRef.current = clamped;
+
+      if (video.readyState >= 1) {
+        video.pause();
+        video.currentTime = clamped;
+        pendingSeekRef.current = null;
+      }
+    },
+    [chartMaxTime],
+  );
+
+  const flushPendingSeek = React.useCallback(() => {
+    const video = videoRef.current;
+    const pending = pendingSeekRef.current;
+    if (!video || pending == null || video.readyState < 1) {
+      return;
+    }
+    video.pause();
+    video.currentTime = pending;
+    pendingSeekRef.current = null;
+  }, []);
+
+  // Attach HLS (or native) for scrub-friendly seeking; progressive MP4 often stalls mid-file.
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoSrc) {
+      return;
+    }
+
+    setPreviewError(null);
+    let hls: Hls | null = null;
+    let cancelled = false;
+
+    if (isHlsSrc) {
+      if (Hls.isSupported()) {
+        hls = new Hls({
+          enableWorker: true,
+          maxBufferLength: 8,
+          maxMaxBufferLength: 16,
+          startLevel: 0,
+        });
+        hls.loadSource(videoSrc);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (!cancelled) {
+            flushPendingSeek();
+          }
+        });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data.fatal || cancelled) {
+            return;
+          }
+          setPreviewError(
+            "HLS 360p preview unavailable. Re-upload or wait for packaging to finish.",
+          );
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = videoSrc;
+      } else {
+        setPreviewError("HLS playback is not supported in this browser.");
+      }
+    } else {
+      video.src = videoSrc;
+    }
+
+    return () => {
+      cancelled = true;
+      if (hls) {
+        hls.destroy();
+      }
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [flushPendingSeek, isHlsSrc, videoSrc]);
+
+  const timeFromChartState = React.useCallback((state: unknown): number | null => {
+    const active = state as {
+      activeLabel?: string | number;
+      activePayload?: Array<{ payload?: { timeSec?: number } }>;
+    };
+
+    const fromPayload = active?.activePayload?.[0]?.payload?.timeSec;
+    if (typeof fromPayload === "number" && Number.isFinite(fromPayload)) {
+      return fromPayload;
+    }
+
+    if (active?.activeLabel != null) {
+      const parsed = Number(active.activeLabel);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }, []);
+
+  const handleMouseMove = React.useCallback(
+    (state: unknown) => {
+      if (!canScrub) {
+        return;
+      }
+      const timeSec = timeFromChartState(state);
+      if (timeSec == null) {
+        return;
+      }
+      hoverTimeRef.current = timeSec;
+      if (isPointerDownRef.current) {
+        applySeek(timeSec);
+      }
+    },
+    [applySeek, canScrub, timeFromChartState],
+  );
+
+  const handleClick = React.useCallback(
+    (state: unknown) => {
+      if (!canScrub) {
+        return;
+      }
+      const timeSec = timeFromChartState(state) ?? hoverTimeRef.current;
+      if (timeSec != null) {
+        applySeek(timeSec);
+      }
+    },
+    [applySeek, canScrub, timeFromChartState],
+  );
+
+  const handlePointerDown = React.useCallback(() => {
+    if (!canScrub) {
+      return;
+    }
+    isPointerDownRef.current = true;
+    if (hoverTimeRef.current != null) {
+      applySeek(hoverTimeRef.current);
+    }
+  }, [applySeek, canScrub]);
+
+  const handlePointerUp = React.useCallback(() => {
+    isPointerDownRef.current = false;
+  }, []);
+
+  React.useEffect(() => {
+    if (!canScrub) {
+      return;
+    }
+    const onUp = () => {
+      isPointerDownRef.current = false;
+    };
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [canScrub]);
+
+  const gradientId = React.useId().replace(/:/g, "");
+
   return (
     <Card className="pt-0">
       <CardHeader className="border-b py-5">
@@ -165,16 +371,70 @@ export function SitiChart({
       <CardContent className="space-y-4 px-2 pt-4 sm:px-6 sm:pt-6">
         {statsNode && <SitiStatsList node={statsNode} />}
 
+        {videoSrc && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-sm font-medium">{videoLabel}</h3>
+              {scrubTime != null && (
+                <p className="font-mono text-xs text-muted-foreground">
+                  {formatSeconds(scrubTime)}
+                </p>
+              )}
+            </div>
+            <div className="overflow-hidden rounded-md border bg-muted/30">
+              <video
+                ref={videoRef}
+                muted
+                playsInline
+                preload="metadata"
+                disablePictureInPicture
+                controlsList="nodownload nofullscreen noremoteplayback"
+                className="pointer-events-none mx-auto max-h-60 w-full object-contain"
+                onLoadedMetadata={flushPendingSeek}
+                onCanPlay={flushPendingSeek}
+                onSeeked={() => {
+                  const video = videoRef.current;
+                  if (video) {
+                    setScrubTime(video.currentTime);
+                  }
+                }}
+              />
+            </div>
+            {previewError ? (
+              <p className="text-xs text-destructive">{previewError}</p>
+            ) : (
+              canScrub && (
+                <p className="text-xs text-muted-foreground">
+                  Hover and click/drag the graph to scrub the preview
+                  {isHlsSrc ? " (HLS 360p)" : ""}.
+                </p>
+              )
+            )}
+          </div>
+        )}
+
         {hasSeries ? (
           <div className="space-y-3">
             <h3 className="text-sm font-medium">SI/TI over time</h3>
             <ChartContainer
               config={chartConfig}
-              className="aspect-auto h-[280px] w-full"
+              className={`aspect-auto h-[280px] w-full ${canScrub ? "cursor-crosshair select-none" : ""}`}
+              onPointerDown={canScrub ? handlePointerDown : undefined}
+              onPointerUp={canScrub ? handlePointerUp : undefined}
             >
-              <AreaChart data={chartData}>
+              <AreaChart
+                data={chartData}
+                onMouseMove={canScrub ? handleMouseMove : undefined}
+                onClick={canScrub ? handleClick : undefined}
+              >
                 <defs>
-                  <linearGradient id="fillSi" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient
+                    id={`fillSi-${gradientId}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
                     <stop
                       offset="5%"
                       stopColor="var(--color-si)"
@@ -186,7 +446,13 @@ export function SitiChart({
                       stopOpacity={0.1}
                     />
                   </linearGradient>
-                  <linearGradient id="fillTi" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient
+                    id={`fillTi-${gradientId}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
                     <stop
                       offset="5%"
                       stopColor="var(--color-ti)"
@@ -202,6 +468,8 @@ export function SitiChart({
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="timeSec"
+                  type="number"
+                  domain={["dataMin", "dataMax"]}
                   tickLine={false}
                   axisLine={false}
                   tickMargin={8}
@@ -210,7 +478,7 @@ export function SitiChart({
                 />
                 <YAxis tickLine={false} axisLine={false} width={40} />
                 <ChartTooltip
-                  cursor={false}
+                  cursor={canScrub}
                   content={
                     <ChartTooltipContent
                       labelFormatter={(_, payload) => {
@@ -227,19 +495,29 @@ export function SitiChart({
                     />
                   }
                 />
+                {scrubTime != null && (
+                  <ReferenceLine
+                    x={scrubTime}
+                    stroke="var(--foreground)"
+                    strokeDasharray="4 4"
+                    strokeOpacity={0.7}
+                  />
+                )}
                 <Area
                   dataKey="si"
-                  type="natural"
-                  fill="url(#fillSi)"
+                  type="monotone"
+                  fill={`url(#fillSi-${gradientId})`}
                   stroke="var(--color-si)"
                   strokeWidth={1.5}
+                  isAnimationActive={false}
                 />
                 <Area
                   dataKey="ti"
-                  type="natural"
-                  fill="url(#fillTi)"
+                  type="monotone"
+                  fill={`url(#fillTi-${gradientId})`}
                   stroke="var(--color-ti)"
                   strokeWidth={1.5}
+                  isAnimationActive={false}
                 />
                 <ChartLegend content={<ChartLegendContent />} />
               </AreaChart>

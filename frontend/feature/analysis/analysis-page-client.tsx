@@ -39,6 +39,7 @@ export function AnalysisPageClient({ routeId }: AnalysisPageClientProps) {
 
       {data && (
         <AnalysisTargetTabs
+          routeId={routeId}
           targets={data.targets}
           futureTests={data.futureTests}
         />
