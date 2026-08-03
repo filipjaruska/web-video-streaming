@@ -8,11 +8,6 @@ public static class AnalysisTargetBuilder {
     public static List<FutureTestDescriptor> BuildFutureTests() {
         return [
             new FutureTestDescriptor {
-                Id = "vmaf",
-                Label = "VMAF",
-                Status = "not_implemented"
-            },
-            new FutureTestDescriptor {
                 Id = "psnr",
                 Label = "PSNR",
                 Status = "not_implemented"

@@ -1,18 +1,22 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type {
   AnalysisTarget,
+  FormatVmafSeries,
   FutureTestDescriptor,
+  VmafSeriesData,
 } from "@/lib/videoAnalysisApi";
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
+import { VmafChart } from "@/feature/analysis/vmaf-chart";
 import { TranscodeAnalysisCard } from "@/feature/analysis/transcode-analysis-card";
 import { formatTargetStatus } from "@/lib/analysisLabels";
 import { getPublicApiUrl } from "@/lib/env";
 import { getHlsVariantUrl } from "@/lib/streamingLabels";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -28,6 +32,87 @@ interface AnalysisTargetTabsProps {
   futureTests: FutureTestDescriptor[];
 }
 
+type FormatKey = "hls" | "dash";
+
+function collectVmafEntries(
+  byFormat: FormatVmafSeries | undefined,
+): Array<{ format: FormatKey; label: string; data: VmafSeriesData }> {
+  if (!byFormat) {
+    return [];
+  }
+
+  const entries: Array<{
+    format: FormatKey;
+    label: string;
+    data: VmafSeriesData;
+  }> = [];
+
+  for (const format of ["hls", "dash"] as const) {
+    const map = byFormat[format];
+    if (!map) {
+      continue;
+    }
+    for (const [label, data] of Object.entries(map)) {
+      entries.push({ format, label, data });
+    }
+  }
+
+  return entries;
+}
+
+function RdSummaryTable({
+  entries,
+}: {
+  entries: Array<{ format: FormatKey; label: string; data: VmafSeriesData }>;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b text-muted-foreground">
+            <th className="py-2 pr-3 font-medium">Format</th>
+            <th className="py-2 pr-3 font-medium">Rung</th>
+            <th className="py-2 pr-3 font-medium">Bitrate</th>
+            <th className="py-2 pr-3 font-medium">Mean VMAF</th>
+            <th className="py-2 pr-3 font-medium">Harmonic</th>
+            <th className="py-2 font-medium">Min</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry) => {
+            const bps = entry.data.summary.bitrateBps;
+            const bitrate =
+              bps == null
+                ? "—"
+                : bps >= 1_000_000
+                  ? `${(bps / 1_000_000).toFixed(2)} Mb/s`
+                  : `${(bps / 1000).toFixed(0)} kb/s`;
+            return (
+              <tr
+                key={`${entry.format}-${entry.label}`}
+                className="border-b border-border/50 last:border-b-0"
+              >
+                <td className="py-1.5 pr-3 uppercase">{entry.format}</td>
+                <td className="py-1.5 pr-3 font-mono text-xs">{entry.label}</td>
+                <td className="py-1.5 pr-3 font-mono text-xs">{bitrate}</td>
+                <td className="py-1.5 pr-3 font-mono text-xs">
+                  {entry.data.summary.mean.toFixed(2)}
+                </td>
+                <td className="py-1.5 pr-3 font-mono text-xs">
+                  {entry.data.summary.harmonicMean.toFixed(2)}
+                </td>
+                <td className="py-1.5 font-mono text-xs">
+                  {entry.data.summary.min.toFixed(2)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function AnalysisTargetTabs({
   routeId,
   targets,
@@ -35,6 +120,48 @@ export function AnalysisTargetTabs({
 }: AnalysisTargetTabsProps) {
   const source = targets.find((target) => target.kind === "source");
   const transcodes = targets.filter((target) => target.kind === "transcode");
+  const activeTranscode =
+    transcodes.find((target) => target.label.includes("(active)")) ??
+    transcodes[0];
+
+  const vmafEntries = useMemo(() => {
+    const fromActive = collectVmafEntries(activeTranscode?.series.vmafByFormat);
+    if (fromActive.length > 0) {
+      return fromActive;
+    }
+    for (const target of transcodes) {
+      const entries = collectVmafEntries(target.series.vmafByFormat);
+      if (entries.length > 0) {
+        return entries;
+      }
+    }
+    return [];
+  }, [activeTranscode, transcodes]);
+
+  const formats = useMemo(() => {
+    const set = new Set<FormatKey>();
+    for (const entry of vmafEntries) {
+      set.add(entry.format);
+    }
+    return Array.from(set);
+  }, [vmafEntries]);
+
+  const [selectedFormat, setSelectedFormat] = useState<FormatKey | null>(null);
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+
+  const resolvedFormat = selectedFormat ?? formats[0] ?? "hls";
+  const labelsForFormat = vmafEntries
+    .filter((entry) => entry.format === resolvedFormat)
+    .map((entry) => entry.label);
+  const resolvedLabel = selectedLabel ?? labelsForFormat[0] ?? null;
+  const selectedSeries =
+    resolvedLabel == null
+      ? undefined
+      : vmafEntries.find(
+          (entry) =>
+            entry.format === resolvedFormat && entry.label === resolvedLabel,
+        )?.data;
+
   const { mediaNodes, sitiNode } = useMemo(
     () =>
       source
@@ -45,7 +172,6 @@ export function AnalysisTargetTabs({
   const hasSitiSeries =
     !!source?.series.siti && source.series.siti.si.length > 0;
 
-  // HLS 360p seeks reliably across the full timeline; progressive MP4 often stalls mid-file.
   const videoSrc = useMemo(
     () => getHlsVariantUrl(getPublicApiUrl(), routeId, "360p"),
     [routeId],
@@ -117,6 +243,86 @@ export function AnalysisTargetTabs({
       </TabsContent>
 
       <TabsContent value="quality" className="mt-4 space-y-4">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">VMAF</CardTitle>
+                <CardDescription>
+                  Full-reference scores comparing each HLS/DASH ladder rung to
+                  the source upload. Computed automatically during upload
+                  processing (after packaging). Mean VMAF and bitrate are the RD
+                  points for later ladder derivation.
+                </CardDescription>
+              </div>
+              <Badge variant={vmafEntries.length === 0 ? "secondary" : "outline"}>
+                {vmafEntries.length === 0 ? "No data yet" : "Ready"}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {vmafEntries.length > 0 ? (
+              <>
+                <div>
+                  <h3 className="mb-2 text-sm font-medium">
+                    Rate–distortion summary
+                  </h3>
+                  <RdSummaryTable entries={vmafEntries} />
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {formats.map((format) => (
+                    <Button
+                      key={format}
+                      size="sm"
+                      variant={
+                        resolvedFormat === format ? "default" : "outline"
+                      }
+                      onClick={() => {
+                        setSelectedFormat(format);
+                        setSelectedLabel(null);
+                      }}
+                    >
+                      {format.toUpperCase()}
+                    </Button>
+                  ))}
+                </div>
+
+                {labelsForFormat.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {labelsForFormat.map((label) => (
+                      <Button
+                        key={label}
+                        size="sm"
+                        variant={
+                          resolvedLabel === label ? "default" : "outline"
+                        }
+                        onClick={() => setSelectedLabel(label)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                {selectedSeries && resolvedLabel && (
+                  <VmafChart
+                    data={selectedSeries}
+                    label={resolvedLabel}
+                    format={resolvedFormat}
+                  />
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No VMAF series yet. Re-upload a video — the pipeline runs VMAF
+                after HLS/DASH packaging (progress step ~92%). Requires ffmpeg
+                with libvmaf.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
         {futureTests.map((test) => (
           <Card key={test.id}>
             <CardHeader>
@@ -124,18 +330,18 @@ export function AnalysisTargetTabs({
                 <div>
                   <CardTitle className="text-base">{test.label}</CardTitle>
                   <CardDescription>
-                    {test.id === "vmaf"
-                      ? "Video Multi-Method Assessment Fusion scores comparing source to transcoded outputs."
-                      : `${test.label} quality metric comparing source to transcoded outputs.`}
+                    {test.label} quality metric comparing source to transcoded
+                    outputs.
                   </CardDescription>
                 </div>
-                <Badge variant="secondary">Not implemented</Badge>
+                <Badge variant="secondary">
+                  {formatTargetStatus(test.status)}
+                </Badge>
               </div>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Scaffolded for a future pipeline step. Results will land as series
-                under this test once implemented.
+                Scaffolded for a future pipeline step.
               </p>
             </CardContent>
           </Card>

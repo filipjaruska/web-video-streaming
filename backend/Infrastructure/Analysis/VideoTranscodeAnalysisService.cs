@@ -40,7 +40,7 @@ public class VideoTranscodeAnalysisService : IVideoTranscodeAnalysisService {
 
         var report = new VideoTranscodeAnalysis {
             TranscodeId = transcodeId,
-            SchemaVersion = 2,
+            SchemaVersion = 3,
             TreeJson = SerializeTree(new AnalysisTreeDocument {
                 Id = $"transcode-{transcodeId:N}",
                 Label = "Transcode analysis"
@@ -88,7 +88,7 @@ public class VideoTranscodeAnalysisService : IVideoTranscodeAnalysisService {
         }
 
         report.TreeJson = SerializeTree(tree);
-        report.SchemaVersion = 2;
+        report.SchemaVersion = 3;
         report.UpdatedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -98,10 +98,58 @@ public class VideoTranscodeAnalysisService : IVideoTranscodeAnalysisService {
         AnalysisSeriesDocument series,
         CancellationToken cancellationToken = default) {
         var report = await GetOrCreateAsync(transcodeId, cancellationToken);
-        report.SeriesJson = SerializeSeries(series);
-        report.SchemaVersion = 2;
+        var existing = DeserializeSeries(report.SeriesJson) ?? new AnalysisSeriesDocument();
+        report.SeriesJson = SerializeSeries(MergeSeries(existing, series));
+        report.SchemaVersion = 3;
         report.UpdatedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Merges incoming series fields into existing so SI/TI and VMAF can be written independently.
+    /// </summary>
+    internal static AnalysisSeriesDocument MergeSeries(
+        AnalysisSeriesDocument existing,
+        AnalysisSeriesDocument incoming) {
+        return new AnalysisSeriesDocument {
+            Siti = incoming.Siti ?? existing.Siti,
+            SitiByFormat = MergeFormatSiti(existing.SitiByFormat, incoming.SitiByFormat),
+            VmafByFormat = MergeFormatVmaf(existing.VmafByFormat, incoming.VmafByFormat)
+        };
+    }
+
+    private static FormatSitiSeriesDocument? MergeFormatSiti(
+        FormatSitiSeriesDocument? existing,
+        FormatSitiSeriesDocument? incoming) {
+        if (incoming == null) {
+            return existing;
+        }
+
+        if (existing == null) {
+            return incoming;
+        }
+
+        return new FormatSitiSeriesDocument {
+            Hls = incoming.Hls ?? existing.Hls,
+            Dash = incoming.Dash ?? existing.Dash
+        };
+    }
+
+    private static FormatVmafSeriesDocument? MergeFormatVmaf(
+        FormatVmafSeriesDocument? existing,
+        FormatVmafSeriesDocument? incoming) {
+        if (incoming == null) {
+            return existing;
+        }
+
+        if (existing == null) {
+            return incoming;
+        }
+
+        return new FormatVmafSeriesDocument {
+            Hls = incoming.Hls ?? existing.Hls,
+            Dash = incoming.Dash ?? existing.Dash
+        };
     }
 
     public async Task MarkSectionFailedAsync(

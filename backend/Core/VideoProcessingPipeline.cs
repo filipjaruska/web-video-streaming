@@ -15,7 +15,8 @@ public sealed class VideoProcessingResult {
 }
 
 /// <summary>
-/// Post-upload processing steps for a video (media info → SI/TI → thumbnail → HLS → DASH → transcode analysis).
+/// Post-upload processing steps for a video
+/// (media info → SI/TI → thumbnail → HLS → DASH → transcode SI/TI → VMAF).
 /// </summary>
 public sealed class VideoProcessingPipeline {
     private readonly AppDbContext _dbContext;
@@ -80,20 +81,20 @@ public sealed class VideoProcessingPipeline {
             await ReportSessionProgressAsync(video, 45, "Reading media info", cancellationToken);
             await ExtractMediaInfoStepAsync(video, sourcePath, cancellationToken);
 
-            await ReportSessionProgressAsync(video, 55, "SI/TI analysis", cancellationToken);
+            await ReportSessionProgressAsync(video, 50, "SI/TI analysis", cancellationToken);
             await RunSitiAnalysisStepAsync(video, sourcePath, cancellationToken);
 
-            await ReportSessionProgressAsync(video, 65, "Generating thumbnail", cancellationToken);
+            await ReportSessionProgressAsync(video, 55, "Generating thumbnail", cancellationToken);
             await ExtractThumbnailStepAsync(video, sourcePath, cancellationToken);
 
-            await ReportSessionProgressAsync(video, 75, "HLS transcoding", cancellationToken);
+            await ReportSessionProgressAsync(video, 65, "HLS transcoding", cancellationToken);
             var hlsResult = await GenerateHlsStepAsync(video.RouteId, transcode.Id, sourcePath, cancellationToken);
             hasHls = hlsResult.Success;
             if (!hlsResult.Success) {
                 error = hlsResult.ErrorMessage;
             }
 
-            await ReportSessionProgressAsync(video, 90, "DASH transcoding", cancellationToken);
+            await ReportSessionProgressAsync(video, 75, "DASH transcoding", cancellationToken);
             var dashResult = await GenerateDashStepAsync(video.RouteId, transcode.Id, sourcePath, cancellationToken);
             hasDash = dashResult.Success;
             if (!dashResult.Success) {
@@ -103,8 +104,16 @@ public sealed class VideoProcessingPipeline {
             }
 
             if (hasHls || hasDash) {
-                await ReportSessionProgressAsync(video, 95, "Analyzing transcodes", cancellationToken);
+                await ReportSessionProgressAsync(video, 85, "Analyzing transcodes (SI/TI)", cancellationToken);
                 await _transcodeAnalysis.CollectAsync(
+                    video.RouteId,
+                    transcode.Id,
+                    hasHls,
+                    hasDash,
+                    cancellationToken);
+
+                await ReportSessionProgressAsync(video, 92, "VMAF analysis", cancellationToken);
+                await _transcodeAnalysis.CollectVmafAsync(
                     video.RouteId,
                     transcode.Id,
                     hasHls,

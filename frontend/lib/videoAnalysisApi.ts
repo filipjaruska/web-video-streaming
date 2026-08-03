@@ -38,9 +38,32 @@ export interface FormatSitiSeries {
   dash?: Record<string, SitiSeriesData>;
 }
 
+export interface VmafSummary {
+  mean: number;
+  harmonicMean: number;
+  min: number;
+  max: number;
+  model?: string;
+  width?: number;
+  height?: number;
+  bitrateBps?: number;
+}
+
+export interface VmafSeriesData {
+  scores: number[];
+  timeSec?: number[];
+  summary: VmafSummary;
+}
+
+export interface FormatVmafSeries {
+  hls?: Record<string, VmafSeriesData>;
+  dash?: Record<string, VmafSeriesData>;
+}
+
 export interface AnalysisSeriesDocument {
   siti?: SitiSeriesData;
   sitiByFormat?: FormatSitiSeries;
+  vmafByFormat?: FormatVmafSeries;
 }
 
 export type AnalysisTargetKind = "source" | "transcode" | "futureTest";
@@ -65,7 +88,7 @@ export interface AnalysisTarget {
 export interface FutureTestDescriptor {
   id: string;
   label: string;
-  status: "not_implemented";
+  status: AnalysisTargetStatus;
 }
 
 export interface VideoAnalysisResponse {

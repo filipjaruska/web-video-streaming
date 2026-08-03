@@ -14,7 +14,8 @@ RUN dotnet publish -c Release -o /app/publish
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 
-# Install FFmpeg
+# Install FFmpeg (VMAF needs a build with libvmaf; soft-fails at runtime if missing).
+# Local Windows: use a full build (gyan.dev / BtbN) with --enable-libvmaf on PATH.
 RUN apt-get update && \
     apt-get install -y ffmpeg && \
     apt-get clean && \
