@@ -438,12 +438,12 @@ export function SitiChart({
                     <stop
                       offset="5%"
                       stopColor="var(--color-si)"
-                      stopOpacity={0.8}
+                      stopOpacity={0.35}
                     />
                     <stop
                       offset="95%"
                       stopColor="var(--color-si)"
-                      stopOpacity={0.1}
+                      stopOpacity={0.02}
                     />
                   </linearGradient>
                   <linearGradient
@@ -456,16 +456,16 @@ export function SitiChart({
                     <stop
                       offset="5%"
                       stopColor="var(--color-ti)"
-                      stopOpacity={0.8}
+                      stopOpacity={0.28}
                     />
                     <stop
                       offset="95%"
                       stopColor="var(--color-ti)"
-                      stopOpacity={0.1}
+                      stopOpacity={0.02}
                     />
                   </linearGradient>
                 </defs>
-                <CartesianGrid vertical={false} />
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis
                   dataKey="timeSec"
                   type="number"
@@ -508,7 +508,7 @@ export function SitiChart({
                   type="monotone"
                   fill={`url(#fillSi-${gradientId})`}
                   stroke="var(--color-si)"
-                  strokeWidth={1.5}
+                  strokeWidth={2}
                   isAnimationActive={false}
                 />
                 <Area
@@ -516,7 +516,7 @@ export function SitiChart({
                   type="monotone"
                   fill={`url(#fillTi-${gradientId})`}
                   stroke="var(--color-ti)"
-                  strokeWidth={1.5}
+                  strokeWidth={2}
                   isAnimationActive={false}
                 />
                 <ChartLegend content={<ChartLegendContent />} />

@@ -140,12 +140,12 @@ export function VmafChart({ data, label, format }: VmafChartProps) {
                     <stop
                       offset="5%"
                       stopColor="var(--color-vmaf)"
-                      stopOpacity={0.8}
+                      stopOpacity={0.35}
                     />
                     <stop
                       offset="95%"
                       stopColor="var(--color-vmaf)"
-                      stopOpacity={0.1}
+                      stopOpacity={0.02}
                     />
                   </linearGradient>
                 </defs>
