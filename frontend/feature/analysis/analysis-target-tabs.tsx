@@ -244,7 +244,12 @@ export function AnalysisTargetTabs({
               key={target.id}
               target={target}
               transcodeNumber={index + 1}
-              videoSrc={videoSrc}
+              videoSrc={getHlsVariantUrl(
+                getPublicApiUrl(),
+                routeId,
+                "360p",
+                target.transcodeId,
+              )}
             />
           ))
         )}
