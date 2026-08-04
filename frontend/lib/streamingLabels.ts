@@ -23,8 +23,8 @@ export function getAbrLabel(algorithm: AbrAlgorithm): string {
  */
 export function getStreamingMethodDescription(method: StreamingMethod): string {
   switch (method) {
-    case "http-range":
-      return "Traditional video delivery. Single quality, browser requests video chunks as needed. Simple but no quality adaptation.";
+    case "source":
+      return "Original uploaded file via progressive HTTP Range. Single quality, no ladder packaging.";
     case "hls":
       return "Apple's streaming protocol. Multiple quality levels, automatically adapts to network conditions. Used by Twitch, Apple TV+. Format: .m3u8 + .ts segments.";
     case "dash":
@@ -69,8 +69,8 @@ export function getDashAbrDescription(algorithm: AbrAlgorithm): string {
  */
 export function getStreamingMethodTitle(method: StreamingMethod): string {
   switch (method) {
-    case "http-range":
-      return "HTTP Range Requests:";
+    case "source":
+      return "Source (original):";
     case "hls":
       return "HLS (Adaptive):";
     case "dash":
@@ -85,8 +85,8 @@ export function getActiveMethodName(
   method: StreamingMethod,
   algorithm?: AbrAlgorithm,
 ): string {
-  if (method === "http-range") {
-    return "HTTP Range Requests";
+  if (method === "source") {
+    return "Source (original)";
   }
 
   const abrLabel = algorithm ? ` (${getAbrLabel(algorithm)})` : "";
@@ -98,6 +98,7 @@ export function getActiveMethodName(
 /**
  * Build manifest or video URL for a published video route id.
  * When `transcodeId` is set, HLS/DASH hit the packaging-run-scoped routes.
+ * Source always uses the progressive Range endpoint for the original file.
  */
 export function getVideoUrl(
   method: StreamingMethod,
@@ -106,7 +107,7 @@ export function getVideoUrl(
   transcodeId?: string | null,
 ): string {
   switch (method) {
-    case "http-range":
+    case "source":
       return `${apiUrl}/api/httprange/${routeId}`;
     case "hls":
       return transcodeId
