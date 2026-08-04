@@ -25,6 +25,8 @@ import {
   ChartTooltip,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { ExportCsvButton } from "@/components/export-csv-button";
+import { slugFilename } from "@/lib/csvExport";
 
 /** Highest → lowest — legend and series always follow this order. */
 const HEIGHT_KEYS = [1080, 720, 480, 360, 240] as const;
@@ -236,14 +238,82 @@ export function RdScatterChart({
   const presentHeights = byHeight.map(([h]) => h);
   const showDerived = derivedByHeight.size > 0;
 
+  const exportRows = React.useMemo(() => {
+    const gridRows = encodeGrid.map((point) => [
+      "encode_grid",
+      point.label,
+      point.width,
+      point.height,
+      point.crf,
+      point.bitrateBps,
+      Number((point.bitrateBps / 1000).toFixed(3)),
+      point.error ? "" : Number(point.vmafMean.toFixed(6)),
+      point.vmafHarmonicMean != null
+        ? Number(point.vmafHarmonicMean.toFixed(6))
+        : "",
+      point.vmafMin != null ? Number(point.vmafMin.toFixed(6)) : "",
+      point.error ?? "",
+    ]);
+
+    const derivedRows =
+      derivedLadder?.variants.map((variant) => {
+        const parts = variant.resolution.split(/[:xX]/);
+        const width = parts.length === 2 ? Number(parts[0]) : "";
+        const height = parts.length === 2 ? Number(parts[1]) : "";
+        return [
+          "derived_ladder",
+          variant.label,
+          width,
+          height,
+          "",
+          variant.bitrateBps,
+          Number((variant.bitrateBps / 1000).toFixed(3)),
+          variant.predictedVmaf != null
+            ? Number(variant.predictedVmaf.toFixed(6))
+            : "",
+          "",
+          "",
+          "",
+        ];
+      }) ?? [];
+
+    return [...gridRows, ...derivedRows];
+  }, [encodeGrid, derivedLadder]);
+
   return (
     <Card>
       <CardHeader className="border-b py-5">
-        <CardTitle className="text-base">Rate–distortion (encode grid)</CardTitle>
-        <CardDescription>
-          Measured bitrate vs mean VMAF per resolution×CRF sample. Stars mark
-          the derived crossover ladder (same colors as their resolution).
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <CardTitle className="text-base">
+              Rate–distortion (encode grid)
+            </CardTitle>
+            <CardDescription>
+              Measured bitrate vs mean VMAF per resolution×CRF sample. Stars mark
+              the derived crossover ladder (same colors as their resolution).
+            </CardDescription>
+          </div>
+          <ExportCsvButton
+            filename={slugFilename([
+              "rd-encode-grid",
+              derivedLadder?.name ?? "",
+            ])}
+            headers={[
+              "kind",
+              "label",
+              "width",
+              "height",
+              "crf",
+              "bitrate_bps",
+              "bitrate_kbps",
+              "vmaf_mean",
+              "vmaf_harmonic_mean",
+              "vmaf_min",
+              "error",
+            ]}
+            rows={exportRows}
+          />
+        </div>
       </CardHeader>
       <CardContent className="pt-4">
         <div ref={containerRef} className="h-80 w-full min-h-80 min-w-0">

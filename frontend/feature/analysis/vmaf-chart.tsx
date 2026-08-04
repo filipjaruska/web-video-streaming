@@ -14,7 +14,9 @@ import {
   downsampleVmafSeries,
 } from "@/lib/analysisDownsample";
 import { formatSeconds } from "@/lib/analysisLabels";
+import { slugFilename } from "@/lib/csvExport";
 import { Badge } from "@/components/ui/badge";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import {
   Card,
   CardContent,
@@ -103,20 +105,41 @@ export function VmafChart({ data, label, format }: VmafChartProps) {
   );
   const gradientId = React.useId().replace(/:/g, "");
 
+  const exportRows = React.useMemo(
+    () =>
+      points.map((point) => [
+        point.frame,
+        Number(point.timeSec.toFixed(6)),
+        Number(point.vmaf.toFixed(6)),
+      ]),
+    [points],
+  );
+
   return (
     <Card>
       <CardHeader className="border-b py-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-base">
-            {format.toUpperCase()} · {label}
-          </CardTitle>
-          <Badge variant="outline">
-            mean {formatScore(data.summary.mean)}
-          </Badge>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-base">
+                {format.toUpperCase()} · {label}
+              </CardTitle>
+              <Badge variant="outline">
+                mean {formatScore(data.summary.mean)}
+              </Badge>
+            </div>
+            <CardDescription>
+              Full-reference VMAF vs source (RD point: bitrate × mean VMAF).
+            </CardDescription>
+          </div>
+          {hasSeries && (
+            <ExportCsvButton
+              filename={slugFilename(["vmaf", format, label])}
+              headers={["frame", "time_sec", "vmaf"]}
+              rows={exportRows}
+            />
+          )}
         </div>
-        <CardDescription>
-          Full-reference VMAF vs source (RD point: bitrate × mean VMAF).
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-4">
         <SummaryTable summary={data.summary} />
