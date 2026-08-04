@@ -22,6 +22,10 @@ public interface IVideoStorageService {
     string GetTranscodeDir(string routeId, Guid transcodeId);
     string GetHlsDir(string routeId, Guid transcodeId);
     string GetDashDir(string routeId, Guid transcodeId);
+    string GetSubsDir(string routeId);
+    string GetSubsManifestPath(string routeId);
+    string? ResolveSubsManifestPath(string routeId);
+    string? ResolveSubtitlePath(string routeId, string fileName);
     string? ResolveSourcePath(string routeId);
     string? GetHlsManifestPath(string routeId, Guid transcodeId);
     string? GetHlsQualityPlaylistPath(string routeId, Guid transcodeId, string quality);
@@ -31,6 +35,7 @@ public interface IVideoStorageService {
     void EnsureSourceDir(string routeId);
     void EnsureHlsDir(string routeId, Guid transcodeId);
     void EnsureDashDir(string routeId, Guid transcodeId);
+    void EnsureSubsDir(string routeId);
     Task SaveSourceAsync(string routeId, Stream content, CancellationToken cancellationToken = default);
     bool DeleteVideoTree(string routeId);
 }
@@ -85,6 +90,38 @@ public class VideoStorageService : IVideoStorageService {
         return Path.Combine(GetTranscodeDir(routeId, transcodeId), "dash");
     }
 
+    public string GetSubsDir(string routeId) {
+        return Path.Combine(GetVideoRoot(routeId), "subs");
+    }
+
+    public string GetSubsManifestPath(string routeId) {
+        return Path.Combine(GetSubsDir(routeId), "manifest.json");
+    }
+
+    public string? ResolveSubsManifestPath(string routeId) {
+        var path = GetSubsManifestPath(routeId);
+        return File.Exists(path) ? path : null;
+    }
+
+    public string? ResolveSubtitlePath(string routeId, string fileName) {
+        if (string.IsNullOrWhiteSpace(fileName) ||
+            fileName.Contains('/') ||
+            fileName.Contains('\\') ||
+            fileName.Contains("..", StringComparison.Ordinal) ||
+            !fileName.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase)) {
+            return null;
+        }
+
+        var filePath = Path.Combine(GetSubsDir(routeId), fileName);
+        var fullPath = Path.GetFullPath(filePath);
+        var subsRoot = Path.GetFullPath(GetSubsDir(routeId));
+        if (!fullPath.StartsWith(subsRoot, StringComparison.OrdinalIgnoreCase)) {
+            return null;
+        }
+
+        return File.Exists(fullPath) ? fullPath : null;
+    }
+
     public string? ResolveSourcePath(string routeId) {
         var path = GetSourcePath(routeId);
         return File.Exists(path) ? path : null;
@@ -134,6 +171,10 @@ public class VideoStorageService : IVideoStorageService {
 
     public void EnsureDashDir(string routeId, Guid transcodeId) {
         Directory.CreateDirectory(GetDashDir(routeId, transcodeId));
+    }
+
+    public void EnsureSubsDir(string routeId) {
+        Directory.CreateDirectory(GetSubsDir(routeId));
     }
 
     public async Task SaveSourceAsync(string routeId, Stream content, CancellationToken cancellationToken = default) {

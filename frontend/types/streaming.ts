@@ -1,6 +1,13 @@
-export type StreamingMethod = "http-range" | "hls" | "dash";
+export type StreamingMethod = "source" | "hls" | "dash";
 
 export type AbrAlgorithm = "throughput" | "buffer" | "hybrid" | "baseline";
+
+/** Sentinel packaging-run id for original source progressive playback. */
+export const SOURCE_RUN_ID = "source";
+
+export function isSourceRun(transcodeId: string | null | undefined): boolean {
+  return !transcodeId || transcodeId === SOURCE_RUN_ID;
+}
 
 export interface StreamingConfig {
   method: StreamingMethod;

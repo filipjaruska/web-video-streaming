@@ -14,8 +14,8 @@ function formatLabel(method: StreamingMethod): string {
       return "HLS";
     case "dash":
       return "DASH";
-    case "http-range":
-      return "HTTP Range";
+    case "source":
+      return "Source";
   }
 }
 

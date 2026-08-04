@@ -110,7 +110,7 @@ function collectStats(
     collectHlsStats(hlsInstance, stats);
   } else if (streamingMethod === "dash" && dashInstance) {
     collectDashStats(dashInstance, stats);
-  } else if (streamingMethod === "http-range") {
+  } else if (streamingMethod === "source") {
     collectHttpRangeStats(video, stats, throughputState, bitrateState);
   }
 

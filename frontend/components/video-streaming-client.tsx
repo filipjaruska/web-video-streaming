@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { StreamingMethod, AbrAlgorithm } from "@/types/streaming";
+import { SOURCE_RUN_ID, isSourceRun } from "@/types/streaming";
 import { StreamingControls } from "@/components/streaming-controls";
 import { VideoPlayer } from "@/components/video-player";
 import { VideoEncodingInfo } from "@/components/video-encoding-info";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useVideoStats } from "@/hooks/useVideoStats";
+import { useVideoSubtitles } from "@/hooks/useVideoSubtitles";
 import { useVideoTranscodes } from "@/hooks/useVideoTranscodes";
 import { pickBestPlaybackSettings } from "@/lib/videoTranscodesApi";
 import { getPublicApiUrl } from "@/lib/env";
@@ -51,16 +53,29 @@ function StatTile({
   );
 }
 
+function deliveryForLadder(
+  hasHls: boolean,
+  hasDash: boolean,
+  preferred?: StreamingMethod,
+): "hls" | "dash" | null {
+  if (preferred === "hls" && hasHls) return "hls";
+  if (preferred === "dash" && hasDash) return "dash";
+  if (hasHls) return "hls";
+  if (hasDash) return "dash";
+  return null;
+}
+
 export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
   const apiUrl = getPublicApiUrl();
   const { transcodes, activeTranscodeId, loading: transcodesLoading } =
     useVideoTranscodes(routeId);
+  const { tracks: subtitleTracks } = useVideoSubtitles(routeId);
 
   const [bestMode, setBestMode] = useState(true);
   const [streamingMethod, setStreamingMethod] =
-    useState<StreamingMethod>("http-range");
+    useState<StreamingMethod>("source");
   const [abrAlgorithm, setAbrAlgorithm] = useState<AbrAlgorithm>("hybrid");
-  const [transcodeId, setTranscodeId] = useState<string | null>(null);
+  const [packagingRunId, setPackagingRunId] = useState<string | null>(null);
   const { stats, updateStats, resetStats } = useVideoStats();
 
   const bestSettings = useMemo(() => {
@@ -71,8 +86,8 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
   // Keep manual state in sync with Best so unlocking starts from the auto pick.
   useEffect(() => {
     if (!bestMode || !bestSettings) return;
-    setTranscodeId((prev) =>
-      prev === bestSettings.transcodeId ? prev : bestSettings.transcodeId,
+    setPackagingRunId((prev) =>
+      prev === bestSettings.packagingRunId ? prev : bestSettings.packagingRunId,
     );
     setStreamingMethod((prev) =>
       prev === bestSettings.streamingMethod
@@ -86,49 +101,90 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
 
   // Keep delivery valid when packaging run changes in manual mode.
   useEffect(() => {
-    if (bestMode || !transcodeId) return;
-    const selected = transcodes.find((item) => item.id === transcodeId);
+    if (bestMode || !packagingRunId) return;
+
+    if (isSourceRun(packagingRunId)) {
+      if (streamingMethod !== "source") {
+        setStreamingMethod("source");
+      }
+      return;
+    }
+
+    const selected = transcodes.find((item) => item.id === packagingRunId);
     if (!selected) return;
 
-    if (streamingMethod === "dash" && !selected.hasDash) {
-      setStreamingMethod(selected.hasHls ? "hls" : "http-range");
-    } else if (streamingMethod === "hls" && !selected.hasHls) {
-      setStreamingMethod(selected.hasDash ? "dash" : "http-range");
+    if (streamingMethod === "source") {
+      const next = deliveryForLadder(selected.hasHls, selected.hasDash);
+      if (next) {
+        setStreamingMethod(next);
+      } else {
+        setPackagingRunId(SOURCE_RUN_ID);
+        setStreamingMethod("source");
+      }
+      return;
     }
-  }, [bestMode, transcodeId, transcodes, streamingMethod]);
+
+    if (streamingMethod === "dash" && !selected.hasDash) {
+      const next = deliveryForLadder(selected.hasHls, selected.hasDash, "hls");
+      if (next) setStreamingMethod(next);
+      else {
+        setPackagingRunId(SOURCE_RUN_ID);
+        setStreamingMethod("source");
+      }
+    } else if (streamingMethod === "hls" && !selected.hasHls) {
+      const next = deliveryForLadder(selected.hasHls, selected.hasDash, "dash");
+      if (next) setStreamingMethod(next);
+      else {
+        setPackagingRunId(SOURCE_RUN_ID);
+        setStreamingMethod("source");
+      }
+    }
+  }, [bestMode, packagingRunId, transcodes, streamingMethod]);
 
   const effectiveMethod =
     bestMode && bestSettings ? bestSettings.streamingMethod : streamingMethod;
   const effectiveAbr =
     bestMode && bestSettings ? bestSettings.abrAlgorithm : abrAlgorithm;
-  const effectiveTranscodeId =
-    bestMode && bestSettings ? bestSettings.transcodeId : transcodeId;
+  const effectivePackagingRunId =
+    bestMode && bestSettings ? bestSettings.packagingRunId : packagingRunId;
 
   useEffect(() => {
     resetStats();
-  }, [effectiveMethod, effectiveAbr, effectiveTranscodeId, resetStats]);
+  }, [effectiveMethod, effectiveAbr, effectivePackagingRunId, resetStats]);
 
-  // Don't mount until Best can resolve (avoids http-range → DASH remount races).
+  // Don't mount until Best can resolve (avoids source → DASH remount races).
   const playerReady = !bestMode || bestSettings !== null;
 
   function handleBestModeChange(enabled: boolean) {
     setBestMode(enabled);
     if (enabled && bestSettings) {
-      setTranscodeId(bestSettings.transcodeId);
+      setPackagingRunId(bestSettings.packagingRunId);
       setStreamingMethod(bestSettings.streamingMethod);
       setAbrAlgorithm(bestSettings.abrAlgorithm);
     }
   }
 
-  function handleTranscodeIdChange(nextId: string) {
-    setTranscodeId(nextId);
+  function handlePackagingRunChange(nextId: string) {
+    setPackagingRunId(nextId);
+
+    if (isSourceRun(nextId)) {
+      setStreamingMethod("source");
+      return;
+    }
+
     const selected = transcodes.find((item) => item.id === nextId);
     if (!selected) return;
 
-    if (streamingMethod === "dash" && !selected.hasDash) {
-      setStreamingMethod(selected.hasHls ? "hls" : "http-range");
-    } else if (streamingMethod === "hls" && !selected.hasHls) {
-      setStreamingMethod(selected.hasDash ? "dash" : "http-range");
+    const next = deliveryForLadder(
+      selected.hasHls,
+      selected.hasDash,
+      streamingMethod === "source" ? undefined : streamingMethod,
+    );
+    if (next) {
+      setStreamingMethod(next);
+    } else {
+      setPackagingRunId(SOURCE_RUN_ID);
+      setStreamingMethod("source");
     }
   }
 
@@ -137,6 +193,11 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     Math.max(0, (stats.current.bufferLevel / 30) * 100),
   );
 
+  const playerTranscodeId =
+    effectiveMethod === "source" || isSourceRun(effectivePackagingRunId)
+      ? null
+      : effectivePackagingRunId;
+
   return (
     <div className="space-y-4">
       <StreamingControls
@@ -144,12 +205,12 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
         onBestModeChange={handleBestModeChange}
         streamingMethod={effectiveMethod}
         abrAlgorithm={effectiveAbr}
-        transcodeId={effectiveTranscodeId}
+        packagingRunId={effectivePackagingRunId ?? SOURCE_RUN_ID}
         transcodes={transcodes}
         transcodesLoading={transcodesLoading}
         onStreamingMethodChange={setStreamingMethod}
         onAbrAlgorithmChange={setAbrAlgorithm}
-        onTranscodeIdChange={handleTranscodeIdChange}
+        onPackagingRunChange={handlePackagingRunChange}
       />
 
       {playerReady ? (
@@ -158,9 +219,8 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
           abrAlgorithm={effectiveAbr}
           apiUrl={apiUrl}
           routeId={routeId}
-          transcodeId={
-            effectiveMethod === "http-range" ? null : effectiveTranscodeId
-          }
+          transcodeId={playerTranscodeId}
+          subtitleTracks={subtitleTracks}
           onStatsUpdate={updateStats}
         />
       ) : (

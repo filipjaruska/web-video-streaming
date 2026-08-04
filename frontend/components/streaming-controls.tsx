@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import type { StreamingMethod, AbrAlgorithm } from "@/types/streaming";
+import { SOURCE_RUN_ID, isSourceRun } from "@/types/streaming";
 import type { VideoTranscodeListItem } from "@/lib/videoTranscodesApi";
 import { getAbrLabel } from "@/lib/streamingLabels";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,17 +26,18 @@ interface StreamingControlsProps {
   onBestModeChange: (enabled: boolean) => void;
   streamingMethod: StreamingMethod;
   abrAlgorithm: AbrAlgorithm;
-  transcodeId: string | null;
+  /** Packaging selection: `SOURCE_RUN_ID` or a transcode GUID. */
+  packagingRunId: string | null;
   transcodes: VideoTranscodeListItem[];
   transcodesLoading: boolean;
   onStreamingMethodChange: (method: StreamingMethod) => void;
   onAbrAlgorithmChange: (algorithm: AbrAlgorithm) => void;
-  onTranscodeIdChange: (transcodeId: string) => void;
+  onPackagingRunChange: (packagingRunId: string) => void;
 }
 
 function protocolLabel(method: StreamingMethod): string {
   switch (method) {
-    case "http-range":
+    case "source":
       return "HTTP Range";
     case "hls":
       return "HLS";
@@ -49,16 +51,19 @@ function StreamingControlsComponent({
   onBestModeChange,
   streamingMethod,
   abrAlgorithm,
-  transcodeId,
+  packagingRunId,
   transcodes,
   transcodesLoading,
   onStreamingMethodChange,
   onAbrAlgorithmChange,
-  onTranscodeIdChange,
+  onPackagingRunChange,
 }: StreamingControlsProps) {
+  const sourceSelected = isSourceRun(packagingRunId);
   const isAdaptive = streamingMethod === "hls" || streamingMethod === "dash";
   const selectedTranscode =
-    transcodes.find((item) => item.id === transcodeId) ?? null;
+    !sourceSelected && packagingRunId
+      ? (transcodes.find((item) => item.id === packagingRunId) ?? null)
+      : null;
   const succeeded = transcodes.filter((item) => item.status === "succeeded");
 
   const hlsDisabled = Boolean(
@@ -94,18 +99,20 @@ function StreamingControlsComponent({
             <Badge variant={bestMode ? "default" : "outline"}>
               {bestMode ? "Best" : "Manual"}
             </Badge>
-            {selectedTranscode && (
+            {sourceSelected ? (
+              <Badge variant="secondary">Source</Badge>
+            ) : selectedTranscode ? (
               <Badge variant="secondary">
                 {selectedTranscode.ladderKind === "dynamic"
                   ? "Dynamic"
                   : "Static"}
                 {selectedTranscode.isActive ? " · active" : ""}
               </Badge>
-            )}
+            ) : null}
             <Badge variant="secondary">{protocolLabel(streamingMethod)}</Badge>
-            {isAdaptive && (
-              <Badge variant="secondary">{getAbrLabel(abrAlgorithm)}</Badge>
-            )}
+            <Badge variant="secondary">
+              {isAdaptive ? getAbrLabel(abrAlgorithm) : "None"}
+            </Badge>
           </div>
         </div>
 
@@ -115,22 +122,23 @@ function StreamingControlsComponent({
               <div className="space-y-2">
                 <Label>Packaging run</Label>
                 <Select
-                  value={transcodeId ?? undefined}
-                  onValueChange={onTranscodeIdChange}
-                  disabled={bestMode || transcodesLoading || succeeded.length === 0}
+                  value={packagingRunId ?? undefined}
+                  onValueChange={onPackagingRunChange}
+                  disabled={bestMode || transcodesLoading}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue
                       placeholder={
                         transcodesLoading
                           ? "Loading…"
-                          : succeeded.length === 0
-                            ? "No packaging runs"
-                            : "Select packaging run"
+                          : "Select packaging run"
                       }
                     />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={SOURCE_RUN_ID}>
+                      Source (original)
+                    </SelectItem>
                     {succeeded.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
                         {item.label}
@@ -149,21 +157,26 @@ function StreamingControlsComponent({
                   onValueChange={(value) =>
                     onStreamingMethodChange(value as StreamingMethod)
                   }
-                  disabled={bestMode}
+                  disabled={bestMode || sourceSelected}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="http-range">HTTP Range</SelectItem>
-                    <SelectItem value="hls" disabled={hlsDisabled}>
-                      HLS
-                      {hlsDisabled ? " (unavailable)" : ""}
-                    </SelectItem>
-                    <SelectItem value="dash" disabled={dashDisabled}>
-                      DASH
-                      {dashDisabled ? " (unavailable)" : ""}
-                    </SelectItem>
+                    {sourceSelected ? (
+                      <SelectItem value="source">HTTP Range</SelectItem>
+                    ) : (
+                      <>
+                        <SelectItem value="hls" disabled={hlsDisabled}>
+                          HLS
+                          {hlsDisabled ? " (unavailable)" : ""}
+                        </SelectItem>
+                        <SelectItem value="dash" disabled={dashDisabled}>
+                          DASH
+                          {dashDisabled ? " (unavailable)" : ""}
+                        </SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -171,21 +184,17 @@ function StreamingControlsComponent({
               <div className="space-y-2">
                 <Label>ABR algorithm</Label>
                 <Select
-                  value={isAdaptive ? abrAlgorithm : undefined}
+                  value={isAdaptive ? abrAlgorithm : "none"}
                   onValueChange={(value) =>
                     onAbrAlgorithmChange(value as AbrAlgorithm)
                   }
                   disabled={bestMode || !isAdaptive}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue
-                      placeholder={
-                        !isAdaptive ? "N/A — not adaptive" : undefined
-                      }
-                    />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {isAdaptive && (
+                    {isAdaptive ? (
                       <>
                         <SelectItem value="hybrid">Hybrid</SelectItem>
                         <SelectItem value="throughput">
@@ -196,6 +205,8 @@ function StreamingControlsComponent({
                         </SelectItem>
                         <SelectItem value="baseline">Non-Adaptive</SelectItem>
                       </>
+                    ) : (
+                      <SelectItem value="none">None</SelectItem>
                     )}
                   </SelectContent>
                 </Select>

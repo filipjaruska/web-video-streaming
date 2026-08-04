@@ -29,6 +29,7 @@ public sealed class VideoProcessingPipeline {
     private readonly ISitiAnalysisService _sitiAnalysis;
     private readonly IEncodeGridService _encodeGrid;
     private readonly ILadderDerivationService _ladderDerivation;
+    private readonly ISubtitleExtractionService _subtitles;
     private readonly ILogger<VideoProcessingPipeline> _logger;
 
     public VideoProcessingPipeline(
@@ -41,6 +42,7 @@ public sealed class VideoProcessingPipeline {
         ISitiAnalysisService sitiAnalysis,
         IEncodeGridService encodeGrid,
         ILadderDerivationService ladderDerivation,
+        ISubtitleExtractionService subtitles,
         ILogger<VideoProcessingPipeline> logger) {
         _dbContext = dbContext;
         _storage = storage;
@@ -51,6 +53,7 @@ public sealed class VideoProcessingPipeline {
         _sitiAnalysis = sitiAnalysis;
         _encodeGrid = encodeGrid;
         _ladderDerivation = ladderDerivation;
+        _subtitles = subtitles;
         _logger = logger;
     }
 
@@ -77,6 +80,9 @@ public sealed class VideoProcessingPipeline {
         try {
             await ReportSessionProgressAsync(video, 10, "Reading media info", cancellationToken);
             await ExtractMediaInfoStepAsync(video, sourcePath, cancellationToken);
+
+            await ReportSessionProgressAsync(video, 12, "Extracting subtitles", cancellationToken);
+            await ExtractSubtitlesStepAsync(video, sourcePath, cancellationToken);
 
             await ReportSessionProgressAsync(video, 14, "SI/TI analysis", cancellationToken);
             await RunSitiAnalysisStepAsync(video, sourcePath, cancellationToken);
@@ -343,6 +349,54 @@ public sealed class VideoProcessingPipeline {
 
         video.UpdatedAtUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task ExtractSubtitlesStepAsync(
+        Video video,
+        string sourcePath,
+        CancellationToken cancellationToken) {
+        try {
+            await _analysis.MarkSectionRunningAsync(
+                video.Id,
+                "subtitles",
+                "Subtitles",
+                "ffmpeg-webvtt",
+                cancellationToken);
+
+            var result = await _subtitles.ExtractAsync(video.RouteId, sourcePath, cancellationToken);
+            if (result.Section != null) {
+                await _analysis.UpsertSectionAsync(video.Id, result.Section, cancellationToken);
+            }
+
+            if (!result.Success) {
+                await _analysis.MarkSectionFailedAsync(
+                    video.Id,
+                    "subtitles",
+                    "Subtitles",
+                    "ffmpeg-webvtt",
+                    result.ErrorMessage ?? "Subtitle extraction failed",
+                    cancellationToken);
+                _logger.LogWarning(
+                    "Subtitle extraction failed for {RouteId}: {Error}",
+                    video.RouteId,
+                    result.ErrorMessage);
+                return;
+            }
+
+            _logger.LogInformation(
+                "Subtitle extraction succeeded for {RouteId} ({TrackCount} tracks)",
+                video.RouteId,
+                result.Manifest.Tracks.Count);
+        } catch (Exception ex) {
+            _logger.LogWarning(ex, "Subtitle extraction failed for {RouteId}", video.RouteId);
+            await _analysis.MarkSectionFailedAsync(
+                video.Id,
+                "subtitles",
+                "Subtitles",
+                "ffmpeg-webvtt",
+                ex.Message,
+                cancellationToken);
+        }
     }
 
     private async Task ExtractMediaInfoStepAsync(

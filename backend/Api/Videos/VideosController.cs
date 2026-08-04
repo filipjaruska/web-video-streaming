@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using WebWVideoStreamingAPI.Core;
+using WebWVideoStreamingAPI.Infrastructure;
 
 namespace WebWVideoStreamingAPI.Api.Videos;
 
@@ -61,6 +63,68 @@ public class VideosController : ControllerBase {
                 createdAtUtc = item.CreatedAtUtc
             })
         });
+    }
+
+    [HttpGet("{routeId}/subs")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListSubtitles(string routeId, CancellationToken cancellationToken) {
+        var video = await _catalog.GetByRouteIdAsync(routeId, cancellationToken);
+        if (video == null) {
+            return NotFound(new { message = "Video not found" });
+        }
+
+        var manifestPath = _storage.ResolveSubsManifestPath(routeId);
+        if (manifestPath == null) {
+            return Ok(new {
+                routeId,
+                tracks = Array.Empty<object>(),
+                skipped = Array.Empty<object>()
+            });
+        }
+
+        await using var stream = System.IO.File.OpenRead(manifestPath);
+        var manifest = await JsonSerializer.DeserializeAsync<SubtitleManifest>(
+            stream,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true },
+            cancellationToken) ?? new SubtitleManifest();
+
+        return Ok(new {
+            routeId,
+            tracks = manifest.Tracks.Select(track => new {
+                id = track.Id,
+                language = track.Language,
+                label = track.Label,
+                url = $"/api/videos/{routeId}/subs/{track.FileName}"
+            }),
+            skipped = manifest.Skipped.Select(item => new {
+                id = item.Id,
+                language = item.Language,
+                label = item.Label,
+                reason = item.Reason
+            })
+        });
+    }
+
+    [HttpGet("{routeId}/subs/{fileName}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetSubtitleFile(
+        string routeId,
+        string fileName,
+        CancellationToken cancellationToken) {
+        var video = await _catalog.GetByRouteIdAsync(routeId, cancellationToken);
+        if (video == null) {
+            return NotFound();
+        }
+
+        var path = _storage.ResolveSubtitlePath(routeId, fileName);
+        if (path == null) {
+            return NotFound();
+        }
+
+        Response.Headers.CacheControl = "public, max-age=3600";
+        return PhysicalFile(path, "text/vtt; charset=utf-8");
     }
 
     [HttpDelete("{routeId}")]
