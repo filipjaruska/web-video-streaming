@@ -70,6 +70,7 @@ builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>
 builder.Services.AddSingleton<IMediaProbeService, MediaProbeService>();
 builder.Services.AddSingleton<ISitiAnalysisService, SitiAnalysisService>();
 builder.Services.AddSingleton<IVmafAnalysisService, VmafAnalysisService>();
+builder.Services.AddScoped<ISubtitleExtractionService, SubtitleExtractionService>();
 builder.Services.AddScoped<IEncodeGridService, EncodeGridService>();
 builder.Services.AddScoped<ILadderDerivationService, LadderDerivationService>();
 
