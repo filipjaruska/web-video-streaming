@@ -13,7 +13,9 @@ import {
 import type { AnalysisTreeNode, SitiSeriesData } from "@/lib/videoAnalysisApi";
 import { buildSeriesPoints, downsampleSeries, scaleSeriesToDuration } from "@/lib/analysisDownsample";
 import { formatSeconds } from "@/lib/analysisLabels";
+import { slugFilename } from "@/lib/csvExport";
 import { Badge } from "@/components/ui/badge";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import {
   Card,
   CardContent,
@@ -434,11 +436,33 @@ export function SitiChart({
 
   const gradientId = React.useId().replace(/:/g, "");
 
+  const exportRows = React.useMemo(
+    () =>
+      points.map((point) => [
+        point.frame,
+        Number(point.timeSec.toFixed(6)),
+        Number(point.si.toFixed(6)),
+        Number(point.ti.toFixed(6)),
+      ]),
+    [points],
+  );
+
   return (
     <Card className="pt-0">
       <CardHeader className="border-b py-5">
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1.5">
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </div>
+          {hasSeries && (
+            <ExportCsvButton
+              filename={slugFilename(["siti", title])}
+              headers={["frame", "time_sec", "si", "ti"]}
+              rows={exportRows}
+            />
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4 px-2 pt-4 sm:px-6 sm:pt-6">
         {statsNode && <SitiStatsList node={statsNode} />}
