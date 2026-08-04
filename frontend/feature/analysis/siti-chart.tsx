@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import type { AnalysisTreeNode, SitiSeriesData } from "@/lib/videoAnalysisApi";
-import { buildSeriesPoints, downsampleSeries } from "@/lib/analysisDownsample";
+import { buildSeriesPoints, downsampleSeries, scaleSeriesToDuration } from "@/lib/analysisDownsample";
 import { formatSeconds } from "@/lib/analysisLabels";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -152,10 +152,17 @@ export function SitiChart({
   videoLabel = "Source preview",
 }: SitiChartProps) {
   const hasSeries = !!data && data.si.length > 0;
-  const points = React.useMemo(
-    () => (hasSeries && data ? buildSeriesPoints(data) : []),
-    [data, hasSeries],
-  );
+  const [mediaDuration, setMediaDuration] = React.useState<number | null>(null);
+
+  const points = React.useMemo(() => {
+    if (!hasSeries || !data) {
+      return [];
+    }
+    const raw = buildSeriesPoints(data);
+    return mediaDuration != null
+      ? scaleSeriesToDuration(raw, mediaDuration)
+      : raw;
+  }, [data, hasSeries, mediaDuration]);
   const chartData = React.useMemo(
     () => downsampleSeries(points, 1500),
     [points],
@@ -171,6 +178,7 @@ export function SitiChart({
   }, [stats, data, hasSeries]);
 
   const videoRef = React.useRef<HTMLVideoElement>(null);
+  const hlsRef = React.useRef<Hls | null>(null);
   const pendingSeekRef = React.useRef<number | null>(null);
   const hoverTimeRef = React.useRef<number | null>(null);
   const isPointerDownRef = React.useRef(false);
@@ -187,33 +195,61 @@ export function SitiChart({
   }, [chartData]);
 
   const applySeek = React.useCallback(
-    (timeSec: number) => {
+    (chartTimeSec: number) => {
       const video = videoRef.current;
-      if (!video || !Number.isFinite(timeSec)) {
+      if (!video || !Number.isFinite(chartTimeSec)) {
         return;
       }
 
       const duration =
-        Number.isFinite(video.duration) && video.duration > 0
-          ? video.duration
-          : undefined;
-      // Prefer chart extent when media duration is missing/incomplete (common with progressive MP4).
-      const maxTime = duration ?? chartMaxTime;
-      const clamped =
-        maxTime != null
-          ? Math.min(Math.max(0, timeSec), maxTime)
-          : Math.max(0, timeSec);
+        mediaDuration != null && mediaDuration > 0
+          ? mediaDuration
+          : Number.isFinite(video.duration) && video.duration > 0
+            ? video.duration
+            : undefined;
 
-      setScrubTime(clamped);
-      pendingSeekRef.current = clamped;
+      const chartMax =
+        chartMaxTime != null && chartMaxTime > 0 ? chartMaxTime : undefined;
+
+      // Map chart X → media time. When SI/TI pts are missing the axis used to
+      // be frame indexes; after scaleSeriesToDuration they match duration.
+      // Proportional map still protects against residual mismatch.
+      let seekTime = chartTimeSec;
+      if (duration != null && chartMax != null) {
+        const timelinesAgree =
+          Math.abs(chartMax - duration) / Math.max(duration, 0.001) < 0.25;
+        seekTime = timelinesAgree
+          ? chartTimeSec
+          : (chartTimeSec / chartMax) * duration;
+        seekTime = Math.min(Math.max(0, seekTime), duration);
+      } else if (chartMax != null) {
+        seekTime = Math.min(Math.max(0, chartTimeSec), chartMax);
+      } else {
+        seekTime = Math.max(0, chartTimeSec);
+      }
+
+      setScrubTime(seekTime);
+      pendingSeekRef.current = seekTime;
+
+      const hls = hlsRef.current;
+      if (hls) {
+        try {
+          hls.startLoad(seekTime);
+        } catch {
+          // ignore
+        }
+      }
 
       if (video.readyState >= 1) {
         video.pause();
-        video.currentTime = clamped;
-        pendingSeekRef.current = null;
+        try {
+          video.currentTime = seekTime;
+        } catch {
+          // pending seek flushes later
+        }
       }
     },
-    [chartMaxTime],
+    [chartMaxTime, mediaDuration],
   );
 
   const flushPendingSeek = React.useCallback(() => {
@@ -223,8 +259,11 @@ export function SitiChart({
       return;
     }
     video.pause();
-    video.currentTime = pending;
-    pendingSeekRef.current = null;
+    try {
+      video.currentTime = pending;
+    } catch {
+      return;
+    }
   }, []);
 
   // Attach HLS (or native) for scrub-friendly seeking; progressive MP4 often stalls mid-file.
@@ -235,23 +274,53 @@ export function SitiChart({
     }
 
     setPreviewError(null);
+    setMediaDuration(null);
     let hls: Hls | null = null;
     let cancelled = false;
+
+    const syncDuration = () => {
+      if (cancelled) {
+        return;
+      }
+      const duration = video.duration;
+      if (Number.isFinite(duration) && duration > 0) {
+        setMediaDuration(duration);
+      }
+    };
+
+    video.addEventListener("loadedmetadata", syncDuration);
+    video.addEventListener("durationchange", syncDuration);
 
     if (isHlsSrc) {
       if (Hls.isSupported()) {
         hls = new Hls({
           enableWorker: true,
-          maxBufferLength: 8,
-          maxMaxBufferLength: 16,
-          startLevel: 0,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 120,
+          maxBufferHole: 0.5,
+          nudgeMaxRetry: 5,
+          startFragPrefetch: true,
         });
+        hlsRef.current = hls;
         hls.loadSource(videoSrc);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (!cancelled) {
+            syncDuration();
             flushPendingSeek();
           }
+        });
+        hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+          if (cancelled) {
+            return;
+          }
+          const total = data.details?.totalduration;
+          if (typeof total === "number" && total > 0) {
+            setMediaDuration(total);
+          } else {
+            syncDuration();
+          }
+          flushPendingSeek();
         });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal || cancelled) {
@@ -272,6 +341,9 @@ export function SitiChart({
 
     return () => {
       cancelled = true;
+      hlsRef.current = null;
+      video.removeEventListener("loadedmetadata", syncDuration);
+      video.removeEventListener("durationchange", syncDuration);
       if (hls) {
         hls.destroy();
       }
@@ -386,17 +458,33 @@ export function SitiChart({
                 ref={videoRef}
                 muted
                 playsInline
-                preload="metadata"
+                preload="auto"
                 disablePictureInPicture
                 controlsList="nodownload nofullscreen noremoteplayback"
                 className="pointer-events-none mx-auto max-h-60 w-full object-contain"
                 onLoadedMetadata={flushPendingSeek}
+                onDurationChange={flushPendingSeek}
                 onCanPlay={flushPendingSeek}
                 onSeeked={() => {
                   const video = videoRef.current;
-                  if (video) {
-                    setScrubTime(video.currentTime);
+                  if (!video) {
+                    return;
                   }
+                  const pending = pendingSeekRef.current;
+                  if (
+                    pending != null &&
+                    Math.abs(video.currentTime - pending) > 1.25
+                  ) {
+                    try {
+                      hlsRef.current?.startLoad(pending);
+                      video.currentTime = pending;
+                    } catch {
+                      // ignore
+                    }
+                    return;
+                  }
+                  pendingSeekRef.current = null;
+                  setScrubTime(video.currentTime);
                 }}
               />
             </div>
