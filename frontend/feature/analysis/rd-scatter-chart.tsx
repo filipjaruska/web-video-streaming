@@ -61,7 +61,7 @@ function StarMarker(props: {
     cy = 0,
     fill = "currentColor",
     size = 10,
-    stroke = "#fff",
+    stroke = "var(--chart-star-stroke)",
     strokeWidth = 1.25,
   } = props;
   const r = size / 2;
@@ -109,9 +109,9 @@ function RdLegend({
               cx={7}
               cy={7}
               size={11}
-              fill="var(--foreground)"
-              stroke="#fff"
-              strokeWidth={1.4}
+              fill="var(--chart-star-fill)"
+              stroke="var(--chart-star-stroke)"
+              strokeWidth={1.6}
             />
           </svg>
           <span>Derived ladder</span>
@@ -342,8 +342,8 @@ export function RdScatterChart({
                             cy={props.cy}
                             fill={`var(--color-${key})`}
                             size={14}
-                            stroke="#fff"
-                            strokeWidth={1.4}
+                            stroke="var(--chart-star-stroke)"
+                            strokeWidth={1.6}
                           />
                         )}
                         isAnimationActive={false}
