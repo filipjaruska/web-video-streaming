@@ -102,7 +102,9 @@ public class UploadSessionsController : ControllerBase {
                 updatedAtUtc = session.UpdatedAtUtc,
                 expiresAtUtc = session.ExpiresAtUtc,
                 uploadedAtUtc = session.UploadedAtUtc,
-                completedAtUtc = session.CompletedAtUtc
+                completedAtUtc = session.CompletedAtUtc,
+                processingStartedAtUtc = session.ProcessingStartedAtUtc,
+                estimatedRemainingSeconds = session.EstimatedRemainingSeconds
             },
             video = new {
                 routeId = session.Video.RouteId,

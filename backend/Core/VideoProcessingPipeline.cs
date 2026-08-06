@@ -135,7 +135,9 @@ public sealed class VideoProcessingPipeline {
                             video,
                             pct,
                             $"Encode grid ({done}/{total})",
-                            ct);
+                            ct,
+                            encodeGridDone: done,
+                            encodeGridTotal: total);
                     },
                     cancellationToken);
 
@@ -195,6 +197,7 @@ public sealed class VideoProcessingPipeline {
             session.Status = succeeded ? UploadSessionStatus.Completed : UploadSessionStatus.Failed;
             session.ProgressPercent = succeeded ? 100 : session.ProgressPercent;
             session.CurrentStep = succeeded ? null : session.CurrentStep;
+            session.EstimatedRemainingSeconds = null;
             session.CompletedAtUtc = completedAt;
             session.UpdatedAtUtc = completedAt;
         }
@@ -334,7 +337,9 @@ public sealed class VideoProcessingPipeline {
         Video video,
         int progressPercent,
         string currentStep,
-        CancellationToken cancellationToken) {
+        CancellationToken cancellationToken,
+        int? encodeGridDone = null,
+        int? encodeGridTotal = null) {
         var now = DateTime.UtcNow;
 
         foreach (var session in video.UploadSessions.Where(session =>
@@ -345,6 +350,18 @@ public sealed class VideoProcessingPipeline {
             session.ProgressPercent = Math.Max(session.ProgressPercent, progressPercent);
             session.CurrentStep = currentStep;
             session.UpdatedAtUtc = now;
+
+            if (session.ProcessingStartedAtUtc == null && progressPercent >= 8) {
+                session.ProcessingStartedAtUtc = now;
+            }
+
+            session.EstimatedRemainingSeconds = ProcessingEtaEstimator.EstimateRemainingSeconds(
+                session.ProgressPercent,
+                currentStep,
+                session.ProcessingStartedAtUtc,
+                now,
+                encodeGridDone,
+                encodeGridTotal);
         }
 
         video.UpdatedAtUtc = now;

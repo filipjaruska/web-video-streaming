@@ -12,6 +12,10 @@ public class UploadSession {
     public DateTime ExpiresAtUtc { get; set; }
     public DateTime? UploadedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
+    /// <summary>When the processing pipeline first started for this session.</summary>
+    public DateTime? ProcessingStartedAtUtc { get; set; }
+    /// <summary>Server-estimated seconds remaining; null when unknown / not processing.</summary>
+    public int? EstimatedRemainingSeconds { get; set; }
 
     public Video Video { get; set; } = null!;
 }
