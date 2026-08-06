@@ -1,3 +1,5 @@
+import { formatDurationShort } from "@/lib/formatDuration";
+
 const STORAGE_KEY = "active-upload-session-id";
 export const UPLOAD_SESSION_STORAGE_EVENT = "upload-session-storage-changed";
 
@@ -11,6 +13,7 @@ export function isResumableUploadSession(status: string): boolean {
 export function uploadSessionButtonLabel(
   status: string | null,
   currentStep?: string | null,
+  estimatedRemainingSeconds?: number | null,
 ): string {
   switch (status) {
     case "AwaitingUpload":
@@ -19,8 +22,16 @@ export function uploadSessionButtonLabel(
     case "Uploading":
       return "Uploading";
     case "Uploaded":
-    case "Processing":
-      return shortenProcessingStep(currentStep) ?? "Processing";
+    case "Processing": {
+      const step = shortenProcessingStep(currentStep) ?? "Processing";
+      if (
+        typeof estimatedRemainingSeconds === "number" &&
+        estimatedRemainingSeconds > 0
+      ) {
+        return `${step} · ${formatDurationShort(estimatedRemainingSeconds)}`;
+      }
+      return step;
+    }
     default:
       return "Upload";
   }
@@ -32,14 +43,27 @@ function shortenProcessingStep(step: string | null | undefined): string | null {
   }
 
   const normalized = step.toLowerCase();
+  if (normalized.includes("encode grid")) {
+    const match = step.match(/\((\d+)\s*\/\s*(\d+)\)/);
+    return match ? `Grid ${match[1]}/${match[2]}` : "Encode grid";
+  }
   if (normalized.includes("si/ti") || normalized.includes("siti")) {
     return "SI/TI";
+  }
+  if (normalized.includes("subtitle")) {
+    return "Subtitles";
   }
   if (normalized.includes("media info") || normalized.includes("reading media")) {
     return "Media info";
   }
   if (normalized.includes("thumbnail")) {
     return "Thumbnail";
+  }
+  if (normalized.includes("vmaf")) {
+    return "VMAF";
+  }
+  if (normalized.includes("deriving") || normalized.includes("crossover")) {
+    return "Derive";
   }
   if (normalized.includes("hls")) {
     return "HLS";

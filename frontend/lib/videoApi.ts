@@ -22,6 +22,8 @@ export interface UploadSessionState {
   expiresAtUtc: string;
   uploadedAtUtc: string | null;
   completedAtUtc: string | null;
+  processingStartedAtUtc?: string | null;
+  estimatedRemainingSeconds?: number | null;
 }
 
 export interface UploadSessionResponse {

@@ -112,6 +112,7 @@ using (var scope = app.Services.CreateScope()) {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.EnsureCreated();
     EnsureTranscodeLadderColumns(dbContext);
+    EnsureUploadSessionEtaColumns(dbContext);
 }
 
 app.Logger.LogInformation("Video storage root: {StorageRoot}", storageRoot);
@@ -142,6 +143,26 @@ static void EnsureTranscodeLadderColumns(AppDbContext dbContext) {
         dbContext.Database.ExecuteSqlRaw(
             """
             ALTER TABLE "Transcodes" ADD COLUMN "DerivedFromTranscodeId" TEXT NULL;
+            """);
+    } catch {
+        // Column already exists
+    }
+}
+
+static void EnsureUploadSessionEtaColumns(AppDbContext dbContext) {
+    try {
+        dbContext.Database.ExecuteSqlRaw(
+            """
+            ALTER TABLE "UploadSessions" ADD COLUMN "ProcessingStartedAtUtc" TEXT NULL;
+            """);
+    } catch {
+        // Column already exists
+    }
+
+    try {
+        dbContext.Database.ExecuteSqlRaw(
+            """
+            ALTER TABLE "UploadSessions" ADD COLUMN "EstimatedRemainingSeconds" INTEGER NULL;
             """);
     } catch {
         // Column already exists

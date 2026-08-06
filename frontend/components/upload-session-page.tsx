@@ -18,6 +18,10 @@ import {
   setStoredUploadSessionId,
 } from "@/lib/uploadSessionStorage";
 import {
+  formatDurationShort,
+  formatElapsedClock,
+} from "@/lib/formatDuration";
+import {
   type UploadSessionResponse,
   getUploadSession,
   updateUploadSessionVideo,
@@ -40,6 +44,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const statusTone = useMemo(() => {
@@ -54,9 +59,37 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     }
   }, [session.session.status]);
 
+  const isProcessing =
+    session.session.status === "Processing" ||
+    session.session.status === "Uploaded";
+
+  const processingStartedAt =
+    session.session.processingStartedAtUtc ?? session.session.uploadedAtUtc;
+
+  const elapsedSeconds = useMemo(() => {
+    if (!isProcessing || !processingStartedAt) {
+      return null;
+    }
+    const started = new Date(processingStartedAt).getTime();
+    if (Number.isNaN(started)) {
+      return null;
+    }
+    return Math.max(0, Math.floor((nowMs - started) / 1000));
+  }, [isProcessing, processingStartedAt, nowMs]);
+
+  const etaSeconds = session.session.estimatedRemainingSeconds ?? null;
+
   const canUpload =
     !isUploading &&
     (session.session.status === "AwaitingUpload" || session.session.status === "Failed");
+
+  useEffect(() => {
+    if (!isProcessing) {
+      return;
+    }
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isProcessing]);
 
   useEffect(() => {
     setStoredUploadSessionId(session.sessionId);
@@ -247,6 +280,29 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
             )}
 
             <Progress value={session.session.progressPercent} />
+
+            {isProcessing && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                {elapsedSeconds != null && (
+                  <span>
+                    Elapsed:{" "}
+                    <span className="font-mono text-foreground">
+                      {formatElapsedClock(elapsedSeconds)}
+                    </span>
+                  </span>
+                )}
+                {typeof etaSeconds === "number" && etaSeconds > 0 ? (
+                  <span>
+                    Est. remaining:{" "}
+                    <span className="font-mono text-foreground">
+                      {formatDurationShort(etaSeconds)}
+                    </span>
+                  </span>
+                ) : (
+                  <span>Est. remaining: Calculating…</span>
+                )}
+              </div>
+            )}
 
             <dl className="grid gap-3 text-sm">
               <div className="flex items-start justify-between gap-4">

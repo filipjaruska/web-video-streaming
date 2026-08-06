@@ -189,6 +189,7 @@ public class UploadSessionService : IUploadSessionService {
             _logger.LogError(ex, "Upload failed for session {SessionId}", sessionId);
             session.Status = UploadSessionStatus.Failed;
             session.CurrentStep = null;
+            session.EstimatedRemainingSeconds = null;
             session.UpdatedAtUtc = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync(cancellationToken);
             return Fail("UploadFailed", ex.Message, session);

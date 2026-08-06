@@ -21,11 +21,15 @@ export function UploadSessionLauncher() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<string | null>(null);
+  const [estimatedRemainingSeconds, setEstimatedRemainingSeconds] = useState<
+    number | null
+  >(null);
 
   const clearActiveSession = useCallback(() => {
     clearStoredUploadSessionId();
     setSessionStatus(null);
     setCurrentStep(null);
+    setEstimatedRemainingSeconds(null);
   }, []);
 
   const refreshStoredSession = useCallback(async () => {
@@ -33,6 +37,7 @@ export function UploadSessionLauncher() {
     if (!storedSessionId) {
       setSessionStatus(null);
       setCurrentStep(null);
+      setEstimatedRemainingSeconds(null);
       return;
     }
 
@@ -45,6 +50,9 @@ export function UploadSessionLauncher() {
 
       setSessionStatus(existing.session.status);
       setCurrentStep(existing.session.currentStep ?? null);
+      setEstimatedRemainingSeconds(
+        existing.session.estimatedRemainingSeconds ?? null,
+      );
     } catch {
       clearActiveSession();
     }
@@ -105,6 +113,9 @@ export function UploadSessionLauncher() {
           if (isResumableUploadSession(existing.session.status)) {
             setSessionStatus(existing.session.status);
             setCurrentStep(existing.session.currentStep ?? null);
+            setEstimatedRemainingSeconds(
+              existing.session.estimatedRemainingSeconds ?? null,
+            );
             router.push(existing.redirectUrl);
             return;
           }
@@ -119,6 +130,9 @@ export function UploadSessionLauncher() {
       setStoredUploadSessionId(session.sessionId);
       setSessionStatus(session.session.status);
       setCurrentStep(session.session.currentStep ?? null);
+      setEstimatedRemainingSeconds(
+        session.session.estimatedRemainingSeconds ?? null,
+      );
       router.push(session.redirectUrl);
     } catch (error) {
       console.error(error);
@@ -126,7 +140,11 @@ export function UploadSessionLauncher() {
     }
   }
 
-  const idleLabel = uploadSessionButtonLabel(sessionStatus, currentStep);
+  const idleLabel = uploadSessionButtonLabel(
+    sessionStatus,
+    currentStep,
+    estimatedRemainingSeconds,
+  );
 
   return (
     <Button type="button" onClick={handleCreateSession} disabled={isLoading}>
