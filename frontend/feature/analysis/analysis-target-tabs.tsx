@@ -13,6 +13,7 @@ import { SitiChart } from "@/feature/analysis/siti-chart";
 import { VmafChart } from "@/feature/analysis/vmaf-chart";
 import { RdScatterChart } from "@/feature/analysis/rd-scatter-chart";
 import { TranscodeAnalysisCard } from "@/feature/analysis/transcode-analysis-card";
+import { TuningComparisonCard } from "@/feature/analysis/tuning-comparison-card";
 import { formatTargetStatus } from "@/lib/analysisLabels";
 import { getPublicApiUrl } from "@/lib/env";
 import { getHlsVariantUrl } from "@/lib/streamingLabels";
@@ -192,6 +193,7 @@ export function AnalysisTargetTabs({
           Transcodes{transcodes.length > 0 ? ` (${transcodes.length})` : ""}
         </TabsTrigger>
         <TabsTrigger value="quality">Quality tests</TabsTrigger>
+        <TabsTrigger value="tuning">Tuning</TabsTrigger>
       </TabsList>
 
       <TabsContent value="source" className="mt-4 space-y-4">
@@ -442,6 +444,10 @@ export function AnalysisTargetTabs({
             </CardContent>
           </Card>
         ))}
+      </TabsContent>
+
+      <TabsContent value="tuning" className="mt-4">
+        <TuningComparisonCard />
       </TabsContent>
     </Tabs>
   );
