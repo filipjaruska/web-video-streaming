@@ -16,10 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 
 interface StreamingControlsProps {
   bestMode: boolean;
@@ -66,12 +63,8 @@ function StreamingControlsComponent({
       : null;
   const succeeded = transcodes.filter((item) => item.status === "succeeded");
 
-  const hlsDisabled = Boolean(
-    selectedTranscode && !selectedTranscode.hasHls,
-  );
-  const dashDisabled = Boolean(
-    selectedTranscode && !selectedTranscode.hasDash,
-  );
+  const hlsDisabled = Boolean(selectedTranscode && !selectedTranscode.hasHls);
+  const dashDisabled = Boolean(selectedTranscode && !selectedTranscode.hasDash);
 
   return (
     <Card className="mb-4">
@@ -129,9 +122,7 @@ function StreamingControlsComponent({
                   <SelectTrigger className="w-full">
                     <SelectValue
                       placeholder={
-                        transcodesLoading
-                          ? "Loading…"
-                          : "Select packaging run"
+                        transcodesLoading ? "Loading…" : "Select packaging run"
                       }
                     />
                   </SelectTrigger>
