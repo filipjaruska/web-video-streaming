@@ -182,7 +182,7 @@ public sealed class Transcoder {
             var seek = atSeconds.ToString(CultureInfo.InvariantCulture);
             // Scale down for list/cards and encode WebP (~tens of KB vs ~1MB near-lossless JPEG).
             var args =
-                $@"-y -ss {seek} -i ""{inputPath}"" -frames:v 1 -vf ""scale='min(720,iw)':-2"" -c:v libwebp -quality 75 ""{outputPath}""";
+                $@"-y -ss {seek} -i ""{inputPath}"" -frames:v 1 -vf ""scale='min(720,iw)':-2"" -c:v libwebp -quality 85 ""{outputPath}""";
 
             _logger.LogInformation("Extracting thumbnail from {InputPath} at {AtSeconds}s", inputPath, atSeconds);
 

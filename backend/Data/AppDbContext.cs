@@ -1,9 +1,29 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace WebWVideoStreamingAPI.Data;
 
+/// <summary>
+/// Restores <see cref="DateTimeKind.Utc"/> on values read back from SQLite.
+/// </summary>
+/// <remarks>
+/// SQLite has no timestamp type, so EF returns every DateTime as
+/// <see cref="DateTimeKind.Unspecified"/>. System.Text.Json then writes it without a trailing "Z",
+/// and the browser parses it as local time — which surfaced as an elapsed timer skewed by the
+/// viewer's UTC offset. Every DateTime in this model is already UTC, so the kind is simply restored.
+/// </remarks>
+internal sealed class UtcDateTimeConverter : ValueConverter<DateTime, DateTime> {
+    public UtcDateTimeConverter()
+        : base(value => value, value => DateTime.SpecifyKind(value, DateTimeKind.Utc)) {
+    }
+}
+
 public class AppDbContext : DbContext {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) {
+    }
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) {
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
     }
 
     public DbSet<Video> Videos => Set<Video>();
