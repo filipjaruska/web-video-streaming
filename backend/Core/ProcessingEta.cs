@@ -30,7 +30,7 @@ public static class ProcessingEta {
     public const int GridEndPercent = 76;
 
     private static readonly Dictionary<PipelineStep, (int Percent, string Label)> Steps = new() {
-        [PipelineStep.Starting] = (8, "Starting processing"),
+        [PipelineStep.Starting] = (8, "Preparing source"),
         [PipelineStep.MediaInfo] = (10, "Reading media info"),
         [PipelineStep.Subtitles] = (12, "Extracting subtitles"),
         [PipelineStep.SourceSiti] = (14, "SI/TI analysis"),
