@@ -70,6 +70,10 @@ public sealed class ProcessingPipeline {
 
         await ReportAsync(video, PipelineStep.Starting, cancellationToken);
 
+        // Must run before anything reads the source: it rewrites the file in place, and every
+        // later step (probe, SI/TI, VMAF reference, packaging) should see the normalized copy.
+        await NormalizeSourceAsync(video, sourcePath, cancellationToken);
+
         var error = await RunSourceAnalysisAsync(video, sourcePath, cancellationToken);
 
         var staticPackage = await PackageAndAnalyzeAsync(
@@ -108,6 +112,27 @@ public sealed class ProcessingPipeline {
             HasHls = staticPackage.HasHls,
             HasDash = staticPackage.HasDash
         };
+    }
+
+    // —— Source normalization ——————————————————————————————————————————————
+
+    /// <summary>
+    /// Rewrites the upload as a faststart MP4 so the browser can play it progressively. The video
+    /// and audio bitstreams are copied, so this changes no measurement downstream.
+    /// </summary>
+    private async Task NormalizeSourceAsync(Video video, string sourcePath, CancellationToken cancellationToken) {
+        if (!await _transcoder.NormalizeSourceAsync(sourcePath, cancellationToken)) {
+            _logger.LogWarning(
+                "Source for {RouteId} could not be normalized to MP4; progressive playback may not work",
+                video.RouteId);
+            return;
+        }
+
+        // The stored type describes what is on disk, not what was uploaded — the httprange
+        // endpoint serves this header, and it must now say MP4.
+        video.SourceContentType = "video/mp4";
+        video.UpdatedAtUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     // —— Source analysis ——————————————————————————————————————————————————

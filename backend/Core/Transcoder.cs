@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 
 namespace WebWVideoStreamingAPI.Core;
 
@@ -85,7 +86,7 @@ public sealed class Transcoder {
                 return result;
             }
 
-            await WriteHlsMasterPlaylistAsync(outputDir, profile);
+            await WriteHlsMasterPlaylistAsync(outputDir, profile, cancellationToken);
             result.GeneratedFiles.Add(MediaNames.HlsMaster);
 
             _logger.LogInformation("Successfully generated HLS streams in {OutputDir}", outputDir);
@@ -283,6 +284,65 @@ public sealed class Transcoder {
         return result;
     }
 
+    /// <summary>
+    /// Rewrites the upload as a faststart MP4 in place, copying both bitstreams so the result is
+    /// bit-identical to what was uploaded. Browsers cannot play Matroska, and a non-faststart MP4
+    /// cannot be seeked before it is fully buffered, so progressive "source" playback needs this.
+    /// </summary>
+    /// <remarks>
+    /// Returns false and leaves the original untouched when the streams cannot live in MP4 (ffmpeg
+    /// rejects the copy). Everything else in the pipeline still works in that case — only
+    /// progressive playback of the original is unavailable.
+    /// </remarks>
+    public async Task<bool> NormalizeSourceAsync(string sourcePath, CancellationToken cancellationToken = default) {
+        var directory = Path.GetDirectoryName(sourcePath)!;
+        var tempPath = Path.Combine(directory, "source.normalizing.mp4");
+
+        try {
+            await _runner.EnsureAvailableAsync("ffmpeg", cancellationToken);
+
+            // `-map 0:a:0?` tolerates a video with no audio; -sn/-dn drop subtitle and data
+            // tracks, which MP4 cannot carry (subtitles are served as separate VTT side-cars).
+            // `-map_chapters -1` matters too: the MP4 muxer turns Matroska chapters into an empty
+            // text track that would otherwise show up as a bogus subtitle track in the player.
+            var args =
+                $@"-y -i ""{sourcePath}"" " +
+                $@"-map 0:v:0 -map 0:a:0? " +
+                $@"-c copy -sn -dn -map_chapters -1 " +
+                $@"-movflags +faststart " +
+                $@"""{tempPath}""";
+
+            var run = await _runner.RunAsync(
+                "ffmpeg",
+                args,
+                timeout: TimeSpan.FromMinutes(15),
+                cancellationToken: cancellationToken);
+
+            if (!run.Success || !File.Exists(tempPath) || new FileInfo(tempPath).Length == 0) {
+                _logger.LogWarning(
+                    "Source normalization skipped for {Path}: {Error}",
+                    sourcePath,
+                    run.ErrorMessage ?? run.StdErr);
+                return false;
+            }
+
+            File.Move(tempPath, sourcePath, overwrite: true);
+            _logger.LogInformation("Normalized source to faststart MP4: {Path}", sourcePath);
+            return true;
+        } catch (Exception ex) {
+            _logger.LogWarning(ex, "Source normalization failed for {Path}", sourcePath);
+            return false;
+        } finally {
+            if (File.Exists(tempPath)) {
+                try {
+                    File.Delete(tempPath);
+                } catch {
+                    // Best-effort cleanup of the half-written remux.
+                }
+            }
+        }
+    }
+
     private async Task<TranscodeResult> GenerateHlsVariantAsync(
         string inputPath,
         string outputDir,
@@ -327,7 +387,10 @@ public sealed class Transcoder {
         return result;
     }
 
-    private async Task WriteHlsMasterPlaylistAsync(string outputDir, TranscodeProfile profile) {
+    private async Task WriteHlsMasterPlaylistAsync(
+        string outputDir,
+        TranscodeProfile profile,
+        CancellationToken cancellationToken) {
         var masterPath = Path.Combine(outputDir, MediaNames.HlsMaster);
         var audioBitrateBps = TranscodeProfile.ParseBitrateKbps(profile.AudioBitrate) * 1000;
 
@@ -335,12 +398,115 @@ public sealed class Transcoder {
 
         foreach (var variant in profile.Variants) {
             var bandwidth = TranscodeProfile.ParseBitrateKbps(variant.Bitrate) * 1000 + audioBitrateBps;
-            lines.Add($"#EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={variant.Resolution.Replace(':', 'x')}");
+            var attributes = new List<string> {
+                $"BANDWIDTH={bandwidth}",
+                $"RESOLUTION={variant.Resolution.Replace(':', 'x')}"
+            };
+
+            // RFC 8216 says CODECS SHOULD be present. Without it a player has to download and
+            // demux a segment to work out what to tell MSE, which is where "unsupported audio
+            // config" errors come from. Omitted rather than guessed if the probe fails.
+            var codecs = await ProbeCodecsAsync(
+                Path.Combine(outputDir, MediaNames.HlsPlaylist(variant.Label)),
+                cancellationToken);
+            if (codecs != null) {
+                attributes.Add($"CODECS=\"{codecs}\"");
+            }
+
+            lines.Add($"#EXT-X-STREAM-INF:{string.Join(",", attributes)}");
             lines.Add(MediaNames.HlsPlaylist(variant.Label));
         }
 
-        await File.WriteAllLinesAsync(masterPath, lines);
+        await File.WriteAllLinesAsync(masterPath, lines, cancellationToken);
         _logger.LogInformation("Generated master playlist at {Path}", masterPath);
+    }
+
+    private static readonly Dictionary<string, int> H264ProfileIds = new(StringComparer.OrdinalIgnoreCase) {
+        ["Constrained Baseline"] = 0x42,
+        ["Baseline"] = 0x42,
+        ["Main"] = 0x4D,
+        ["High"] = 0x64,
+        ["High 10"] = 0x6E
+    };
+
+    /// <summary>
+    /// Builds the RFC 6381 codec string for a generated rung, e.g. "avc1.640028,mp4a.40.2".
+    /// Read back off the encoded output rather than inferred, so it always matches reality.
+    /// </summary>
+    private async Task<string?> ProbeCodecsAsync(string playlistPath, CancellationToken cancellationToken) {
+        if (!File.Exists(playlistPath)) {
+            return null;
+        }
+
+        try {
+            var run = await _runner.RunAsync(
+                "ffprobe",
+                $"-v quiet -print_format json -show_streams \"{playlistPath}\"",
+                timeout: TimeSpan.FromMinutes(1),
+                cancellationToken: cancellationToken);
+
+            if (!run.Success || string.IsNullOrWhiteSpace(run.StdOut)) {
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(run.StdOut);
+            if (!doc.RootElement.TryGetProperty("streams", out var streams)) {
+                return null;
+            }
+
+            var codecs = new List<string>();
+
+            foreach (var stream in streams.EnumerateArray()) {
+                var type = stream.TryGetProperty("codec_type", out var t) ? t.GetString() : null;
+                var name = stream.TryGetProperty("codec_name", out var n) ? n.GetString() : null;
+                var profileName = stream.TryGetProperty("profile", out var p) ? p.GetString() : null;
+
+                switch (type) {
+                    case "video":
+                        var video = BuildAvcCodec(name, profileName, stream);
+                        if (video != null) {
+                            codecs.Add(video);
+                        }
+
+                        break;
+
+                    case "audio" when name == "aac":
+                        codecs.Add(profileName switch {
+                            "HE-AACv2" => "mp4a.40.29",
+                            "HE-AAC" => "mp4a.40.5",
+                            _ => "mp4a.40.2"
+                        });
+                        break;
+                }
+            }
+
+            return codecs.Count > 0 ? string.Join(",", codecs) : null;
+        } catch (Exception ex) {
+            _logger.LogWarning(ex, "Could not probe codecs for {Path}", playlistPath);
+            return null;
+        }
+    }
+
+    /// <summary>RFC 6381 `avc1.PPCCLL` — profile id, constraint flags, level, as hex.</summary>
+    private static string? BuildAvcCodec(string? codecName, string? profileName, JsonElement stream) {
+        if (codecName != "h264" || profileName == null) {
+            return null;
+        }
+
+        if (!H264ProfileIds.TryGetValue(profileName, out var profileId)) {
+            return null;
+        }
+
+        if (!stream.TryGetProperty("level", out var levelElement) ||
+            !levelElement.TryGetInt32(out var level) ||
+            level <= 0) {
+            return null;
+        }
+
+        // Constrained Baseline sets the constraint_set1 flag; every other profile leaves it clear.
+        var constraints = profileName.StartsWith("Constrained", StringComparison.OrdinalIgnoreCase) ? 0xE0 : 0x00;
+
+        return $"avc1.{profileId:X2}{constraints:X2}{level:X2}".ToLowerInvariant();
     }
 
     private static void RequireInput(string inputPath) {
