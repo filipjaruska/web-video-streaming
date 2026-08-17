@@ -1,7 +1,6 @@
-using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
-using WebWVideoStreamingAPI.Data;
-using WebWVideoStreamingAPI.Models;
+using Microsoft.EntityFrameworkCore;
+using WebWVideoStreamingAPI.Analysis;
 
 namespace WebWVideoStreamingAPI.Core;
 
@@ -14,50 +13,35 @@ public sealed class SessionUploadResult {
     public Guid? VideoId { get; init; }
 }
 
-public interface IUploadSessionService {
-    Task<UploadSession> CreateSessionAsync(CancellationToken cancellationToken = default);
-    Task<UploadSession?> GetSessionAsync(Guid sessionId, CancellationToken cancellationToken = default);
-    Task<UploadSession?> UpdateVideoMetadataAsync(Guid sessionId, string? title, string? description, CancellationToken cancellationToken = default);
-    Task<SessionUploadResult> UploadFileAsync(
-        Guid sessionId,
-        Stream content,
-        string fileName,
-        long fileSize,
-        string? contentType,
-        CancellationToken cancellationToken = default);
-}
-
-public class UploadSessionService : IUploadSessionService {
-    private const long MaxFileSize = 500 * 1024 * 1024;
-    private static readonly string[] AllowedExtensions = { ".mp4", ".mov", ".avi", ".mkv", ".webm" };
+public sealed class UploadSessionService {
+    private static readonly string[] AllowedExtensions = [".mp4", ".mov", ".avi", ".mkv", ".webm"];
 
     private readonly AppDbContext _dbContext;
-    private readonly IVideoStorageService _storage;
+    private readonly MediaPaths _paths;
+    private readonly AnalysisStore _analysis;
     private readonly ILogger<UploadSessionService> _logger;
     private readonly TimeSpan _awaitingUploadTtl;
 
     public UploadSessionService(
         AppDbContext dbContext,
-        IVideoStorageService storage,
-        ILogger<UploadSessionService> logger,
-        IConfiguration configuration) {
+        MediaPaths paths,
+        AnalysisStore analysis,
+        IOptions<UploadOptions> options,
+        ILogger<UploadSessionService> logger) {
         _dbContext = dbContext;
-        _storage = storage;
+        _paths = paths;
+        _analysis = analysis;
         _logger = logger;
-
-        var ttlMinutes = configuration.GetValue<int?>("UploadSessions:AwaitingUploadTtlMinutes") ?? 120;
-        _awaitingUploadTtl = TimeSpan.FromMinutes(Math.Max(ttlMinutes, 1));
+        _awaitingUploadTtl = TimeSpan.FromMinutes(Math.Max(options.Value.AwaitingUploadTtlMinutes, 1));
     }
 
     public async Task<UploadSession> CreateSessionAsync(CancellationToken cancellationToken = default) {
         await ExpireAbandonedSessionsAsync(cancellationToken);
 
         var now = DateTime.UtcNow;
-        var routeId = await GenerateUniqueRouteIdAsync(cancellationToken);
         var video = new Video {
             Id = Guid.NewGuid(),
-            RouteId = routeId,
-            StorageKey = routeId,
+            RouteId = await GenerateUniqueRouteIdAsync(cancellationToken),
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
@@ -77,33 +61,36 @@ public class UploadSessionService : IUploadSessionService {
         _dbContext.UploadSessions.Add(session);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Created upload session {SessionId} for draft video {VideoId} ({RouteId})", session.Id, video.Id, routeId);
+        _logger.LogInformation(
+            "Created upload session {SessionId} for draft video {VideoId} ({RouteId})",
+            session.Id,
+            video.Id,
+            video.RouteId);
         return session;
     }
 
     public async Task<UploadSession?> GetSessionAsync(Guid sessionId, CancellationToken cancellationToken = default) {
         await ExpireAbandonedSessionsAsync(cancellationToken);
-
-        return await _dbContext.UploadSessions
-            .Include(session => session.Video)
-            .FirstOrDefaultAsync(session => session.Id == sessionId && session.Status != UploadSessionStatus.Expired, cancellationToken);
+        return await FindLiveSessionAsync(sessionId, cancellationToken);
     }
 
-    public async Task<UploadSession?> UpdateVideoMetadataAsync(Guid sessionId, string? title, string? description, CancellationToken cancellationToken = default) {
+    public async Task<UploadSession?> UpdateVideoMetadataAsync(
+        Guid sessionId,
+        string? title,
+        string? description,
+        CancellationToken cancellationToken = default) {
         await ExpireAbandonedSessionsAsync(cancellationToken);
 
-        var session = await _dbContext.UploadSessions
-            .Include(existingSession => existingSession.Video)
-            .FirstOrDefaultAsync(existingSession => existingSession.Id == sessionId && existingSession.Status != UploadSessionStatus.Expired, cancellationToken);
-
+        var session = await FindLiveSessionAsync(sessionId, cancellationToken);
         if (session == null) {
             return null;
         }
 
-        session.Video.Title = Normalize(title, 200);
-        session.Video.Description = Normalize(description, 4000);
-        session.Video.UpdatedAtUtc = DateTime.UtcNow;
-        session.UpdatedAtUtc = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+        session.Video.Title = Trim(title, 200);
+        session.Video.Description = Trim(description, 4000);
+        session.Video.UpdatedAtUtc = now;
+        session.UpdatedAtUtc = now;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return session;
@@ -118,10 +105,7 @@ public class UploadSessionService : IUploadSessionService {
         CancellationToken cancellationToken = default) {
         await ExpireAbandonedSessionsAsync(cancellationToken);
 
-        var session = await _dbContext.UploadSessions
-            .Include(item => item.Video)
-            .FirstOrDefaultAsync(item => item.Id == sessionId && item.Status != UploadSessionStatus.Expired, cancellationToken);
-
+        var session = await FindLiveSessionAsync(sessionId, cancellationToken);
         if (session == null) {
             return Fail("NotFound", "Upload session not found");
         }
@@ -134,12 +118,14 @@ public class UploadSessionService : IUploadSessionService {
             return Fail("NoFile", "No file uploaded", session);
         }
 
-        if (fileSize > MaxFileSize) {
-            return Fail("TooLarge", $"File size exceeds maximum limit of {MaxFileSize / (1024 * 1024)} MB", session);
+        if (fileSize > UploadOptions.MaxBytes) {
+            return Fail(
+                "TooLarge",
+                $"File size exceeds maximum limit of {UploadOptions.MaxBytes / (1024 * 1024)} MB",
+                session);
         }
 
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (!AllowedExtensions.Contains(extension)) {
+        if (!AllowedExtensions.Contains(Path.GetExtension(fileName).ToLowerInvariant())) {
             return new SessionUploadResult {
                 Success = false,
                 ErrorCode = "InvalidType",
@@ -149,24 +135,22 @@ public class UploadSessionService : IUploadSessionService {
             };
         }
 
-        var now = DateTime.UtcNow;
         session.Status = UploadSessionStatus.Uploading;
         session.ProgressPercent = 5;
         session.CurrentStep = "Uploading file";
-        session.UpdatedAtUtc = now;
+        session.UpdatedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         try {
-            await _storage.SaveSourceAsync(session.Video.RouteId, content, cancellationToken);
+            await _paths.SaveSourceAsync(session.Video.RouteId, content, cancellationToken);
 
             var uploadedAt = DateTime.UtcNow;
             session.Status = UploadSessionStatus.Processing;
-            session.ProgressPercent = 8;
+            session.ProgressPercent = ProcessingEta.PercentFor(PipelineStep.Starting);
             session.CurrentStep = "Queued for processing";
             session.UploadedAtUtc = uploadedAt;
             session.UpdatedAtUtc = uploadedAt;
             session.Video.OriginalFileName = Path.GetFileName(fileName);
-            session.Video.StorageKey = session.Video.RouteId;
             session.Video.SourceContentType = string.IsNullOrWhiteSpace(contentType) ? "video/mp4" : contentType;
             session.Video.SourceSizeBytes = fileSize;
             session.Video.PublishedAtUtc = uploadedAt;
@@ -196,47 +180,50 @@ public class UploadSessionService : IUploadSessionService {
         }
     }
 
+    private Task<UploadSession?> FindLiveSessionAsync(Guid sessionId, CancellationToken cancellationToken) {
+        return _dbContext.UploadSessions
+            .Include(session => session.Video)
+            .FirstOrDefaultAsync(
+                session => session.Id == sessionId && session.Status != UploadSessionStatus.Expired,
+                cancellationToken);
+    }
+
+    /// <summary>Reaps sessions that were created but never uploaded to, deleting their draft video.</summary>
     private async Task ExpireAbandonedSessionsAsync(CancellationToken cancellationToken) {
         var now = DateTime.UtcNow;
-        var staleSessions = await _dbContext.UploadSessions
+        var stale = await _dbContext.UploadSessions
             .Include(session => session.Video)
             .Where(session =>
                 session.Status == UploadSessionStatus.AwaitingUpload &&
                 session.ExpiresAtUtc <= now)
             .ToListAsync(cancellationToken);
 
-        if (staleSessions.Count == 0) {
+        if (stale.Count == 0) {
             return;
         }
 
-        foreach (var session in staleSessions) {
-            session.Status = UploadSessionStatus.Expired;
-            session.UpdatedAtUtc = now;
-            _storage.DeleteVideoTree(session.Video.RouteId);
+        foreach (var session in stale) {
+            _paths.DeleteVideoTree(session.Video.RouteId);
         }
 
-        _dbContext.UploadSessions.RemoveRange(staleSessions);
-        _dbContext.Videos.RemoveRange(staleSessions.Select(session => session.Video));
+        // Analysis reports have no FK, so they are removed explicitly before the cascade. A draft
+        // that was never uploaded to should have none, but a crashed run could have left one.
+        await _analysis.DeleteForVideosAsync(
+            stale.Select(session => session.VideoId),
+            [],
+            cancellationToken);
 
+        _dbContext.UploadSessions.RemoveRange(stale);
+        _dbContext.Videos.RemoveRange(stale.Select(session => session.Video));
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Expired {Count} abandoned upload sessions", staleSessions.Count);
-    }
-
-    private static string? Normalize(string? value, int maxLength) {
-        if (string.IsNullOrWhiteSpace(value)) {
-            return null;
-        }
-
-        var normalized = value.Trim();
-        return normalized.Length <= maxLength ? normalized : normalized[..maxLength];
+        _logger.LogInformation("Expired {Count} abandoned upload sessions", stale.Count);
     }
 
     private async Task<string> GenerateUniqueRouteIdAsync(CancellationToken cancellationToken) {
         for (var attempt = 0; attempt < 10; attempt++) {
             var candidate = CreateRouteId();
-            var exists = await _dbContext.Videos.AnyAsync(video => video.RouteId == candidate, cancellationToken);
-            if (!exists) {
+            if (!await _dbContext.Videos.AnyAsync(video => video.RouteId == candidate, cancellationToken)) {
                 return candidate;
             }
         }
@@ -244,6 +231,7 @@ public class UploadSessionService : IUploadSessionService {
         throw new InvalidOperationException("Failed to generate a unique video route ID.");
     }
 
+    /// <summary>11-character URL-safe base64 id, the shape route ids have always had.</summary>
     private static string CreateRouteId() {
         Span<byte> bytes = stackalloc byte[8];
         RandomNumberGenerator.Fill(bytes);
@@ -252,6 +240,15 @@ public class UploadSessionService : IUploadSessionService {
             .Replace('+', '-')
             .Replace('/', '_')
             .TrimEnd('=');
+    }
+
+    private static string? Trim(string? value, int maxLength) {
+        if (string.IsNullOrWhiteSpace(value)) {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
 
     private static SessionUploadResult Fail(string errorCode, string message, UploadSession? session = null) {
