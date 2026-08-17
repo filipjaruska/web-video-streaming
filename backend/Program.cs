@@ -98,7 +98,9 @@ app.UseAuthorization();
 app.MapControllers();
 
 using (var scope = app.Services.CreateScope()) {
-    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
+    DatabaseBootstrapper.EnsureSchema(
+        scope.ServiceProvider.GetRequiredService<AppDbContext>(),
+        app.Logger);
 }
 
 app.Logger.LogInformation("Video storage root: {StorageRoot}", storageRoot);
