@@ -262,12 +262,6 @@ public sealed class ProcessingPipeline {
                 return;
             }
 
-            // An older run may have left a JPEG behind; the WebP supersedes it.
-            var legacy = _paths.LegacyThumbnailFile(video.RouteId);
-            if (File.Exists(legacy)) {
-                File.Delete(legacy);
-            }
-
             video.ThumbnailUrl = $"/api/videos/{video.RouteId}/thumbnail";
             _logger.LogInformation("Thumbnail step succeeded for {RouteId}", video.RouteId);
         } catch (Exception ex) {
