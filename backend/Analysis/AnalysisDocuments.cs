@@ -1,7 +1,22 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace WebWVideoStreamingAPI.Infrastructure.Analysis.Models;
+namespace WebWVideoStreamingAPI.Analysis;
+
+public static class AnalysisSchema {
+    /// <summary>Version echoed to the frontend on every analysis response.</summary>
+    public const int Version = 4;
+
+    /// <summary>
+    /// How tree and series documents are stored in <c>AnalysisReport</c> and returned to the
+    /// frontend. One instance, so stored JSON and served JSON can never drift.
+    /// </summary>
+    public static readonly JsonSerializerOptions Json = new() {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+    };
+}
 
 public enum AnalysisSectionStatus {
     Pending,
@@ -12,7 +27,8 @@ public enum AnalysisSectionStatus {
 }
 
 /// <summary>
-/// Serializes enums as camelCase strings for the analysis API/frontend.
+/// Serializes enums as camelCase strings. Applied per-property because the analysis tree is also
+/// serialized by ASP.NET's default options, which have no enum converter registered.
 /// </summary>
 public sealed class CamelCaseEnumConverter : JsonStringEnumConverter {
     public CamelCaseEnumConverter() : base(JsonNamingPolicy.CamelCase) {
@@ -82,7 +98,7 @@ public sealed class FormatSitiSeriesDocument {
 }
 
 /// <summary>
-/// Aggregated VMAF statistics for one ladder rung — RD-curve coordinates for later encode-grid work.
+/// Aggregated VMAF statistics for one ladder rung — RD-curve coordinates for encode-grid work.
 /// </summary>
 public sealed class VmafSummary {
     [JsonPropertyName("mean")]
@@ -130,7 +146,7 @@ public sealed class FormatVmafSeriesDocument {
 }
 
 /// <summary>
-/// One resolution×CRF encode-grid sample — RD point for convex-hull / crossover derivation.
+/// One resolution×CRF encode-grid sample — an RD point for convex-hull / crossover derivation.
 /// </summary>
 public sealed class EncodeGridPoint {
     [JsonPropertyName("label")]
@@ -201,6 +217,54 @@ public sealed class AnalysisSeriesDocument {
 
     [JsonPropertyName("derivedLadder")]
     public DerivedLadderDocument? DerivedLadder { get; set; }
+
+    /// <summary>
+    /// Field-wise merge so SI/TI, VMAF, encode-grid, and the derived ladder can each be written
+    /// independently without clobbering the others.
+    /// </summary>
+    public AnalysisSeriesDocument MergedWith(AnalysisSeriesDocument incoming) {
+        return new AnalysisSeriesDocument {
+            Siti = incoming.Siti ?? Siti,
+            SitiByFormat = MergeSiti(SitiByFormat, incoming.SitiByFormat),
+            VmafByFormat = MergeVmaf(VmafByFormat, incoming.VmafByFormat),
+            EncodeGrid = incoming.EncodeGrid ?? EncodeGrid,
+            DerivedLadder = incoming.DerivedLadder ?? DerivedLadder
+        };
+    }
+
+    private static FormatSitiSeriesDocument? MergeSiti(
+        FormatSitiSeriesDocument? existing,
+        FormatSitiSeriesDocument? incoming) {
+        if (incoming == null) {
+            return existing;
+        }
+
+        if (existing == null) {
+            return incoming;
+        }
+
+        return new FormatSitiSeriesDocument {
+            Hls = incoming.Hls ?? existing.Hls,
+            Dash = incoming.Dash ?? existing.Dash
+        };
+    }
+
+    private static FormatVmafSeriesDocument? MergeVmaf(
+        FormatVmafSeriesDocument? existing,
+        FormatVmafSeriesDocument? incoming) {
+        if (incoming == null) {
+            return existing;
+        }
+
+        if (existing == null) {
+            return incoming;
+        }
+
+        return new FormatVmafSeriesDocument {
+            Hls = incoming.Hls ?? existing.Hls,
+            Dash = incoming.Dash ?? existing.Dash
+        };
+    }
 }
 
 public sealed class AnalysisTarget {
@@ -240,9 +304,9 @@ public sealed class FutureTestDescriptor {
     public required string Status { get; init; }
 }
 
-public sealed class VideoAnalysisDto {
+public sealed class VideoAnalysisResponse {
     public required string RouteId { get; init; }
-    public int SchemaVersion { get; init; } = 4;
+    public int SchemaVersion { get; init; } = AnalysisSchema.Version;
     public DateTime? UpdatedAtUtc { get; init; }
     public List<AnalysisTarget> Targets { get; init; } = [];
     public List<FutureTestDescriptor> FutureTests { get; init; } = [];

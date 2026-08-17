@@ -1,19 +1,24 @@
 using Microsoft.EntityFrameworkCore;
-using WebWVideoStreamingAPI.Data;
-using WebWVideoStreamingAPI.Models;
+using WebWVideoStreamingAPI.Analysis;
 
 namespace WebWVideoStreamingAPI.Core;
 
+// Serialized straight to the wire — property names are the JSON field names.
 public sealed class VideoListItem {
     public required string RouteId { get; init; }
     public string? Title { get; init; }
     public string? FileName { get; init; }
     public string? ThumbnailUrl { get; init; }
     public long Size { get; init; }
-    public DateTime CreatedAtUtc { get; init; }
-    public DateTime? PublishedAtUtc { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public DateTime? PublishedAt { get; init; }
     public bool HasHls { get; init; }
     public bool HasDash { get; init; }
+}
+
+public sealed class ListVideosResponse {
+    public int Count { get; init; }
+    public required IReadOnlyList<VideoListItem> Videos { get; init; }
 }
 
 public sealed class VideoTranscodeListItem {
@@ -32,30 +37,20 @@ public sealed class VideoTranscodesResponse {
     public required IReadOnlyList<VideoTranscodeListItem> Transcodes { get; init; }
 }
 
-public interface IVideoCatalogService {
-    Task<Video?> GetByRouteIdAsync(string routeId, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<VideoListItem>> ListPublishedAsync(CancellationToken cancellationToken = default);
-    Task<VideoTranscodesResponse?> ListTranscodesAsync(string routeId, CancellationToken cancellationToken = default);
-    Task<Guid?> ResolveStreamTranscodeIdAsync(
-        string routeId,
-        Guid? requestedTranscodeId,
-        bool requireHls,
-        bool requireDash,
-        CancellationToken cancellationToken = default);
-    Task<bool> DeleteByRouteIdAsync(string routeId, CancellationToken cancellationToken = default);
-}
-
-public class VideoCatalogService : IVideoCatalogService {
+public sealed class VideoCatalogService {
     private readonly AppDbContext _dbContext;
-    private readonly IVideoStorageService _storage;
+    private readonly MediaPaths _paths;
+    private readonly AnalysisStore _analysis;
     private readonly ILogger<VideoCatalogService> _logger;
 
     public VideoCatalogService(
         AppDbContext dbContext,
-        IVideoStorageService storage,
+        MediaPaths paths,
+        AnalysisStore analysis,
         ILogger<VideoCatalogService> logger) {
         _dbContext = dbContext;
-        _storage = storage;
+        _paths = paths;
+        _analysis = analysis;
         _logger = logger;
     }
 
@@ -65,7 +60,7 @@ public class VideoCatalogService : IVideoCatalogService {
             .FirstOrDefaultAsync(video => video.RouteId == routeId, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<VideoListItem>> ListPublishedAsync(CancellationToken cancellationToken = default) {
+    public async Task<ListVideosResponse> ListPublishedAsync(CancellationToken cancellationToken = default) {
         var videos = await _dbContext.Videos
             .AsNoTracking()
             .Include(video => video.ActiveTranscode)
@@ -73,17 +68,19 @@ public class VideoCatalogService : IVideoCatalogService {
             .OrderByDescending(video => video.PublishedAtUtc)
             .ToListAsync(cancellationToken);
 
-        return videos.Select(video => new VideoListItem {
+        var items = videos.Select(video => new VideoListItem {
             RouteId = video.RouteId,
             Title = video.Title,
-            FileName = video.OriginalFileName ?? "source.mp4",
+            FileName = video.OriginalFileName ?? MediaNames.SourceFile,
             ThumbnailUrl = video.ThumbnailUrl,
             Size = video.SourceSizeBytes ?? 0,
-            CreatedAtUtc = video.CreatedAtUtc,
-            PublishedAtUtc = video.PublishedAtUtc,
+            CreatedAt = video.CreatedAtUtc,
+            PublishedAt = video.PublishedAtUtc,
             HasHls = video.ActiveTranscode?.HasHls == true,
             HasDash = video.ActiveTranscode?.HasDash == true
         }).ToList();
+
+        return new ListVideosResponse { Count = items.Count, Videos = items };
     }
 
     public async Task<VideoTranscodesResponse?> ListTranscodesAsync(
@@ -101,13 +98,12 @@ public class VideoCatalogService : IVideoCatalogService {
         }
 
         var items = video.Transcodes
-            .Where(item =>
-                item.Status is TranscodeStatus.Succeeded or TranscodeStatus.Running)
+            .Where(item => item.Status is TranscodeStatus.Succeeded or TranscodeStatus.Running)
             .OrderBy(item => item.CreatedAtUtc)
             .Select(item => new VideoTranscodeListItem {
                 Id = item.Id.ToString("N"),
-                LadderKind = item.LadderKind == LadderKind.Dynamic ? "dynamic" : "static",
-                Label = FormatLadderLabel(item.LadderKind),
+                LadderKind = AnalysisTargetBuilder.LadderToken(item.LadderKind),
+                Label = AnalysisTargetBuilder.LadderLabel(item.LadderKind),
                 HasHls = item.HasHls,
                 HasDash = item.HasDash,
                 IsActive = video.ActiveTranscodeId == item.Id,
@@ -122,6 +118,10 @@ public class VideoCatalogService : IVideoCatalogService {
         };
     }
 
+    /// <summary>
+    /// Picks which packaging run should serve a stream: the requested one, or the active one when
+    /// none was asked for. Returns null unless it succeeded and produced the required format.
+    /// </summary>
     public async Task<Guid?> ResolveStreamTranscodeIdAsync(
         string routeId,
         Guid? requestedTranscodeId,
@@ -130,7 +130,6 @@ public class VideoCatalogService : IVideoCatalogService {
         CancellationToken cancellationToken = default) {
         var video = await _dbContext.Videos
             .AsNoTracking()
-            .Include(item => item.ActiveTranscode)
             .Include(item => item.Transcodes)
             .FirstOrDefaultAsync(
                 item => item.RouteId == routeId && item.PublishedAtUtc != null,
@@ -140,53 +139,44 @@ public class VideoCatalogService : IVideoCatalogService {
             return null;
         }
 
-        Transcode? transcode;
-        if (requestedTranscodeId == null) {
-            if (video.ActiveTranscodeId == null) {
-                return null;
-            }
-
-            transcode = video.ActiveTranscode
-                ?? video.Transcodes.FirstOrDefault(item => item.Id == video.ActiveTranscodeId);
-        } else {
-            transcode = video.Transcodes.FirstOrDefault(item => item.Id == requestedTranscodeId.Value);
-        }
+        var transcode = requestedTranscodeId == null
+            ? video.Transcodes.FirstOrDefault(item => item.Id == video.ActiveTranscodeId)
+            : video.Transcodes.FirstOrDefault(item => item.Id == requestedTranscodeId.Value);
 
         if (transcode == null || transcode.Status != TranscodeStatus.Succeeded) {
             return null;
         }
 
-        if (requireHls && !transcode.HasHls) {
-            return null;
-        }
-
-        if (requireDash && !transcode.HasDash) {
+        if ((requireHls && !transcode.HasHls) || (requireDash && !transcode.HasDash)) {
             return null;
         }
 
         return transcode.Id;
     }
 
-    private static string FormatLadderLabel(LadderKind ladderKind) =>
-        ladderKind == LadderKind.Dynamic
-            ? "Dynamic ladder (VMAF crossover)"
-            : "Static ladder";
-
     public async Task<bool> DeleteByRouteIdAsync(string routeId, CancellationToken cancellationToken = default) {
         var video = await _dbContext.Videos
+            .Include(item => item.Transcodes)
             .FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
 
         if (video == null) {
             return false;
         }
 
+        // Analysis reports have no FK, so they are removed explicitly before the cascade.
+        await _analysis.DeleteForVideoAsync(
+            video.Id,
+            video.Transcodes.Select(item => item.Id),
+            cancellationToken);
+
+        // Break the self-reference first — the FK is SetNull, not Cascade.
         video.ActiveTranscodeId = null;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _dbContext.Videos.Remove(video);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        _storage.DeleteVideoTree(routeId);
+        _paths.DeleteVideoTree(routeId);
         _logger.LogInformation("Deleted video {RouteId} from catalog and storage", routeId);
         return true;
     }

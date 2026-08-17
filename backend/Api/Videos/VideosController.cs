@@ -1,72 +1,74 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using WebWVideoStreamingAPI.Core;
-using WebWVideoStreamingAPI.Infrastructure;
+using WebWVideoStreamingAPI.Analysis;
 
 namespace WebWVideoStreamingAPI.Api.Videos;
+
+public sealed class SubtitleTrackDto {
+    public required string Id { get; init; }
+    public required string Language { get; init; }
+    public required string Label { get; init; }
+    public required string Url { get; init; }
+}
+
+public sealed class SkippedSubtitleDto {
+    public required string Id { get; init; }
+    public required string Language { get; init; }
+    public required string Label { get; init; }
+    public required string Reason { get; init; }
+}
+
+public sealed class VideoSubtitlesResponse {
+    public required string RouteId { get; init; }
+    public required IReadOnlyList<SubtitleTrackDto> Tracks { get; init; }
+    public required IReadOnlyList<SkippedSubtitleDto> Skipped { get; init; }
+}
 
 [ApiController]
 [Route("api/videos")]
 public class VideosController : ControllerBase {
-    private readonly IVideoCatalogService _catalog;
-    private readonly IVideoStorageService _storage;
+    private static readonly JsonSerializerOptions ManifestJson = new() { PropertyNameCaseInsensitive = true };
+
+    private readonly VideoCatalogService _catalog;
+    private readonly AnalysisStore _analysis;
+    private readonly MediaPaths _paths;
     private readonly ILogger<VideosController> _logger;
 
     public VideosController(
-        IVideoCatalogService catalog,
-        IVideoStorageService storage,
+        VideoCatalogService catalog,
+        AnalysisStore analysis,
+        MediaPaths paths,
         ILogger<VideosController> logger) {
         _catalog = catalog;
-        _storage = storage;
+        _analysis = analysis;
+        _paths = paths;
         _logger = logger;
     }
 
     [HttpGet]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ListVideosResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> ListVideos(CancellationToken cancellationToken) {
-        var videos = await _catalog.ListPublishedAsync(cancellationToken);
-        return Ok(new {
-            count = videos.Count,
-            videos = videos.Select(video => new {
-                routeId = video.RouteId,
-                title = video.Title,
-                fileName = video.FileName,
-                thumbnailUrl = video.ThumbnailUrl,
-                size = video.Size,
-                createdAt = video.CreatedAtUtc,
-                publishedAt = video.PublishedAtUtc,
-                hasHls = video.HasHls,
-                hasDash = video.HasDash
-            })
-        });
+        return Ok(await _catalog.ListPublishedAsync(cancellationToken));
     }
 
     [HttpGet("{routeId}/transcodes")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<VideoTranscodesResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ListTranscodes(string routeId, CancellationToken cancellationToken) {
         var response = await _catalog.ListTranscodesAsync(routeId, cancellationToken);
-        if (response == null) {
-            return NotFound(new { message = "Video not found" });
-        }
+        return response == null ? NotFound(new { message = "Video not found" }) : Ok(response);
+    }
 
-        return Ok(new {
-            activeTranscodeId = response.ActiveTranscodeId,
-            transcodes = response.Transcodes.Select(item => new {
-                id = item.Id,
-                ladderKind = item.LadderKind,
-                label = item.Label,
-                hasHls = item.HasHls,
-                hasDash = item.HasDash,
-                isActive = item.IsActive,
-                status = item.Status,
-                createdAtUtc = item.CreatedAtUtc
-            })
-        });
+    [HttpGet("{routeId}/analysis")]
+    [ProducesResponseType<VideoAnalysisResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetAnalysis(string routeId, CancellationToken cancellationToken) {
+        var response = await _analysis.GetByRouteIdAsync(routeId, cancellationToken);
+        return response == null ? NotFound(new { message = "Video not found" }) : Ok(response);
     }
 
     [HttpGet("{routeId}/subs")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<VideoSubtitlesResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ListSubtitles(string routeId, CancellationToken cancellationToken) {
         var video = await _catalog.GetByRouteIdAsync(routeId, cancellationToken);
@@ -74,35 +76,32 @@ public class VideosController : ControllerBase {
             return NotFound(new { message = "Video not found" });
         }
 
-        var manifestPath = _storage.ResolveSubsManifestPath(routeId);
+        var manifestPath = _paths.ResolveSubsManifest(routeId);
         if (manifestPath == null) {
-            return Ok(new {
-                routeId,
-                tracks = Array.Empty<object>(),
-                skipped = Array.Empty<object>()
-            });
+            return Ok(new VideoSubtitlesResponse { RouteId = routeId, Tracks = [], Skipped = [] });
         }
 
-        await using var stream = System.IO.File.OpenRead(manifestPath);
-        var manifest = await JsonSerializer.DeserializeAsync<SubtitleManifest>(
-            stream,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true },
-            cancellationToken) ?? new SubtitleManifest();
+        SubtitleManifest manifest;
+        await using (var stream = System.IO.File.OpenRead(manifestPath)) {
+            manifest = await JsonSerializer.DeserializeAsync<SubtitleManifest>(stream, ManifestJson, cancellationToken)
+                ?? new SubtitleManifest();
+        }
 
-        return Ok(new {
-            routeId,
-            tracks = manifest.Tracks.Select(track => new {
-                id = track.Id,
-                language = track.Language,
-                label = track.Label,
-                url = $"/api/videos/{routeId}/subs/{track.FileName}"
-            }),
-            skipped = manifest.Skipped.Select(item => new {
-                id = item.Id,
-                language = item.Language,
-                label = item.Label,
-                reason = item.Reason
-            })
+        return Ok(new VideoSubtitlesResponse {
+            RouteId = routeId,
+            // The URL is derived from the route, not stored, so it is built here.
+            Tracks = manifest.Tracks.Select(track => new SubtitleTrackDto {
+                Id = track.Id,
+                Language = track.Language,
+                Label = track.Label,
+                Url = $"/api/videos/{routeId}/subs/{track.FileName}"
+            }).ToList(),
+            Skipped = manifest.Skipped.Select(item => new SkippedSubtitleDto {
+                Id = item.Id,
+                Language = item.Language,
+                Label = item.Label,
+                Reason = item.Reason
+            }).ToList()
         });
     }
 
@@ -118,13 +117,33 @@ public class VideosController : ControllerBase {
             return NotFound();
         }
 
-        var path = _storage.ResolveSubtitlePath(routeId, fileName);
+        var path = _paths.ResolveSubtitle(routeId, fileName);
         if (path == null) {
             return NotFound();
         }
 
         Response.Headers.CacheControl = "public, max-age=3600";
         return PhysicalFile(path, "text/vtt; charset=utf-8");
+    }
+
+    [HttpGet("{routeId}/thumbnail")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetThumbnail(string routeId, CancellationToken cancellationToken) {
+        var video = await _catalog.GetByRouteIdAsync(routeId, cancellationToken);
+        if (video == null) {
+            return NotFound();
+        }
+
+        var path = _paths.ResolveThumbnail(routeId);
+        if (path == null) {
+            return NotFound();
+        }
+
+        var contentType = path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
+            ? "image/webp"
+            : "image/jpeg";
+        return PhysicalFile(path, contentType);
     }
 
     [HttpDelete("{routeId}")]
@@ -137,33 +156,10 @@ public class VideosController : ControllerBase {
                 return NotFound(new { message = "Video not found" });
             }
 
-            return Ok(new {
-                message = "Video and transcoded versions deleted successfully",
-                routeId
-            });
+            return Ok(new { message = "Video and transcoded versions deleted successfully", routeId });
         } catch (Exception ex) {
             _logger.LogError(ex, "Failed to delete video: {RouteId}", routeId);
             return StatusCode(500, new { message = "Failed to delete video" });
         }
-    }
-
-    [HttpGet("{routeId}/thumbnail")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetThumbnail(string routeId, CancellationToken cancellationToken) {
-        var video = await _catalog.GetByRouteIdAsync(routeId, cancellationToken);
-        if (video == null) {
-            return NotFound();
-        }
-
-        var path = _storage.ResolveThumbnailPath(routeId);
-        if (path == null) {
-            return NotFound();
-        }
-
-        var contentType = path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
-            ? "image/webp"
-            : "image/jpeg";
-        return PhysicalFile(path, contentType);
     }
 }

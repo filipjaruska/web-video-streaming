@@ -1,12 +1,14 @@
-using WebWVideoStreamingAPI.Infrastructure.Analysis.Models;
+namespace WebWVideoStreamingAPI.Analysis;
 
-namespace WebWVideoStreamingAPI.Infrastructure.Analysis;
-
+/// <summary>
+/// Applied on every read so stored documents from older runs still render: drops retired node ids,
+/// drops leaves that carry neither a value nor children, and drops the legacy "series" node kind.
+/// </summary>
 public static class AnalysisTreeNormalizer {
-    private static readonly HashSet<string> DeprecatedNodeIds = new(StringComparer.OrdinalIgnoreCase) {
+    private static readonly HashSet<string> RetiredNodeIds = new(StringComparer.OrdinalIgnoreCase) {
         "general.encoded_date",
         "general.tagged_date",
-        "siti.frames",
+        "siti.frames"
     };
 
     public static AnalysisTreeDocument Normalize(AnalysisTreeDocument tree) {
@@ -17,7 +19,7 @@ public static class AnalysisTreeNormalizer {
         };
     }
 
-    public static List<AnalysisTreeNode> NormalizeNodes(IEnumerable<AnalysisTreeNode>? nodes) {
+    private static List<AnalysisTreeNode> NormalizeNodes(IEnumerable<AnalysisTreeNode>? nodes) {
         if (nodes == null) {
             return [];
         }
@@ -35,7 +37,7 @@ public static class AnalysisTreeNormalizer {
     }
 
     private static AnalysisTreeNode? NormalizeNode(AnalysisTreeNode node) {
-        if (IsDeprecated(node)) {
+        if (IsRetired(node)) {
             return null;
         }
 
@@ -43,6 +45,7 @@ public static class AnalysisTreeNormalizer {
         var isEmptyLeaf = (node.Children == null || node.Children.Count == 0) &&
                           string.IsNullOrWhiteSpace(node.Value);
 
+        // Sections survive while empty — they carry status and are the tree's structure.
         if (isEmptyLeaf && node.Meta?.Kind != "section") {
             return null;
         }
@@ -56,11 +59,8 @@ public static class AnalysisTreeNormalizer {
         };
     }
 
-    private static bool IsDeprecated(AnalysisTreeNode node) {
-        if (DeprecatedNodeIds.Contains(node.Id)) {
-            return true;
-        }
-
-        return string.Equals(node.Meta?.Kind, "series", StringComparison.OrdinalIgnoreCase);
+    private static bool IsRetired(AnalysisTreeNode node) {
+        return RetiredNodeIds.Contains(node.Id) ||
+               string.Equals(node.Meta?.Kind, "series", StringComparison.OrdinalIgnoreCase);
     }
 }

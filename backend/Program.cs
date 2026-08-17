@@ -1,33 +1,18 @@
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
-using WebWVideoStreamingAPI.Core;
-using WebWVideoStreamingAPI.Data;
-using WebWVideoStreamingAPI.Infrastructure;
-using WebWVideoStreamingAPI.Infrastructure.Analysis;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.EntityFrameworkCore;
+using WebWVideoStreamingAPI.Analysis;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
-builder.WebHost.ConfigureKestrel(serverOptions => {
-    serverOptions.ListenAnyIP(int.Parse(port));
+builder.WebHost.ConfigureKestrel(options => {
+    options.ListenAnyIP(int.Parse(Environment.GetEnvironmentVariable("PORT") ?? "5000"));
 });
 
-builder.Services.AddSwaggerGen();
+// —— Storage & database locations ——————————————————————————————————————————
 
-var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
-    ?? new[] { "http://localhost:5173", "http://localhost:3000" };
-
-builder.Services.AddCors(options => {
-    options.AddPolicy("AllowReactApp",
-        policy => {
-            policy.WithOrigins(allowedOrigins)
-                  .AllowAnyHeader()
-                  .AllowAnyMethod();
-        });
-});
-
-var contentRoot = builder.Environment.ContentRootPath;
-var defaultAppData = Path.Combine(contentRoot, "App_Data");
+var defaultAppData = Path.Combine(builder.Environment.ContentRootPath, "App_Data");
 Directory.CreateDirectory(defaultAppData);
 
 var storageRoot = Environment.GetEnvironmentVariable("VIDEO_STORAGE_ROOT")
@@ -39,136 +24,88 @@ if (string.IsNullOrWhiteSpace(storageRoot)) {
 storageRoot = Path.GetFullPath(storageRoot);
 Directory.CreateDirectory(storageRoot);
 
-builder.Services.Configure<StorageOptions>(options => {
-    options.RootPath = storageRoot;
-});
+builder.Services.Configure<StorageOptions>(options => options.RootPath = storageRoot);
+builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection(UploadOptions.SectionName));
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString)) {
     connectionString = $"Data Source={Path.Combine(defaultAppData, "app.db")}";
 }
 
-// Ensure SQLite parent directory exists when connection string points at a file path.
 EnsureSqliteDirectory(connectionString);
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
 
-builder.Services.AddDbContext<AppDbContext>(options => {
-    options.UseSqlite(connectionString);
-});
+// —— Services ——————————————————————————————————————————————————————————————
 
-builder.Services.AddScoped<IUploadSessionService, UploadSessionService>();
-builder.Services.AddScoped<IVideoStorageService, VideoStorageService>();
-builder.Services.AddScoped<IVideoCatalogService, VideoCatalogService>();
-builder.Services.AddScoped<IVideoSourceAnalysisService, VideoSourceAnalysisService>();
-builder.Services.AddScoped<IVideoTranscodeAnalysisService, VideoTranscodeAnalysisService>();
-builder.Services.AddScoped<ITranscodeAnalysisCollector, TranscodeAnalysisCollector>();
-builder.Services.AddScoped<VideoProcessingPipeline>();
-builder.Services.AddSingleton<IVideoProcessingQueue, VideoProcessingQueue>();
-builder.Services.AddHostedService<VideoProcessingWorker>();
-builder.Services.AddSingleton<IMediaProcessRunner, MediaProcessRunner>();
-builder.Services.AddSingleton<IFfmpegRunner, FfmpegRunner>();
-builder.Services.AddSingleton<IVideoTranscodingService, VideoTranscodingService>();
-builder.Services.AddSingleton<IMediaProbeService, MediaProbeService>();
-builder.Services.AddSingleton<ISitiAnalysisService, SitiAnalysisService>();
-builder.Services.AddSingleton<IVmafAnalysisService, VmafAnalysisService>();
-builder.Services.AddScoped<ISubtitleExtractionService, SubtitleExtractionService>();
-builder.Services.AddScoped<IEncodeGridService, EncodeGridService>();
-builder.Services.AddScoped<ILadderDerivationService, LadderDerivationService>();
+// Stateless wrappers around ffmpeg/ffprobe and the media root — safe to share.
+builder.Services.AddSingleton<ProcessRunner>();
+builder.Services.AddSingleton<MediaPaths>();
+builder.Services.AddSingleton<MediaProbe>();
+builder.Services.AddSingleton<Transcoder>();
+builder.Services.AddSingleton<SitiAnalyzer>();
+builder.Services.AddSingleton<VmafAnalyzer>();
+builder.Services.AddSingleton<ProcessingQueue>();
+builder.Services.AddHostedService<ProcessingWorker>();
 
-builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => {
-    options.MultipartBodyLengthLimit = 524_288_000;
-});
+// Everything below touches AppDbContext, so it follows the request/job scope.
+builder.Services.AddScoped<AnalysisStore>();
+builder.Services.AddScoped<UploadSessionService>();
+builder.Services.AddScoped<VideoCatalogService>();
+builder.Services.AddScoped<SubtitleExtractor>();
+builder.Services.AddScoped<TranscodeAnalysisCollector>();
+builder.Services.AddScoped<EncodeGrid>();
+builder.Services.AddScoped<LadderDerivation>();
+builder.Services.AddScoped<ProcessingPipeline>();
 
-builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(options => {
-    options.Limits.MaxRequestBodySize = 524_288_000;
+builder.Services.Configure<FormOptions>(options =>
+    options.MultipartBodyLengthLimit = UploadOptions.MaxBytes);
+builder.Services.Configure<KestrelServerOptions>(options =>
+    options.Limits.MaxRequestBodySize = UploadOptions.MaxBytes);
+
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5173", "http://localhost:3000"];
+
+builder.Services.AddCors(options => {
+    options.AddPolicy("AllowReactApp", policy => policy
+        .WithOrigins(allowedOrigins)
+        .AllowAnyHeader()
+        .AllowAnyMethod());
 });
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+builder.Services.AddSwaggerGen();
+
+// —— Pipeline ——————————————————————————————————————————————————————————————
 
 var app = builder.Build();
 
 app.MapOpenApi();
 app.UseSwagger();
-app.UseSwaggerUI(c => {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Video Streaming API v1");
-    c.RoutePrefix = "swagger";
+app.UseSwaggerUI(options => {
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Video Streaming API v1");
+    options.RoutePrefix = "swagger";
 });
 
 app.UseCors("AllowReactApp");
-
 app.UseStaticFiles();
 
 if (app.Environment.IsProduction()) {
-    app.UseForwardedHeaders(new ForwardedHeadersOptions {
-        ForwardedHeaders = ForwardedHeaders.All
-    });
+    app.UseForwardedHeaders(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.All });
 }
 
 app.UseAuthorization();
-
 app.MapControllers();
 
 using (var scope = app.Services.CreateScope()) {
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    dbContext.Database.EnsureCreated();
-    EnsureTranscodeLadderColumns(dbContext);
-    EnsureUploadSessionEtaColumns(dbContext);
+    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
 }
 
 app.Logger.LogInformation("Video storage root: {StorageRoot}", storageRoot);
 
 app.Run();
 
-static void EnsureTranscodeLadderColumns(AppDbContext dbContext) {
-    // EnsureCreated does not alter existing SQLite tables — add ladder columns if missing.
-    try {
-        dbContext.Database.ExecuteSqlRaw(
-            """
-            ALTER TABLE "Transcodes" ADD COLUMN "LadderKind" TEXT NOT NULL DEFAULT 'Static';
-            """);
-    } catch {
-        // Column already exists
-    }
-
-    try {
-        dbContext.Database.ExecuteSqlRaw(
-            """
-            ALTER TABLE "Transcodes" ADD COLUMN "ProfileJson" TEXT NULL;
-            """);
-    } catch {
-        // Column already exists
-    }
-
-    try {
-        dbContext.Database.ExecuteSqlRaw(
-            """
-            ALTER TABLE "Transcodes" ADD COLUMN "DerivedFromTranscodeId" TEXT NULL;
-            """);
-    } catch {
-        // Column already exists
-    }
-}
-
-static void EnsureUploadSessionEtaColumns(AppDbContext dbContext) {
-    try {
-        dbContext.Database.ExecuteSqlRaw(
-            """
-            ALTER TABLE "UploadSessions" ADD COLUMN "ProcessingStartedAtUtc" TEXT NULL;
-            """);
-    } catch {
-        // Column already exists
-    }
-
-    try {
-        dbContext.Database.ExecuteSqlRaw(
-            """
-            ALTER TABLE "UploadSessions" ADD COLUMN "EstimatedRemainingSeconds" INTEGER NULL;
-            """);
-    } catch {
-        // Column already exists
-    }
-}
-
+/// <summary>Creates the parent directory when the connection string points at a SQLite file.</summary>
 static void EnsureSqliteDirectory(string connectionString) {
     const string prefix = "Data Source=";
     var start = connectionString.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);

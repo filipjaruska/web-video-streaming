@@ -1,19 +1,11 @@
 using System.Threading.Channels;
-using WebWVideoStreamingAPI.Core;
 
-namespace WebWVideoStreamingAPI.Infrastructure;
+namespace WebWVideoStreamingAPI.Core;
 
 public sealed record VideoProcessingJob(Guid VideoId);
 
-public interface IVideoProcessingQueue {
-    void Enqueue(Guid videoId);
-    IAsyncEnumerable<VideoProcessingJob> ReadAllAsync(CancellationToken cancellationToken);
-}
-
-/// <summary>
-/// In-process Channel queue for post-upload video processing.
-/// </summary>
-public sealed class VideoProcessingQueue : IVideoProcessingQueue {
+/// <summary>In-process queue of post-upload processing jobs.</summary>
+public sealed class ProcessingQueue {
     private readonly Channel<VideoProcessingJob> _channel =
         Channel.CreateUnbounded<VideoProcessingJob>(new UnboundedChannelOptions {
             SingleReader = true,
@@ -30,17 +22,18 @@ public sealed class VideoProcessingQueue : IVideoProcessingQueue {
 }
 
 /// <summary>
-/// Hosted worker that drains the in-process processing queue one job at a time.
+/// Drains the processing queue one job at a time. Single-reader by design — the pipeline saturates
+/// the CPU with ffmpeg, so running jobs concurrently would only make each one slower.
 /// </summary>
-public sealed class VideoProcessingWorker : BackgroundService {
-    private readonly IVideoProcessingQueue _queue;
+public sealed class ProcessingWorker : BackgroundService {
+    private readonly ProcessingQueue _queue;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<VideoProcessingWorker> _logger;
+    private readonly ILogger<ProcessingWorker> _logger;
 
-    public VideoProcessingWorker(
-        IVideoProcessingQueue queue,
+    public ProcessingWorker(
+        ProcessingQueue queue,
         IServiceScopeFactory scopeFactory,
-        ILogger<VideoProcessingWorker> logger) {
+        ILogger<ProcessingWorker> logger) {
         _queue = queue;
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -52,19 +45,19 @@ public sealed class VideoProcessingWorker : BackgroundService {
         await foreach (var job in _queue.ReadAllAsync(stoppingToken)) {
             try {
                 using var scope = _scopeFactory.CreateScope();
-                var pipeline = scope.ServiceProvider.GetRequiredService<VideoProcessingPipeline>();
+                var pipeline = scope.ServiceProvider.GetRequiredService<ProcessingPipeline>();
                 var result = await pipeline.RunAsync(job.VideoId, stoppingToken);
 
-                if (!result.Success) {
-                    _logger.LogWarning(
-                        "Video processing failed for {VideoId}: {Error}",
-                        job.VideoId,
-                        result.ErrorMessage);
-                } else {
+                if (result.Success) {
                     _logger.LogInformation(
                         "Video processing succeeded for {VideoId} (transcode {TranscodeId})",
                         job.VideoId,
                         result.TranscodeId);
+                } else {
+                    _logger.LogWarning(
+                        "Video processing failed for {VideoId}: {Error}",
+                        job.VideoId,
+                        result.ErrorMessage);
                 }
             } catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) {
                 break;

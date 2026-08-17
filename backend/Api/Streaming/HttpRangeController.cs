@@ -1,21 +1,20 @@
 using Microsoft.AspNetCore.Mvc;
-using WebWVideoStreamingAPI.Core;
 
 namespace WebWVideoStreamingAPI.Api.Streaming;
 
 [ApiController]
 [Route("api/httprange")]
 public class HttpRangeController : ControllerBase {
-    private readonly IVideoCatalogService _catalog;
-    private readonly IVideoStorageService _storage;
+    private readonly VideoCatalogService _catalog;
+    private readonly MediaPaths _paths;
     private readonly ILogger<HttpRangeController> _logger;
 
     public HttpRangeController(
-        IVideoCatalogService catalog,
-        IVideoStorageService storage,
+        VideoCatalogService catalog,
+        MediaPaths paths,
         ILogger<HttpRangeController> logger) {
         _catalog = catalog;
-        _storage = storage;
+        _paths = paths;
         _logger = logger;
     }
 
@@ -29,7 +28,7 @@ public class HttpRangeController : ControllerBase {
                 return NotFound(new { message = "Video not found" });
             }
 
-            var videoPath = _storage.ResolveSourcePath(routeId);
+            var videoPath = _paths.ResolveSource(routeId);
             if (videoPath == null) {
                 _logger.LogWarning("Source file missing for {RouteId}", routeId);
                 return NotFound(new { message = "Video not found" });
@@ -43,15 +42,13 @@ public class HttpRangeController : ControllerBase {
                 : video.SourceContentType;
 
             if (HttpMethods.IsHead(Request.Method)) {
-                var fileInfo = new FileInfo(videoPath);
                 Response.ContentType = contentType;
-                Response.ContentLength = fileInfo.Length;
+                Response.ContentLength = new FileInfo(videoPath).Length;
                 Response.Headers.AcceptRanges = "bytes";
                 return Ok();
             }
 
-            var fileStream = System.IO.File.OpenRead(videoPath);
-            return File(fileStream, contentType, enableRangeProcessing: true);
+            return File(System.IO.File.OpenRead(videoPath), contentType, enableRangeProcessing: true);
         } catch (Exception ex) {
             _logger.LogError(ex, "Error streaming video {RouteId}", routeId);
             return StatusCode(500, new { message = "Error streaming video", error = ex.Message });

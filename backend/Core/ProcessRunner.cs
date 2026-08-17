@@ -1,8 +1,8 @@
 using System.Diagnostics;
 
-namespace WebWVideoStreamingAPI.Infrastructure;
+namespace WebWVideoStreamingAPI.Core;
 
-public class MediaProcessRunResult {
+public sealed class ProcessResult {
     public bool Success { get; set; }
     public int ExitCode { get; set; }
     public string StdOut { get; set; } = string.Empty;
@@ -10,20 +10,14 @@ public class MediaProcessRunResult {
     public string? ErrorMessage { get; set; }
 }
 
-public interface IMediaProcessRunner {
-    Task EnsureAvailableAsync(string executable, CancellationToken cancellationToken = default);
-    Task<MediaProcessRunResult> RunAsync(
-        string executable,
-        string arguments,
-        string? workingDirectory = null,
-        TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default);
-}
+/// <summary>
+/// The only place this app starts a child process. Both ffmpeg and ffprobe go through here —
+/// pass the executable name as the first argument.
+/// </summary>
+public sealed class ProcessRunner {
+    private readonly ILogger<ProcessRunner> _logger;
 
-public class MediaProcessRunner : IMediaProcessRunner {
-    private readonly ILogger<MediaProcessRunner> _logger;
-
-    public MediaProcessRunner(ILogger<MediaProcessRunner> logger) {
+    public ProcessRunner(ILogger<ProcessRunner> logger) {
         _logger = logger;
     }
 
@@ -38,13 +32,13 @@ public class MediaProcessRunner : IMediaProcessRunner {
         }
     }
 
-    public async Task<MediaProcessRunResult> RunAsync(
+    public async Task<ProcessResult> RunAsync(
         string executable,
         string arguments,
         string? workingDirectory = null,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default) {
-        var result = new MediaProcessRunResult();
+        var result = new ProcessResult();
 
         var processInfo = new ProcessStartInfo {
             FileName = executable,
@@ -91,6 +85,7 @@ public class MediaProcessRunner : IMediaProcessRunner {
                 process.Kill(true);
                 await process.WaitForExitAsync(CancellationToken.None);
             }
+
             throw;
         }
 
@@ -110,10 +105,8 @@ public class MediaProcessRunner : IMediaProcessRunner {
     }
 }
 
-public static class LavfiPathHelper {
-    /// <summary>
-    /// Escape a file path for use inside a lavfi movie= filter argument.
-    /// </summary>
+public static class LavfiPath {
+    /// <summary>Escape a file path for use inside a lavfi `movie=` filter argument.</summary>
     public static string EscapeForMovieFilter(string path) {
         var normalized = Path.GetFullPath(path).Replace('\\', '/');
         return normalized
