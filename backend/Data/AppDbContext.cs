@@ -1,6 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using WebWVideoStreamingAPI.Infrastructure.Analysis.Models;
-using WebWVideoStreamingAPI.Models;
 
 namespace WebWVideoStreamingAPI.Data;
 
@@ -11,8 +9,7 @@ public class AppDbContext : DbContext {
     public DbSet<Video> Videos => Set<Video>();
     public DbSet<UploadSession> UploadSessions => Set<UploadSession>();
     public DbSet<Transcode> Transcodes => Set<Transcode>();
-    public DbSet<VideoSourceAnalysis> VideoSourceAnalyses => Set<VideoSourceAnalysis>();
-    public DbSet<VideoTranscodeAnalysis> VideoTranscodeAnalyses => Set<VideoTranscodeAnalysis>();
+    public DbSet<AnalysisReport> AnalysisReports => Set<AnalysisReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         modelBuilder.Entity<Video>(entity => {
@@ -22,7 +19,6 @@ public class AppDbContext : DbContext {
             entity.Property(video => video.Description).HasMaxLength(4000);
             entity.Property(video => video.ThumbnailUrl).HasMaxLength(500);
             entity.Property(video => video.OriginalFileName).HasMaxLength(260);
-            entity.Property(video => video.StorageKey).HasMaxLength(260);
             entity.Property(video => video.SourceContentType).HasMaxLength(100);
             entity.Property(video => video.CreatedAtUtc).IsRequired();
             entity.Property(video => video.UpdatedAtUtc).IsRequired();
@@ -34,18 +30,6 @@ public class AppDbContext : DbContext {
                 .WithMany()
                 .HasForeignKey(video => video.ActiveTranscodeId)
                 .OnDelete(DeleteBehavior.SetNull);
-
-            entity.HasOne(video => video.SourceAnalysis)
-                .WithOne(analysis => analysis.Video)
-                .HasForeignKey<VideoSourceAnalysis>(analysis => analysis.VideoId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<VideoSourceAnalysis>(entity => {
-            entity.HasKey(analysis => analysis.VideoId);
-            entity.Property(analysis => analysis.TreeJson).HasColumnType("TEXT").IsRequired();
-            entity.Property(analysis => analysis.SeriesJson).HasColumnType("TEXT");
-            entity.Property(analysis => analysis.UpdatedAtUtc).IsRequired();
         });
 
         modelBuilder.Entity<UploadSession>(entity => {
@@ -79,20 +63,18 @@ public class AppDbContext : DbContext {
                 .HasForeignKey(transcode => transcode.VideoId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(transcode => transcode.Analysis)
-                .WithOne(analysis => analysis.Transcode)
-                .HasForeignKey<VideoTranscodeAnalysis>(analysis => analysis.TranscodeId)
-                .OnDelete(DeleteBehavior.Cascade);
-
             entity.HasIndex(transcode => new { transcode.VideoId, transcode.CreatedAtUtc });
             entity.HasIndex(transcode => new { transcode.VideoId, transcode.LadderKind });
         });
 
-        modelBuilder.Entity<VideoTranscodeAnalysis>(entity => {
-            entity.HasKey(analysis => analysis.TranscodeId);
-            entity.Property(analysis => analysis.TreeJson).HasColumnType("TEXT").IsRequired();
-            entity.Property(analysis => analysis.SeriesJson).HasColumnType("TEXT");
-            entity.Property(analysis => analysis.UpdatedAtUtc).IsRequired();
+        // No FK to Video/Transcode — one table serves both owners, so rows are removed
+        // explicitly by VideoCatalogService and UploadSessionService when their owner goes away.
+        modelBuilder.Entity<AnalysisReport>(entity => {
+            entity.HasKey(report => new { report.Owner, report.Id });
+            entity.Property(report => report.Owner).HasConversion<string>().HasMaxLength(16);
+            entity.Property(report => report.TreeJson).HasColumnType("TEXT").IsRequired();
+            entity.Property(report => report.SeriesJson).HasColumnType("TEXT");
+            entity.Property(report => report.UpdatedAtUtc).IsRequired();
         });
     }
 }
