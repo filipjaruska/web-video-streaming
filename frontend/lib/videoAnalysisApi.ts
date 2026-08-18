@@ -46,13 +46,18 @@ export interface VmafSummary {
   model?: string;
   width?: number;
   height?: number;
+  /** Bitrate measured on the scored file. */
   bitrateBps?: number;
+  /** Bitrate the rung was asked to hit — x264 does not land exactly on it. */
+  targetBitrateBps?: number;
 }
 
 export interface VmafSeriesData {
   scores: number[];
   timeSec?: number[];
   summary: VmafSummary;
+  /** Pooled stats per VMAF model ("vmaf" and "neg"), scored in one libvmaf pass. */
+  summaryByModel?: Record<string, VmafSummary>;
 }
 
 export interface FormatVmafSeries {
@@ -69,6 +74,10 @@ export interface EncodeGridPoint {
   vmafMean: number;
   vmafHarmonicMean?: number;
   vmafMin?: number;
+  vmafNegMean?: number;
+  vmafNegHarmonicMean?: number;
+  /** Point lies on the convex hull spanning every resolution. */
+  onHull?: boolean;
   error?: string;
 }
 
@@ -78,11 +87,41 @@ export interface DerivedLadderVariant {
   bitrate: string;
   bitrateBps: number;
   predictedVmaf?: number;
+  predictedVmafHarmonic?: number;
+  predictedVmafMin?: number;
+  crf?: number;
+  /** Local hull slope, in VMAF per doubling of bitrate. */
+  hullSlope?: number;
 }
 
 export interface DerivedLadderDocument {
   name: string;
   variants: DerivedLadderVariant[];
+  /** Lagrange multiplier every rung was selected at. */
+  lambda?: number;
+  /** Bitrate where the hull hands over between resolutions, keyed "1080p>720p". */
+  crossoverBps?: Record<string, number>;
+  /** Grid was scored on an SI/TI-selected excerpt rather than the whole clip. */
+  windowed?: boolean;
+}
+
+export interface LadderComparisonPoint {
+  label: string;
+  bitrateBps: number;
+  vmafHarmonicMean: number;
+  vmafMean: number;
+}
+
+export interface LadderComparisonDocument {
+  /** Negative means the derived ladder delivers equal quality for fewer bits. */
+  bdRatePercent: number;
+  overlapLowVmaf: number;
+  overlapHighVmaf: number;
+  bitrateSavingPercent?: number;
+  vmafGainAtEqualBitrate?: number;
+  staticPoints: LadderComparisonPoint[];
+  dynamicPoints: LadderComparisonPoint[];
+  error?: string;
 }
 
 export interface AnalysisSeriesDocument {
@@ -91,6 +130,7 @@ export interface AnalysisSeriesDocument {
   vmafByFormat?: FormatVmafSeries;
   encodeGrid?: EncodeGridPoint[];
   derivedLadder?: DerivedLadderDocument;
+  ladderComparison?: LadderComparisonDocument;
 }
 
 export type AnalysisTargetKind = "source" | "transcode" | "futureTest";

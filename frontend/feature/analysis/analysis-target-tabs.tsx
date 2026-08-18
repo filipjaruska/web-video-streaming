@@ -36,6 +36,11 @@ interface AnalysisTargetTabsProps {
 
 type FormatKey = "hls" | "dash";
 
+/** Keeps the sign visible on deltas, so a saving reads as "-32" rather than "32". */
+function formatSigned(value: number) {
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
 function collectVmafEntries(
   byFormat: FormatVmafSeries | undefined,
 ): Array<{ format: FormatKey; label: string; data: VmafSeriesData }> {
@@ -169,6 +174,7 @@ export function AnalysisTargetTabs({
 
   const encodeGrid = staticTranscode?.series.encodeGrid ?? [];
   const derivedLadder = staticTranscode?.series.derivedLadder;
+  const ladderComparison = staticTranscode?.series.ladderComparison;
 
   const { mediaNodes, sitiNode } = useMemo(
     () =>
@@ -258,6 +264,67 @@ export function AnalysisTargetTabs({
       </TabsContent>
 
       <TabsContent value="quality" className="mt-4 space-y-4">
+        {ladderComparison && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Dynamic vs static ladder (BD-rate)
+              </CardTitle>
+              <CardDescription>
+                Measured on the packaged renditions of both ladders. Negative
+                BD-rate means the derived ladder delivers the same quality for
+                fewer bits.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {ladderComparison.error ? (
+                <p className="text-sm text-muted-foreground">
+                  {ladderComparison.error}
+                </p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <div
+                      className={`text-2xl font-semibold tabular-nums ${
+                        ladderComparison.bdRatePercent < 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-amber-600 dark:text-amber-400"
+                      }`}
+                    >
+                      {formatSigned(ladderComparison.bdRatePercent)}%
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      BD-rate over harmonic VMAF{" "}
+                      {ladderComparison.overlapLowVmaf.toFixed(1)}–
+                      {ladderComparison.overlapHighVmaf.toFixed(1)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold tabular-nums">
+                      {ladderComparison.bitrateSavingPercent != null
+                        ? `${formatSigned(ladderComparison.bitrateSavingPercent)}%`
+                        : "—"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Bitrate at equal quality
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold tabular-nums">
+                      {ladderComparison.vmafGainAtEqualBitrate != null
+                        ? formatSigned(ladderComparison.vmafGainAtEqualBitrate)
+                        : "—"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      VMAF at equal bitrate
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {(encodeGrid.length > 0 || derivedLadder) && (
           <>
             <RdScatterChart
@@ -271,9 +338,15 @@ export function AnalysisTargetTabs({
                     Derived ladder ({derivedLadder.name})
                   </CardTitle>
                   <CardDescription>
-                    Crossover-selected CBR targets used for the second
-                    (dynamic) packaging run
+                    Hull operating points at a shared slope
+                    {derivedLadder.lambda != null
+                      ? ` (λ = ${derivedLadder.lambda.toFixed(2)} VMAF per bitrate doubling)`
+                      : ""}
+                    , used as CBR targets for the second (dynamic) packaging run
                     {dynamicTranscode ? " — see Transcodes tab." : "."}
+                    {derivedLadder.windowed
+                      ? " Scored on SI/TI-selected complexity windows."
+                      : ""}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -284,7 +357,9 @@ export function AnalysisTargetTabs({
                           <th className="py-2 pr-3 font-medium">Rung</th>
                           <th className="py-2 pr-3 font-medium">Resolution</th>
                           <th className="py-2 pr-3 font-medium">Bitrate</th>
-                          <th className="py-2 font-medium">Pred. VMAF</th>
+                          <th className="py-2 pr-3 font-medium">CRF</th>
+                          <th className="py-2 pr-3 font-medium">Pred. VMAF</th>
+                          <th className="py-2 font-medium">Pred. harm. VMAF</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -302,9 +377,17 @@ export function AnalysisTargetTabs({
                             <td className="py-1.5 pr-3 font-mono text-xs">
                               {v.bitrate}
                             </td>
-                            <td className="py-1.5 font-mono text-xs">
+                            <td className="py-1.5 pr-3 font-mono text-xs">
+                              {v.crf ?? "—"}
+                            </td>
+                            <td className="py-1.5 pr-3 font-mono text-xs">
                               {v.predictedVmaf != null
                                 ? v.predictedVmaf.toFixed(2)
+                                : "—"}
+                            </td>
+                            <td className="py-1.5 font-mono text-xs">
+                              {v.predictedVmafHarmonic != null
+                                ? v.predictedVmafHarmonic.toFixed(2)
                                 : "—"}
                             </td>
                           </tr>
