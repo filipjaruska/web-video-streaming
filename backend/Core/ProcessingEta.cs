@@ -11,12 +11,14 @@ public enum PipelineStep {
     StaticDash,
     StaticSiti,
     StaticVmaf,
+    RepresentativeClip,
     EncodeGrid,
     DeriveLadder,
     DynamicHls,
     DynamicDash,
     DynamicSiti,
-    DynamicVmaf
+    DynamicVmaf,
+    LadderComparison
 }
 
 /// <summary>
@@ -39,16 +41,20 @@ public static class ProcessingEta {
         [PipelineStep.StaticDash] = (28, "DASH transcoding"),
         [PipelineStep.StaticSiti] = (32, "Analyzing transcodes (SI/TI)"),
         [PipelineStep.StaticVmaf] = (40, "VMAF analysis"),
+        [PipelineStep.RepresentativeClip] = (43, "Selecting complexity windows"),
         [PipelineStep.EncodeGrid] = (GridStartPercent, "Encode grid (CRF × resolution)"),
         [PipelineStep.DeriveLadder] = (78, "Deriving VMAF crossover ladder"),
         [PipelineStep.DynamicHls] = (82, "Dynamic HLS packaging"),
         [PipelineStep.DynamicDash] = (86, "Dynamic DASH packaging"),
         [PipelineStep.DynamicSiti] = (90, "Analyzing dynamic ladder (SI/TI)"),
-        [PipelineStep.DynamicVmaf] = (95, "Dynamic ladder VMAF")
+        [PipelineStep.DynamicVmaf] = (95, "Dynamic ladder VMAF"),
+        [PipelineStep.LadderComparison] = (98, "Comparing ladders (BD-rate)")
     };
 
     // Relative cost of the work spanning each percentage band (arbitrary units, not seconds).
-    // The encode grid dominates wall clock for typical clips.
+    // The encode grid used to dominate wall clock outright; now that its samples are encoded from a
+    // short SI/TI-selected excerpt rather than the whole clip, it costs roughly a third of what it
+    // did even though it takes more samples, and packaging is the heaviest stage again.
     private static readonly Band[] Bands = [
         new(8, 10, 2),
         new(10, 12, 3),
@@ -58,14 +64,16 @@ public static class ProcessingEta {
         new(22, 28, 18),
         new(28, 32, 10),
         new(32, 40, 14),
-        new(40, 45, 2),
-        new(GridStartPercent, GridEndPercent, 80),
-        new(76, 78, 4),
+        new(40, 43, 2),
+        new(43, GridStartPercent, 4),
+        new(GridStartPercent, GridEndPercent, 28),
+        new(76, 78, 1),
         new(78, 82, 14),
         new(82, 86, 14),
         new(86, 90, 8),
         new(90, 95, 12),
-        new(95, 100, 2)
+        new(95, 98, 1),
+        new(98, 100, 1)
     ];
 
     private const double DefaultSecondsPerWeight = 4.5;

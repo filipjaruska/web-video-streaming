@@ -50,6 +50,18 @@ function formatBitrateKbps(bps: number) {
   return Number((bps / 1000).toFixed(0));
 }
 
+type QualityMetric = "harmonic" | "mean";
+
+/**
+ * The ladder is derived from the harmonic mean, so that is what the convex hull is built on.
+ * Plotting the arithmetic mean instead would draw hull vertices that appear not to be on a hull.
+ */
+function qualityOf(point: EncodeGridPoint, metric: QualityMetric) {
+  return metric === "harmonic"
+    ? (point.vmafHarmonicMean ?? point.vmafMean)
+    : point.vmafMean;
+}
+
 function StarMarker(props: {
   cx?: number;
   cy?: number;
@@ -90,14 +102,31 @@ function StarMarker(props: {
 function RdLegend({
   heights,
   showDerived,
+  showHull,
 }: {
   heights: number[];
   showDerived: boolean;
+  showHull: boolean;
 }) {
   const ordered = HEIGHT_KEYS.filter((h) => heights.includes(h));
 
   return (
     <div className="flex flex-wrap items-center justify-center gap-4 pt-3 text-xs">
+      {showHull && (
+        <div className="flex items-center gap-1.5">
+          <svg width="18" height="14" viewBox="0 0 18 14" className="shrink-0" aria-hidden>
+            <path
+              d="M1 11 L7 5 L17 2"
+              fill="none"
+              stroke="var(--foreground)"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span>Convex hull</span>
+        </div>
+      )}
       {showDerived && (
         <div className="flex items-center gap-1.5">
           <svg
@@ -169,9 +198,26 @@ export function RdScatterChart({
     return () => observer.disconnect();
   }, []);
 
+  const [metric, setMetric] = React.useState<QualityMetric>("harmonic");
+
   const okPoints = React.useMemo(
     () => encodeGrid.filter((p) => !p.error && p.bitrateBps > 0),
     [encodeGrid],
+  );
+
+  const hullPoints = React.useMemo(
+    () =>
+      okPoints
+        .filter((p) => p.onHull)
+        .slice()
+        .sort((a, b) => a.bitrateBps - b.bitrateBps)
+        .map((p) => ({
+          bitrateKbps: formatBitrateKbps(p.bitrateBps),
+          vmaf: qualityOf(p, metric),
+          label: `${p.label} hull`,
+          crf: p.crf,
+        })),
+    [okPoints, metric],
   );
 
   const byHeight = React.useMemo(() => {
@@ -212,7 +258,10 @@ export function RdScatterChart({
       const height = parts.length === 2 ? Number(parts[1]) : 0;
       const point = {
         bitrateKbps: v.bitrateBps / 1000,
-        vmaf: v.predictedVmaf ?? 0,
+        vmaf:
+          (metric === "harmonic"
+            ? (v.predictedVmafHarmonic ?? v.predictedVmaf)
+            : v.predictedVmaf) ?? 0,
         label: v.label,
         height,
       };
@@ -221,7 +270,7 @@ export function RdScatterChart({
       map.set(height, list);
     }
     return map;
-  }, [derivedLadder]);
+  }, [derivedLadder, metric]);
 
   if (okPoints.length === 0) {
     return (
@@ -233,7 +282,7 @@ export function RdScatterChart({
 
   const yMin = Math.max(
     0,
-    Math.min(...okPoints.map((p) => p.vmafMean)) - 5,
+    Math.min(...okPoints.map((p) => qualityOf(p, metric))) - 5,
   );
   const presentHeights = byHeight.map(([h]) => h);
   const showDerived = derivedByHeight.size > 0;
@@ -252,6 +301,8 @@ export function RdScatterChart({
         ? Number(point.vmafHarmonicMean.toFixed(6))
         : "",
       point.vmafMin != null ? Number(point.vmafMin.toFixed(6)) : "",
+      point.vmafNegMean != null ? Number(point.vmafNegMean.toFixed(6)) : "",
+      point.onHull ? 1 : 0,
       point.error ?? "",
     ]);
 
@@ -265,11 +316,17 @@ export function RdScatterChart({
           variant.label,
           width,
           height,
-          "",
+          variant.crf ?? "",
           variant.bitrateBps,
           Number((variant.bitrateBps / 1000).toFixed(3)),
           variant.predictedVmaf != null
             ? Number(variant.predictedVmaf.toFixed(6))
+            : "",
+          variant.predictedVmafHarmonic != null
+            ? Number(variant.predictedVmafHarmonic.toFixed(6))
+            : "",
+          variant.predictedVmafMin != null
+            ? Number(variant.predictedVmafMin.toFixed(6))
             : "",
           "",
           "",
@@ -289,30 +346,51 @@ export function RdScatterChart({
               Rate–distortion (encode grid)
             </CardTitle>
             <CardDescription>
-              Measured bitrate vs mean VMAF per resolution×CRF sample. Stars mark
-              the derived crossover ladder (same colors as their resolution).
+              Measured bitrate vs VMAF per resolution×CRF sample. The line traces
+              the convex hull across all resolutions; stars mark the derived
+              ladder&apos;s operating points (same colors as their resolution).
             </CardDescription>
           </div>
-          <ExportCsvButton
-            filename={slugFilename([
-              "rd-encode-grid",
-              derivedLadder?.name ?? "",
-            ])}
-            headers={[
-              "kind",
-              "label",
-              "width",
-              "height",
-              "crf",
-              "bitrate_bps",
-              "bitrate_kbps",
-              "vmaf_mean",
-              "vmaf_harmonic_mean",
-              "vmaf_min",
-              "error",
-            ]}
-            rows={exportRows}
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-md border p-0.5 text-xs">
+              {(["harmonic", "mean"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setMetric(option)}
+                  className={
+                    metric === option
+                      ? "rounded-sm bg-secondary px-2 py-1 font-medium"
+                      : "rounded-sm px-2 py-1 text-muted-foreground"
+                  }
+                >
+                  {option === "harmonic" ? "Harmonic" : "Mean"}
+                </button>
+              ))}
+            </div>
+            <ExportCsvButton
+              filename={slugFilename([
+                "rd-encode-grid",
+                derivedLadder?.name ?? "",
+              ])}
+              headers={[
+                "kind",
+                "label",
+                "width",
+                "height",
+                "crf",
+                "bitrate_bps",
+                "bitrate_kbps",
+                "vmaf_mean",
+                "vmaf_harmonic_mean",
+                "vmaf_min",
+                "vmaf_neg_mean",
+                "on_hull",
+                "error",
+              ]}
+              rows={exportRows}
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="pt-4">
@@ -375,6 +453,19 @@ export function RdScatterChart({
                     );
                   }}
                 />
+                {/* Drawn first so the markers sit on top of it. */}
+                {hullPoints.length > 1 && (
+                  <Scatter
+                    key="hull"
+                    name="hull"
+                    legendType="none"
+                    data={hullPoints}
+                    line={{ stroke: "var(--foreground)", strokeWidth: 1.75 }}
+                    lineType="joint"
+                    shape={() => <g />}
+                    isAnimationActive={false}
+                  />
+                )}
                 {byHeight.map(([height, points]) => {
                   const key = heightKey(height);
                   return (
@@ -384,7 +475,7 @@ export function RdScatterChart({
                       legendType="none"
                       data={points.map((p) => ({
                         bitrateKbps: formatBitrateKbps(p.bitrateBps),
-                        vmaf: p.vmafMean,
+                        vmaf: qualityOf(p, metric),
                         label: p.label,
                         crf: p.crf,
                         height: p.height,
@@ -425,7 +516,11 @@ export function RdScatterChart({
             </ChartContainer>
           ) : null}
         </div>
-        <RdLegend heights={presentHeights} showDerived={showDerived} />
+        <RdLegend
+          heights={presentHeights}
+          showDerived={showDerived}
+          showHull={hullPoints.length > 1}
+        />
       </CardContent>
     </Card>
   );

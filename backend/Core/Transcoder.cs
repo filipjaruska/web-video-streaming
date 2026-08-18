@@ -14,6 +14,13 @@ public sealed class TranscodeProfile {
     public string AudioBitrate { get; init; } = "128k";
     public int SegmentDurationSeconds { get; init; } = 6;
 
+    /// <summary>
+    /// x264 <c>-tune</c> value, or null for the encoder's defaults. Null on both shipped profiles;
+    /// the hook exists so the animation-tuned run (thesis 4.3.1.3 / 4.4.3) becomes a profile change
+    /// rather than an encoder change, and so packaging stays identical in every other respect.
+    /// </summary>
+    public string? Tune { get; init; }
+
     public static TranscodeProfile Default { get; } = new() {
         Name = "default",
         Variants = [
@@ -122,7 +129,7 @@ public sealed class Transcoder {
                 var variant = profile.Variants[i];
                 var bitrateKbps = TranscodeProfile.ParseBitrateKbps(variant.Bitrate);
                 args.Append($@"-map ""[v{i}]"" ");
-                args.Append($@"-c:v:{i} {profile.VideoCodec} -b:v:{i} {variant.Bitrate} -maxrate:{i} {variant.Bitrate} -bufsize:{i} {bitrateKbps * 2}k ");
+                args.Append($@"-c:v:{i} {profile.VideoCodec} {TuneArg(profile)}-b:v:{i} {variant.Bitrate} -maxrate:{i} {variant.Bitrate} -bufsize:{i} {bitrateKbps * 2}k ");
             }
 
             // Single stereo audio AdaptationSet (matches HLS). Mapping audio per rung produces
@@ -208,6 +215,13 @@ public sealed class Transcoder {
         return result;
     }
 
+    /// <summary>
+    /// The profile's <c>-tune</c> as an ffmpeg argument, or nothing when it has none. Trailing
+    /// space included so call sites read the same whether a tune is set or not.
+    /// </summary>
+    private static string TuneArg(TranscodeProfile profile) =>
+        string.IsNullOrWhiteSpace(profile.Tune) ? "" : $"-tune {profile.Tune} ";
+
     /// <summary>Encodes a single MP4 at a resolution + CRF for encode-grid RD sampling (not HLS/DASH).</summary>
     public async Task<TranscodeResult> EncodeCrfAsync(
         string inputPath,
@@ -215,6 +229,7 @@ public sealed class Transcoder {
         string resolution,
         int crf,
         string preset = "medium",
+        string? tune = null,
         CancellationToken cancellationToken = default) {
         var result = new TranscodeResult { Success = true };
 
@@ -223,11 +238,14 @@ public sealed class Transcoder {
             EnsureParentDir(outputPath);
             await _runner.EnsureAvailableAsync("ffmpeg", cancellationToken);
 
-            // Video-only CRF sample — audio omitted to speed encode-grid sweeps.
+            // Video-only CRF sample — audio omitted to speed encode-grid sweeps. The tune must match
+            // whatever the ladder will eventually be packaged with, or the RD points describe a
+            // different encoder than the one that ships.
+            var tuneArg = string.IsNullOrWhiteSpace(tune) ? "" : $"-tune {tune} ";
             var args =
                 $@"-y -i ""{inputPath}"" " +
                 $@"-vf scale={resolution} " +
-                $@"-c:v libx264 -crf {crf} -preset {preset} -pix_fmt yuv420p " +
+                $@"-c:v libx264 -crf {crf} -preset {preset} {tuneArg}-pix_fmt yuv420p " +
                 $@"-an ""{outputPath}""";
 
             var run = await _runner.RunAsync(
@@ -250,6 +268,64 @@ public sealed class Transcoder {
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Concatenates the given time ranges of the source into one short clip, used as both the input
+    /// and the VMAF reference for the encode grid.
+    /// </summary>
+    /// <remarks>
+    /// CRF 0 in yuv420p is mathematically lossless, and the source has already been normalized to
+    /// 8-bit yuv420p by <see cref="NormalizeSourceAsync"/>, so the excerpt carries exactly the
+    /// pixels the grid would have seen in the full clip. Anything lossy here would silently bias
+    /// every VMAF score measured against it.
+    /// </remarks>
+    public async Task<TranscodeResult> ExtractWindowsAsync(
+        string inputPath,
+        string outputPath,
+        IReadOnlyList<(double StartSec, double EndSec)> windows,
+        CancellationToken cancellationToken = default) {
+        var result = new TranscodeResult { Success = true };
+
+        try {
+            RequireInput(inputPath);
+            EnsureParentDir(outputPath);
+            await _runner.EnsureAvailableAsync("ffmpeg", cancellationToken);
+
+            var select = string.Join("+", windows.Select(window =>
+                $"between(t,{Seconds(window.StartSec)},{Seconds(window.EndSec)})"));
+
+            // setpts closes the gaps the dropped frames leave behind, so the excerpt plays as one
+            // continuous clip with a monotonic timeline.
+            var args =
+                $@"-y -i ""{inputPath}"" " +
+                $@"-vf ""select='{select}',setpts=N/FRAME_RATE/TB"" " +
+                $@"-c:v libx264 -crf 0 -preset veryfast -pix_fmt yuv420p " +
+                $@"-an ""{outputPath}""";
+
+            var run = await _runner.RunAsync(
+                "ffmpeg",
+                args,
+                timeout: TimeSpan.FromMinutes(30),
+                cancellationToken: cancellationToken);
+
+            if (!run.Success || !File.Exists(outputPath)) {
+                result.Success = false;
+                result.ErrorMessage = run.ErrorMessage ?? run.StdErr ?? "Window extraction failed";
+                return result;
+            }
+
+            result.GeneratedFiles.Add(Path.GetFileName(outputPath));
+        } catch (Exception ex) {
+            _logger.LogError(ex, "Failed to extract complexity windows from {InputPath}", inputPath);
+            result.Success = false;
+            result.ErrorMessage = ex.Message;
+        }
+
+        return result;
+
+        static string Seconds(double value) =>
+            value.ToString("0.###", CultureInfo.InvariantCulture);
     }
 
     /// <summary>Remuxes a packaged HLS rendition into a plain MP4 so it can be probed and scored.</summary>
@@ -356,7 +432,7 @@ public sealed class Transcoder {
 
         var args = $@"-y -i ""{inputPath}"" " +
             $@"-vf scale={variant.Resolution} " +
-            $@"-c:v {profile.VideoCodec} -b:v {variant.Bitrate} -maxrate {variant.Bitrate} -bufsize {bitrateKbps * 2}k " +
+            $@"-c:v {profile.VideoCodec} {TuneArg(profile)}-b:v {variant.Bitrate} -maxrate {variant.Bitrate} -bufsize {bitrateKbps * 2}k " +
             $@"-c:a {profile.AudioCodec} -b:a {profile.AudioBitrate} -ac 2 " +
             $@"-f hls " +
             $@"-hls_time {profile.SegmentDurationSeconds} " +

@@ -27,6 +27,8 @@ public sealed class ProcessingPipeline {
     private readonly TranscodeAnalysisCollector _collector;
     private readonly EncodeGrid _encodeGrid;
     private readonly LadderDerivation _ladderDerivation;
+    private readonly ComplexityWindows _complexityWindows;
+    private readonly LadderComparison _ladderComparison;
     private readonly ILogger<ProcessingPipeline> _logger;
 
     public ProcessingPipeline(
@@ -40,6 +42,8 @@ public sealed class ProcessingPipeline {
         TranscodeAnalysisCollector collector,
         EncodeGrid encodeGrid,
         LadderDerivation ladderDerivation,
+        ComplexityWindows complexityWindows,
+        LadderComparison ladderComparison,
         ILogger<ProcessingPipeline> logger) {
         _dbContext = dbContext;
         _paths = paths;
@@ -51,6 +55,8 @@ public sealed class ProcessingPipeline {
         _collector = collector;
         _encodeGrid = encodeGrid;
         _ladderDerivation = ladderDerivation;
+        _complexityWindows = complexityWindows;
+        _ladderComparison = ladderComparison;
         _logger = logger;
     }
 
@@ -387,13 +393,18 @@ public sealed class ProcessingPipeline {
         string sourcePath,
         Guid staticTranscodeId,
         CancellationToken cancellationToken) {
+        var workDir = MediaFormatting.NewTempDir("representative");
+
         try {
+            await ReportAsync(video, PipelineStep.RepresentativeClip, cancellationToken);
+            var clip = await BuildRepresentativeClipAsync(video, sourcePath, workDir, cancellationToken);
+
             await ReportAsync(video, PipelineStep.EncodeGrid, cancellationToken);
 
             var grid = await _encodeGrid.RunAsync(
                 video.RouteId,
                 staticTranscodeId,
-                sourcePath,
+                clip,
                 onProgress: (done, total, ct) => ReportGridAsync(video, done, total, ct),
                 cancellationToken);
 
@@ -403,7 +414,11 @@ public sealed class ProcessingPipeline {
             }
 
             await ReportAsync(video, PipelineStep.DeriveLadder, cancellationToken);
-            var derived = await _ladderDerivation.DeriveAsync(staticTranscodeId, grid.Points, cancellationToken);
+            var derived = await _ladderDerivation.DeriveAsync(
+                staticTranscodeId,
+                grid.Points,
+                grid.Windowed,
+                cancellationToken);
 
             if (!derived.Success || derived.Profile == null) {
                 _logger.LogWarning("Ladder derivation failed for {RouteId}: {Error}", video.RouteId, derived.ErrorMessage);
@@ -425,6 +440,12 @@ public sealed class ProcessingPipeline {
             if (dynamicPackage.Succeeded) {
                 video.ActiveTranscodeId = dynamicPackage.Transcode.Id;
                 await _dbContext.SaveChangesAsync(cancellationToken);
+
+                await ReportAsync(video, PipelineStep.LadderComparison, cancellationToken);
+                await _ladderComparison.CompareAsync(
+                    staticTranscodeId,
+                    dynamicPackage.Transcode.Id,
+                    cancellationToken);
             } else {
                 _logger.LogWarning(
                     "Dynamic ladder packaging failed for {RouteId}: {Error}",
@@ -436,7 +457,23 @@ public sealed class ProcessingPipeline {
         } catch (Exception ex) {
             _logger.LogWarning(ex, "Dynamic ladder path failed for {RouteId}", video.RouteId);
             return null;
+        } finally {
+            MediaFormatting.TryDeleteDirectory(workDir, _logger);
         }
+    }
+
+    /// <summary>
+    /// Cuts the grid's input down to the clip's busiest stretches, reusing the SI/TI series the
+    /// source analysis already produced. Falls back to the whole source whenever that series is
+    /// missing, which is what happens when SI/TI analysis itself failed earlier in the run.
+    /// </summary>
+    private async Task<RepresentativeClipResult> BuildRepresentativeClipAsync(
+        Video video,
+        string sourcePath,
+        string workDir,
+        CancellationToken cancellationToken) {
+        var stored = await _analysis.TryGetAsync(AnalysisOwner.Source, video.Id, cancellationToken);
+        return await _complexityWindows.BuildAsync(sourcePath, stored?.Series.Siti, workDir, cancellationToken);
     }
 
     // —— Session progress ——————————————————————————————————————————————————

@@ -9,7 +9,13 @@ public enum TranscodeStatus {
 
 public enum LadderKind {
     Static = 0,
-    Dynamic = 1
+    Dynamic = 1,
+
+    /// <summary>
+    /// Reserved for the animation-optimized packaging run (thesis 4.3.1.3 / 4.4.3). Nothing
+    /// produces one yet — the pipeline has no third pass.
+    /// </summary>
+    AnimationTuned = 2
 }
 
 /// <summary>One packaging run over a video: a ladder encoded to HLS and/or DASH.</summary>

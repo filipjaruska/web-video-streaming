@@ -6,12 +6,19 @@ namespace WebWVideoStreamingAPI.Analysis;
 public static class AnalysisTargetBuilder {
     public const string StaticLadderLabel = "Static ladder";
     public const string DynamicLadderLabel = "Dynamic ladder (VMAF crossover)";
+    public const string AnimationLadderLabel = "Animation-tuned ladder";
 
-    public static string LadderLabel(LadderKind kind) =>
-        kind == LadderKind.Dynamic ? DynamicLadderLabel : StaticLadderLabel;
+    public static string LadderLabel(LadderKind kind) => kind switch {
+        LadderKind.Dynamic => DynamicLadderLabel,
+        LadderKind.AnimationTuned => AnimationLadderLabel,
+        _ => StaticLadderLabel
+    };
 
-    public static string LadderToken(LadderKind kind) =>
-        kind == LadderKind.Dynamic ? "dynamic" : "static";
+    public static string LadderToken(LadderKind kind) => kind switch {
+        LadderKind.Dynamic => "dynamic",
+        LadderKind.AnimationTuned => "animation",
+        _ => "static"
+    };
 
     public static List<FutureTestDescriptor> BuildFutureTests() => [
         new FutureTestDescriptor { Id = "psnr", Label = "PSNR", Status = "not_implemented" },

@@ -11,11 +11,41 @@ public sealed class LadderDerivationResult {
 }
 
 /// <summary>
-/// Convex-hull / crossover ladder derivation from encode-grid RD points (thesis 4.3.2).
+/// Derives a content-specific bitrate ladder from encode-grid RD points by building the convex
+/// hull of quality against log-bitrate and taking one operating point per resolution at a shared
+/// hull slope (thesis 4.3.1.2).
 /// </summary>
 public sealed class LadderDerivation {
-    /// <summary>Typical streaming quality target; hull points nearest this win their resolution.</summary>
-    private const double TargetVmaf = 93.0;
+    /// <summary>
+    /// The trade-off the whole ladder is built at, in harmonic-mean VMAF per doubling of bitrate.
+    /// </summary>
+    /// <remarks>
+    /// λ is the primary control, not a derived quantity, and in log-rate space it has a directly
+    /// readable meaning: keep buying bits while doubling the bitrate still returns at least this
+    /// much quality, and stop once it does not. That is what makes the ladder content-adaptive —
+    /// a curve that saturates early stops early and lands cheap, while one that keeps climbing is
+    /// followed further up. Driving selection off an absolute quality target instead inverts this:
+    /// on hard content the target is only reachable far past the point of diminishing returns, and
+    /// the ladder dutifully pays for it.
+    /// </remarks>
+    private const double LambdaBaseSlope = 4.0;
+
+    /// <summary>
+    /// Quality range the top rung is kept inside regardless of slope. The ceiling stops λ paying
+    /// for quality no viewer can distinguish (thesis 3.3.3); the floor stops exceptionally hard
+    /// content from shipping a top rung that is visibly poor when the hull could do better.
+    /// </summary>
+    private const double TopRungCeiling = 95.0;
+    private const double TopRungFloor = 88.0;
+
+    /// <summary>
+    /// Adjacent rungs must differ by at least this factor in bitrate. Two rungs a few percent
+    /// apart give an ABR algorithm nothing to choose between while costing a full extra encode.
+    /// </summary>
+    private const double MinRungSpacing = 1.5;
+
+    private const long BitrateFloorBps = 100_000;
+    private const int RoundToKbps = 50;
 
     private readonly AnalysisStore _store;
     private readonly ILogger<LadderDerivation> _logger;
@@ -28,9 +58,10 @@ public sealed class LadderDerivation {
     public async Task<LadderDerivationResult> DeriveAsync(
         Guid staticTranscodeId,
         IReadOnlyList<EncodeGridPoint> points,
+        bool windowed = false,
         CancellationToken cancellationToken = default) {
         var usable = points
-            .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0 && point.VmafMean > 0)
+            .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0 && point.DecisionQuality > 0)
             .ToList();
 
         if (usable.Count < 2) {
@@ -38,9 +69,20 @@ public sealed class LadderDerivation {
         }
 
         try {
-            var selected = SelectOperatingPoints(usable);
+            var hulls = BuildResolutionHulls(usable);
+            if (hulls.Count == 0) {
+                return Fail("No resolution produced a usable rate-quality curve");
+            }
+
+            // The upper envelope across every resolution — the convex hull in the thesis sense.
+            // Both the on-hull flags and the crossovers read off this one curve.
+            var envelope = BuildEnvelope(hulls);
+            MarkGlobalHull(envelope, points);
+
+            var lambda = ChooseLambda(hulls);
+            var selected = SelectOperatingPoints(hulls, lambda);
             if (selected.Count == 0) {
-                return Fail("Pareto front was empty");
+                return Fail("No operating point survived hull selection");
             }
 
             var (variants, derivedVariants) = BuildVariants(selected);
@@ -56,24 +98,28 @@ public sealed class LadderDerivation {
 
             var document = new DerivedLadderDocument {
                 Name = profile.Name,
-                Variants = derivedVariants
+                Variants = derivedVariants,
+                Lambda = lambda,
+                CrossoverBps = FindCrossovers(hulls, envelope),
+                Windowed = windowed
             };
 
             await _store.MergeSeriesAsync(
                 AnalysisOwner.Transcode,
                 staticTranscodeId,
-                new AnalysisSeriesDocument { DerivedLadder = document },
+                new AnalysisSeriesDocument { EncodeGrid = points.ToList(), DerivedLadder = document },
                 cancellationToken);
 
             await _store.UpsertSectionAsync(
                 AnalysisOwner.Transcode,
                 staticTranscodeId,
-                BuildSection(derivedVariants),
+                BuildSection(document),
                 cancellationToken);
 
             _logger.LogInformation(
-                "Derived dynamic ladder with {Count} rungs for static transcode {TranscodeId}",
+                "Derived dynamic ladder with {Count} rungs at lambda={Lambda:0.###} for static transcode {TranscodeId}",
                 variants.Count,
+                lambda,
                 staticTranscodeId);
 
             return new LadderDerivationResult {
@@ -87,77 +133,310 @@ public sealed class LadderDerivation {
         }
     }
 
+    // ---- Hull construction -------------------------------------------------------------------
+
     /// <summary>
-    /// One operating point per resolution, taken off the Pareto front, then adjusted so bitrate
-    /// falls monotonically with resolution and each rung sits at or above its crossover with the
-    /// next one down.
+    /// One upper convex hull per resolution, in (log₂ bitrate, quality) space.
     /// </summary>
-    private static List<EncodeGridPoint> SelectOperatingPoints(List<EncodeGridPoint> usable) {
-        var byHeight = BuildParetoFront(usable)
+    /// <remarks>
+    /// Log-rate is the standard rate-distortion domain: it is what makes a hull segment's slope
+    /// mean "quality per doubling of bitrate", a quantity comparable across resolutions, and it is
+    /// what BD-rate integrates over. Building the hull per resolution rather than over the pooled
+    /// point cloud is also what keeps every resolution represented — a single global sweep lets a
+    /// strong resolution shadow a weaker one entirely, leaving it with no operating point at all.
+    /// </remarks>
+    internal static List<ResolutionHull> BuildResolutionHulls(IReadOnlyList<EncodeGridPoint> usable) {
+        return usable
             .GroupBy(point => point.Height)
-            .OrderByDescending(group => group.Key)
+            .Where(group => group.Any())
+            .Select(group => new ResolutionHull(
+                group.Key,
+                group.First().Label,
+                group.First().Width,
+                UpperHull(group.OrderBy(point => point.BitrateBps).ToList())))
+            .Where(hull => hull.Points.Count > 0)
+            .OrderByDescending(hull => hull.Height)
             .ToList();
-
-        if (byHeight.Count == 0) {
-            return [];
-        }
-
-        var selected = byHeight
-            .Select(group => group
-                .OrderBy(point => Math.Abs(point.VmafMean - TargetVmaf))
-                .ThenBy(point => point.BitrateBps)
-                .First())
-            .OrderBy(point => point.Height)
-            .ToList();
-
-        // Higher resolution must not cost less than a lower one.
-        for (var i = 1; i < selected.Count; i++) {
-            if (selected[i].BitrateBps < selected[i - 1].BitrateBps) {
-                selected[i].BitrateBps = selected[i - 1].BitrateBps + 50_000;
-            }
-        }
-
-        // Lift each rung to its crossover with the next-lower curve, where the higher resolution
-        // stops winning on quality.
-        selected = selected.OrderByDescending(point => point.Height).ToList();
-        for (var i = 0; i < selected.Count - 1; i++) {
-            var crossover = FindCrossoverBitrate(usable, selected[i].Height, selected[i + 1].Height);
-            if (crossover != null && selected[i].BitrateBps < crossover.Value) {
-                selected[i].BitrateBps = crossover.Value;
-            }
-        }
-
-        // Re-enforce descending bitrate after the crossover bumps.
-        for (var i = 1; i < selected.Count; i++) {
-            if (selected[i].BitrateBps > selected[i - 1].BitrateBps) {
-                selected[i].BitrateBps = Math.Max(100_000, selected[i - 1].BitrateBps - 50_000);
-            }
-        }
-
-        return selected;
     }
 
+    /// <summary>
+    /// Andrew's monotone chain over (log₂ R, Q), keeping only the upper chain: the points no
+    /// mixture of two other points beats. Dominated samples — more bits for less quality, which
+    /// CRF sweeps do produce — fall out here.
+    /// </summary>
+    private static List<EncodeGridPoint> UpperHull(List<EncodeGridPoint> ordered) {
+        var hull = new List<EncodeGridPoint>();
+
+        foreach (var point in ordered) {
+            // Same bitrate as the last kept point: keep whichever scores higher.
+            if (hull.Count > 0 && Math.Abs(LogRate(point) - LogRate(hull[^1])) < 1e-9) {
+                if (point.DecisionQuality > hull[^1].DecisionQuality) {
+                    hull[^1] = point;
+                }
+
+                continue;
+            }
+
+            // A point costing more for no more quality is dominated and never optimal. Checked
+            // before any popping, so a noisy sample cannot evict a good vertex on its way out.
+            if (hull.Count > 0 && point.DecisionQuality <= hull[^1].DecisionQuality) {
+                continue;
+            }
+
+            while (hull.Count >= 2 && !TurnsDown(hull[^2], hull[^1], point)) {
+                hull.RemoveAt(hull.Count - 1);
+            }
+
+            hull.Add(point);
+        }
+
+        return hull;
+    }
+
+    /// <summary>True when b lies above the line a→c, i.e. the chain stays concave.</summary>
+    private static bool TurnsDown(EncodeGridPoint a, EncodeGridPoint b, EncodeGridPoint c) {
+        var cross =
+            (LogRate(b) - LogRate(a)) * (c.DecisionQuality - a.DecisionQuality) -
+            (b.DecisionQuality - a.DecisionQuality) * (LogRate(c) - LogRate(a));
+
+        return cross < -1e-12;
+    }
+
+    private static double LogRate(EncodeGridPoint point) => Math.Log2(point.BitrateBps);
+
+    /// <summary>The upper convex hull spanning every resolution.</summary>
+    private static List<EncodeGridPoint> BuildEnvelope(List<ResolutionHull> hulls) =>
+        UpperHull(hulls.SelectMany(hull => hull.Points).OrderBy(LogRate).ToList());
+
+    /// <summary>
+    /// Flags every grid point on the envelope, so the analysis UI can draw the hull through the
+    /// scatter.
+    /// </summary>
+    private static void MarkGlobalHull(List<EncodeGridPoint> envelope, IReadOnlyList<EncodeGridPoint> all) {
+        foreach (var point in all) {
+            point.OnHull = false;
+        }
+
+        foreach (var point in envelope) {
+            point.OnHull = true;
+        }
+    }
+
+    /// <summary>
+    /// Bitrates at which the global hull hands over from one resolution to the next — the
+    /// crossover points. On a convex hull these need no interpolation or search: they are simply
+    /// where consecutive hull vertices change resolution.
+    /// </summary>
+    private static Dictionary<string, long>? FindCrossovers(
+        List<ResolutionHull> hulls,
+        List<EncodeGridPoint> envelope) {
+        var labelOf = hulls.ToDictionary(hull => hull.Height, hull => hull.Label);
+        var crossovers = new Dictionary<string, long>();
+
+        for (var i = 0; i < envelope.Count - 1; i++) {
+            var lower = envelope[i];
+            var upper = envelope[i + 1];
+            if (lower.Height == upper.Height) {
+                continue;
+            }
+
+            var key = $"{labelOf.GetValueOrDefault(upper.Height, upper.Height.ToString())}>" +
+                      $"{labelOf.GetValueOrDefault(lower.Height, lower.Height.ToString())}";
+            crossovers[key] = upper.BitrateBps;
+        }
+
+        return crossovers.Count > 0 ? crossovers : null;
+    }
+
+    // ---- Lagrangian selection ----------------------------------------------------------------
+
+    /// <summary>
+    /// Picks the Lagrange multiplier λ: the base slope, pulled back only far enough to keep the top
+    /// rung inside its quality range.
+    /// </summary>
+    /// <remarks>
+    /// For a given λ, maximizing Q − λ·log₂(R) on a concave hull lands on the vertex where the
+    /// local slope crosses λ, so one λ across every resolution makes all rungs share the same
+    /// quality-per-bit trade-off. That equal-slope condition is the actual optimality criterion
+    /// behind convex-hull ladder design: picking each rung at a fixed target score instead spends
+    /// bits unevenly, over-paying wherever that resolution's curve happens to be flat.
+    /// </remarks>
+    internal static double ChooseLambda(List<ResolutionHull> hulls) {
+        var top = hulls[0];
+        var reachable = top.Points.Max(point => point.DecisionQuality);
+        var lambda = LambdaBaseSlope;
+
+        // Larger λ prices bits higher, so it selects a cheaper, lower-quality vertex.
+        if (Optimal(top, lambda).DecisionQuality > TopRungCeiling) {
+            lambda = Search(top, TopRungCeiling, lambda, lambda * 64);
+        } else if (Optimal(top, lambda).DecisionQuality < Math.Min(TopRungFloor, reachable)) {
+            lambda = Search(top, Math.Min(TopRungFloor, reachable), lambda / 64, lambda);
+        }
+
+        return lambda;
+
+        // Bisects for the largest λ — the cheapest ladder — whose top rung still clears `target`.
+        static double Search(ResolutionHull top, double target, double low, double high) {
+            for (var i = 0; i < 60; i++) {
+                var mid = (low + high) / 2;
+                if (Optimal(top, mid).DecisionQuality >= target) {
+                    low = mid;
+                } else {
+                    high = mid;
+                }
+            }
+
+            return low;
+        }
+    }
+
+    /// <summary>The hull vertex maximizing Q − λ·log₂(R).</summary>
+    private static EncodeGridPoint Optimal(ResolutionHull hull, double lambda) => hull.Points
+        .OrderByDescending(point => point.DecisionQuality - lambda * LogRate(point))
+        .ThenBy(point => point.BitrateBps)
+        .First();
+
+    /// <summary>
+    /// One rung per resolution at the shared λ, dropping any resolution a lower one already beats
+    /// at that bitrate, then enforcing spacing and monotonicity.
+    /// </summary>
+    private static List<SelectedRung> SelectOperatingPoints(List<ResolutionHull> hulls, double lambda) {
+        var selected = new List<SelectedRung>();
+
+        foreach (var hull in hulls.OrderByDescending(hull => hull.Height)) {
+            var point = Optimal(hull, lambda);
+            var slope = LocalSlope(hull, point);
+
+            // Below its crossover a resolution is simply the wrong choice: some lower resolution
+            // reaches the same or better quality at the same bitrate. Shipping the rung anyway is
+            // what a fixed-target ladder does, and it is exactly the waste this is meant to avoid.
+            var beaten = hulls.Any(other =>
+                other.Height < hull.Height &&
+                QualityAt(other, LogRate(point)) > point.DecisionQuality + 1e-6);
+
+            if (beaten && selected.Count > 0) {
+                continue;
+            }
+
+            selected.Add(new SelectedRung(hull, point, point.BitrateBps, slope));
+        }
+
+        return Space(selected);
+    }
+
+    /// <summary>
+    /// Forces bitrate to fall with resolution and adjacent rungs to stay a real distance apart,
+    /// dropping rungs that collapse into their neighbour.
+    /// </summary>
+    /// <remarks>
+    /// A rung too close to the one above is re-selected onto a cheaper vertex of its own hull
+    /// rather than simply having its bitrate written down. Rewriting the number would leave the
+    /// rung's reported CRF and predicted quality describing an operating point that is not the one
+    /// being shipped — the ladder would be audited against a measurement it no longer corresponds
+    /// to. Re-selecting keeps every published rung backed by a real grid sample.
+    /// </remarks>
+    private static List<SelectedRung> Space(List<SelectedRung> selected) {
+        var spaced = new List<SelectedRung>();
+
+        foreach (var rung in selected.OrderByDescending(item => item.Hull.Height)) {
+            if (spaced.Count == 0) {
+                spaced.Add(rung);
+                continue;
+            }
+
+            var ceiling = (long)(spaced[^1].BitrateBps / MinRungSpacing);
+            if (rung.BitrateBps <= ceiling) {
+                spaced.Add(rung);
+                continue;
+            }
+
+            var cheaper = rung.Hull.Points
+                .Where(point => point.BitrateBps <= ceiling && point.BitrateBps >= BitrateFloorBps)
+                .MaxBy(point => point.BitrateBps);
+
+            // Nothing on this resolution's hull is cheap enough to sit clear of the rung above, so
+            // it would offer an ABR algorithm no meaningful alternative.
+            if (cheaper != null) {
+                spaced.Add(rung with {
+                    Point = cheaper,
+                    BitrateBps = cheaper.BitrateBps,
+                    Slope = LocalSlope(rung.Hull, cheaper)
+                });
+            }
+        }
+
+        return spaced;
+    }
+
+    /// <summary>Quality the resolution reaches at a given log-bitrate, interpolated along its hull.</summary>
+    private static double QualityAt(ResolutionHull hull, double logRate) {
+        var points = hull.Points;
+        if (logRate <= LogRate(points[0])) {
+            return double.NegativeInfinity;
+        }
+
+        if (logRate >= LogRate(points[^1])) {
+            return points[^1].DecisionQuality;
+        }
+
+        for (var i = 0; i < points.Count - 1; i++) {
+            var low = LogRate(points[i]);
+            var high = LogRate(points[i + 1]);
+            if (logRate < low || logRate > high) {
+                continue;
+            }
+
+            var t = (logRate - low) / (high - low);
+            return points[i].DecisionQuality + t * (points[i + 1].DecisionQuality - points[i].DecisionQuality);
+        }
+
+        return points[^1].DecisionQuality;
+    }
+
+    private static double? LocalSlope(ResolutionHull hull, EncodeGridPoint point) {
+        var index = hull.Points.IndexOf(point);
+        if (index < 0 || hull.Points.Count < 2) {
+            return null;
+        }
+
+        var (a, b) = index == 0
+            ? (hull.Points[0], hull.Points[1])
+            : (hull.Points[index - 1], hull.Points[index]);
+
+        var run = LogRate(b) - LogRate(a);
+        return run > 1e-9 ? (b.DecisionQuality - a.DecisionQuality) / run : null;
+    }
+
+    // ---- Output ------------------------------------------------------------------------------
+
     private static (List<TranscodeVariant> Variants, List<DerivedLadderVariant> Derived) BuildVariants(
-        List<EncodeGridPoint> selected) {
+        List<SelectedRung> selected) {
         var variants = new List<TranscodeVariant>();
         var derived = new List<DerivedLadderVariant>();
 
-        foreach (var point in selected.OrderByDescending(item => item.Height)) {
-            var kbps = Math.Max(100, (int)Math.Round(point.BitrateBps / 1000.0 / 50.0) * 50);
-            var bitrate = $"{kbps}k";
-            var resolution = $"{point.Width}:{point.Height}";
+        foreach (var rung in selected.OrderByDescending(item => item.Hull.Height)) {
+            var kbps = Math.Max(
+                BitrateFloorBps / 1000,
+                (long)Math.Round(rung.BitrateBps / 1000.0 / RoundToKbps) * RoundToKbps);
 
-            variants.Add(new TranscodeVariant(resolution, bitrate, point.Label));
+            var bitrate = $"{kbps}k";
+            var resolution = $"{rung.Hull.Width}:{rung.Hull.Height}";
+
+            variants.Add(new TranscodeVariant(resolution, bitrate, rung.Hull.Label));
             derived.Add(new DerivedLadderVariant {
-                Label = point.Label,
+                Label = rung.Hull.Label,
                 Resolution = resolution,
                 Bitrate = bitrate,
                 BitrateBps = kbps * 1000L,
-                PredictedVmaf = point.VmafMean
+                PredictedVmaf = rung.Point.VmafMean,
+                PredictedVmafHarmonic = rung.Point.VmafHarmonicMean,
+                PredictedVmafMin = rung.Point.VmafMin,
+                Crf = rung.Point.Crf,
+                HullSlope = rung.Slope
             });
         }
 
-        // Cover any default rung whose resolution never made it onto the hull.
+        // Cover any default rung whose resolution never produced a usable curve.
         foreach (var fallback in TranscodeProfile.Default.Variants) {
             if (variants.Any(variant => string.Equals(variant.Label, fallback.Label, StringComparison.OrdinalIgnoreCase))) {
                 continue;
@@ -181,106 +460,45 @@ public sealed class LadderDerivation {
             MediaFormatting.ParseResolution(variant.Resolution)?.Height ?? 0;
     }
 
-    private static AnalysisTreeNode BuildSection(List<DerivedLadderVariant> derived) {
+    private static AnalysisTreeNode BuildSection(DerivedLadderDocument document) {
+        var children = document.Variants
+            .Select(variant => Leaf(
+                $"derivedLadder.{variant.Label}",
+                variant.Label,
+                variant.PredictedVmafHarmonic != null
+                    ? $"{variant.Bitrate} (CRF {variant.Crf}, pred. harm. VMAF {Format(variant.PredictedVmafHarmonic)})"
+                    : variant.Bitrate))
+            .ToList();
+
+        children.Insert(0, Leaf("derivedLadder.lambda", "Hull slope (λ)", Format(document.Lambda)));
+
+        foreach (var (pair, bitrate) in document.CrossoverBps ?? []) {
+            children.Add(Leaf(
+                $"derivedLadder.crossover.{pair}",
+                $"Crossover {pair.Replace(">", " → ")}",
+                MediaFormatting.FormatBitrate(bitrate)));
+        }
+
         return Section(
             "derivedLadder",
             "Derived ladder (VMAF crossover)",
             "ladder-derivation",
             AnalysisSectionStatus.Completed,
-            children: derived
-                .Select(variant => Leaf(
-                    $"derivedLadder.{variant.Label}",
-                    variant.Label,
-                    variant.PredictedVmaf != null
-                        ? $"{variant.Bitrate} (pred. VMAF {variant.PredictedVmaf.Value.ToString("0.##", CultureInfo.InvariantCulture)})"
-                        : variant.Bitrate))
-                .ToList());
-    }
+            children: children);
 
-    /// <summary>Pareto front maximizing VMAF for a given bitrate (and minimizing bitrate for a given VMAF).</summary>
-    private static List<EncodeGridPoint> BuildParetoFront(IReadOnlyList<EncodeGridPoint> points) {
-        var hull = new List<EncodeGridPoint>();
-        var bestVmaf = double.NegativeInfinity;
-
-        foreach (var point in points.OrderBy(item => item.BitrateBps).ThenByDescending(item => item.VmafMean)) {
-            if (point.VmafMean > bestVmaf + 1e-6) {
-                hull.Add(point);
-                bestVmaf = point.VmafMean;
-            }
-        }
-
-        return hull;
-    }
-
-    /// <summary>Approximate crossover bitrate between two resolution curves via sampled interpolation.</summary>
-    private static long? FindCrossoverBitrate(IReadOnlyList<EncodeGridPoint> all, int highHeight, int lowHeight) {
-        var high = CurveFor(all, highHeight);
-        var low = CurveFor(all, lowHeight);
-
-        if (high.Count < 2 || low.Count < 2) {
-            return null;
-        }
-
-        var min = Math.Max(high[0].BitrateBps, low[0].BitrateBps);
-        var max = Math.Min(high[^1].BitrateBps, low[^1].BitrateBps);
-        if (max <= min) {
-            return null;
-        }
-
-        long? lastWhereHighWins = null;
-        const int samples = 40;
-
-        for (var i = 0; i <= samples; i++) {
-            var bitrate = min + (max - min) * i / samples;
-            var highVmaf = InterpolateVmaf(high, bitrate);
-            var lowVmaf = InterpolateVmaf(low, bitrate);
-            if (highVmaf == null || lowVmaf == null) {
-                continue;
-            }
-
-            if (highVmaf >= lowVmaf) {
-                lastWhereHighWins = bitrate;
-            } else if (lastWhereHighWins != null) {
-                // Crossed: the higher resolution stopped winning near the previous sample.
-                return lastWhereHighWins;
-            }
-        }
-
-        return lastWhereHighWins;
-
-        static List<EncodeGridPoint> CurveFor(IReadOnlyList<EncodeGridPoint> all, int height) => all
-            .Where(point => point.Height == height && string.IsNullOrEmpty(point.Error))
-            .OrderBy(point => point.BitrateBps)
-            .ToList();
-    }
-
-    private static double? InterpolateVmaf(IReadOnlyList<EncodeGridPoint> curve, long bitrateBps) {
-        if (curve.Count == 0) {
-            return null;
-        }
-
-        if (bitrateBps <= curve[0].BitrateBps) {
-            return curve[0].VmafMean;
-        }
-
-        if (bitrateBps >= curve[^1].BitrateBps) {
-            return curve[^1].VmafMean;
-        }
-
-        for (var i = 0; i < curve.Count - 1; i++) {
-            var low = curve[i];
-            var high = curve[i + 1];
-            if (bitrateBps < low.BitrateBps || bitrateBps > high.BitrateBps) {
-                continue;
-            }
-
-            var t = (bitrateBps - low.BitrateBps) / (double)(high.BitrateBps - low.BitrateBps);
-            return low.VmafMean + t * (high.VmafMean - low.VmafMean);
-        }
-
-        return null;
+        static string Format(double? value) =>
+            value?.ToString("0.##", CultureInfo.InvariantCulture) ?? "—";
     }
 
     private static LadderDerivationResult Fail(string message) =>
         new() { Success = false, ErrorMessage = message };
+
+    /// <summary>One resolution's rate-quality curve, reduced to its upper convex hull.</summary>
+    internal sealed record ResolutionHull(int Height, string Label, int Width, List<EncodeGridPoint> Points);
+
+    /// <summary>
+    /// A chosen rung. Bitrate is carried here rather than written back onto the grid point, so the
+    /// measured RD data stays exactly as it was measured.
+    /// </summary>
+    private sealed record SelectedRung(ResolutionHull Hull, EncodeGridPoint Point, long BitrateBps, double? Slope);
 }
