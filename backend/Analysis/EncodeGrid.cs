@@ -7,6 +7,7 @@ public sealed class EncodeGridResult {
     public bool Success { get; init; }
     public string? ErrorMessage { get; init; }
     public List<EncodeGridPoint> Points { get; init; } = [];
+    public bool Windowed { get; init; }
 }
 
 /// <summary>
@@ -14,7 +15,23 @@ public sealed class EncodeGridResult {
 /// The resulting RD points are what <see cref="LadderDerivation"/> builds a ladder from.
 /// </summary>
 public sealed class EncodeGrid {
-    private static readonly int[] Crfs = [23, 27, 31, 35, 39];
+    /// <summary>
+    /// First pass: a wide, evenly spaced sweep that brackets every resolution's usable range.
+    /// Deliberately coarse — the refinement pass is what buys resolution where it matters.
+    /// </summary>
+    private static readonly int[] CoarseCrfs = [20, 24, 28, 32, 36, 40];
+
+    /// <summary>
+    /// The quality band ladder rungs are actually chosen from. A coarse grid leaves the hull
+    /// under-sampled exactly here, which is what makes crossover estimates unstable.
+    /// </summary>
+    private const double RefineBandLow = 85;
+    private const double RefineBandHigh = 95;
+
+    /// <summary>Quality gap between adjacent samples wide enough to justify another encode.</summary>
+    private const double MaxQualityGap = 2.5;
+
+    private const int MaxSamplesPerResolution = 9;
 
     private readonly Transcoder _transcoder;
     private readonly VmafAnalyzer _vmaf;
@@ -38,14 +55,14 @@ public sealed class EncodeGrid {
     public async Task<EncodeGridResult> RunAsync(
         string routeId,
         Guid staticTranscodeId,
-        string sourcePath,
+        RepresentativeClipResult clip,
         Func<int, int, CancellationToken, Task>? onProgress = null,
         CancellationToken cancellationToken = default) {
         var points = new List<EncodeGridPoint>();
         var tempRoot = NewTempDir("encode-grid");
 
         try {
-            var reference = await ResolveReferenceResolutionAsync(sourcePath, cancellationToken);
+            var reference = await ResolveReferenceResolutionAsync(clip.Path, cancellationToken);
             if (reference == null) {
                 return new EncodeGridResult {
                     Success = false,
@@ -54,44 +71,44 @@ public sealed class EncodeGrid {
             }
 
             var variants = TranscodeProfile.Default.Variants;
-            var total = variants.Count * Crfs.Length;
             var done = 0;
+
+            // Upper bound while the coarse pass runs; it settles to the real count once refinement
+            // decides how many extra samples each resolution earns.
+            var total = variants.Count * MaxSamplesPerResolution;
 
             if (onProgress != null) {
                 await onProgress(done, total, cancellationToken);
             }
 
-            foreach (var variant in variants) {
+            for (var index = 0; index < variants.Count; index++) {
+                var variant = variants[index];
                 var size = ParseResolution(variant.Resolution) ?? (0, 0);
+                var forVariant = new List<EncodeGridPoint>();
 
-                foreach (var crf in Crfs) {
+                foreach (var crf in CoarseCrfs) {
                     cancellationToken.ThrowIfCancellationRequested();
-
-                    var point = await EncodeAndScoreAsync(
-                        sourcePath,
-                        tempRoot,
-                        variant,
-                        size.Item1,
-                        size.Item2,
-                        crf,
-                        reference.Value,
-                        cancellationToken);
-
-                    points.Add(point);
-                    done++;
-
-                    _logger.LogInformation(
-                        "Encode grid {Label} CRF{Crf}: bitrate={Bitrate} vmaf={Vmaf} err={Error}",
-                        point.Label,
-                        point.Crf,
-                        point.BitrateBps,
-                        point.VmafMean,
-                        point.Error ?? "—");
-
-                    if (onProgress != null) {
-                        await onProgress(done, total, cancellationToken);
-                    }
+                    forVariant.Add(await SampleAsync(clip, tempRoot, variant, size, crf, reference.Value, cancellationToken));
+                    await ReportAsync(onProgress, ++done, total, cancellationToken);
                 }
+
+                // Refinement: bisect wherever the curve is still too coarse to read a rung off.
+                while (forVariant.Count < MaxSamplesPerResolution) {
+                    var crf = NextRefinementCrf(forVariant);
+                    if (crf == null) {
+                        break;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    forVariant.Add(await SampleAsync(clip, tempRoot, variant, size, crf.Value, reference.Value, cancellationToken));
+                    await ReportAsync(onProgress, ++done, total, cancellationToken);
+                }
+
+                points.AddRange(forVariant.OrderBy(point => point.Crf));
+
+                // Now that this resolution is settled, the estimate for what remains is exact for
+                // the work already done and still an upper bound for the resolutions ahead.
+                total = done + (variants.Count - index - 1) * MaxSamplesPerResolution;
             }
 
             var succeeded = points.Any(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0);
@@ -105,45 +122,100 @@ public sealed class EncodeGrid {
             await _store.UpsertSectionAsync(
                 AnalysisOwner.Transcode,
                 staticTranscodeId,
-                BuildSection(points),
+                BuildSection(points, clip),
                 cancellationToken);
 
             return new EncodeGridResult {
                 Success = succeeded,
                 ErrorMessage = succeeded ? null : "No successful encode-grid points",
-                Points = points
+                Points = points,
+                Windowed = clip.Windowed
             };
         } catch (Exception ex) {
             _logger.LogWarning(ex, "Encode grid failed for {RouteId}", routeId);
             return new EncodeGridResult {
                 Success = false,
                 ErrorMessage = ex.Message,
-                Points = points
+                Points = points,
+                Windowed = clip.Windowed
             };
         } finally {
             TryDeleteDirectory(tempRoot, _logger);
         }
     }
 
-    private async Task<EncodeGridPoint> EncodeAndScoreAsync(
-        string sourcePath,
+    /// <summary>
+    /// The CRF worth sampling next for one resolution: the midpoint of whichever adjacent pair
+    /// leaves the largest unresolved quality gap, preferring pairs that span the band rungs are
+    /// selected from. Returns null once the curve is dense enough.
+    /// </summary>
+    internal static int? NextRefinementCrf(IReadOnlyList<EncodeGridPoint> points) {
+        var usable = points
+            .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0)
+            .OrderBy(point => point.Crf)
+            .ToList();
+
+        var sampled = points.Select(point => point.Crf).ToHashSet();
+        int? best = null;
+        var bestPriority = double.NegativeInfinity;
+
+        for (var i = 0; i < usable.Count - 1; i++) {
+            var low = usable[i];
+            var high = usable[i + 1];
+            if (high.Crf - low.Crf < 2) {
+                continue;
+            }
+
+            var midpoint = (low.Crf + high.Crf) / 2;
+            if (!sampled.Add(midpoint)) {
+                continue;
+            }
+
+            // Quality falls as CRF rises, so the higher-CRF sample is the lower-quality end.
+            var gap = Math.Abs(low.DecisionQuality - high.DecisionQuality);
+            var spansBand =
+                Math.Min(low.DecisionQuality, high.DecisionQuality) <= RefineBandHigh &&
+                Math.Max(low.DecisionQuality, high.DecisionQuality) >= RefineBandLow;
+
+            if (!spansBand && gap <= MaxQualityGap) {
+                continue;
+            }
+
+            var priority = spansBand ? gap + 100 : gap;
+            if (priority > bestPriority) {
+                bestPriority = priority;
+                best = midpoint;
+            }
+        }
+
+        return best;
+    }
+
+    private static Task ReportAsync(
+        Func<int, int, CancellationToken, Task>? onProgress,
+        int done,
+        int total,
+        CancellationToken cancellationToken) =>
+        onProgress?.Invoke(done, Math.Max(done, total), cancellationToken) ?? Task.CompletedTask;
+
+    private async Task<EncodeGridPoint> SampleAsync(
+        RepresentativeClipResult clip,
         string tempRoot,
         TranscodeVariant variant,
-        int width,
-        int height,
+        (int Width, int Height) size,
         int crf,
         (int Width, int Height) reference,
         CancellationToken cancellationToken) {
         var point = new EncodeGridPoint {
             Label = variant.Label,
-            Width = width,
-            Height = height,
+            Width = size.Width,
+            Height = size.Height,
             Crf = crf
         };
 
         var outPath = Path.Combine(tempRoot, $"{variant.Label}_crf{crf}.mp4");
         var encode = await _transcoder.EncodeCrfAsync(
-            sourcePath,
+            clip.Path,
             outPath,
             variant.Resolution,
             crf,
@@ -154,7 +226,7 @@ public sealed class EncodeGrid {
             return point;
         }
 
-        var bitrateBps = await MeasureBitrateBpsAsync(outPath, cancellationToken);
+        var bitrateBps = await MeasureBitrateBpsAsync(_probe, outPath, cancellationToken);
         if (bitrateBps <= 0) {
             point.Error = "Could not measure encoded bitrate";
             return point;
@@ -164,12 +236,12 @@ public sealed class EncodeGrid {
 
         var vmaf = await _vmaf.AnalyzeAsync(
             new VmafRequest {
-                ReferencePath = sourcePath,
+                ReferencePath = clip.Path,
                 DistortedPath = outPath,
                 ReferenceWidth = reference.Width,
                 ReferenceHeight = reference.Height,
-                DistortedWidth = width,
-                DistortedHeight = height,
+                DistortedWidth = size.Width,
+                DistortedHeight = size.Height,
                 BitrateBps = bitrateBps
             },
             cancellationToken);
@@ -182,6 +254,20 @@ public sealed class EncodeGrid {
         point.VmafMean = vmaf.Series.Summary.Mean;
         point.VmafHarmonicMean = vmaf.Series.Summary.HarmonicMean;
         point.VmafMin = vmaf.Series.Summary.Min;
+
+        if (vmaf.Series.SummaryByModel?.TryGetValue(VmafAnalyzer.NegModelName, out var neg) == true) {
+            point.VmafNegMean = neg.Mean;
+            point.VmafNegHarmonicMean = neg.HarmonicMean;
+        }
+
+        _logger.LogInformation(
+            "Encode grid {Label} CRF{Crf}: bitrate={Bitrate} vmaf={Vmaf:0.##} hvmaf={Harmonic:0.##}",
+            point.Label,
+            point.Crf,
+            point.BitrateBps,
+            point.VmafMean,
+            point.VmafHarmonicMean);
+
         return point;
     }
 
@@ -200,30 +286,7 @@ public sealed class EncodeGrid {
         }
     }
 
-    /// <summary>Reads the encoded file's real bitrate, estimating from size ÷ duration if absent.</summary>
-    private async Task<long> MeasureBitrateBpsAsync(string path, CancellationToken cancellationToken) {
-        var probe = await _probe.ProbeAsync(path, cancellationToken);
-        if (!probe.Success || probe.ProbeData == null) {
-            return 0;
-        }
-
-        using (probe.ProbeData) {
-            if (!probe.ProbeData.RootElement.TryGetProperty("format", out var format)) {
-                return 0;
-            }
-
-            var bitRate = GetLong(format, "bit_rate");
-            if (bitRate is > 0) {
-                return bitRate.Value;
-            }
-
-            var size = GetLong(format, "size") ?? 0;
-            var duration = GetDouble(format, "duration") ?? 0;
-            return size > 0 && duration > 0.1 ? (long)(size * 8.0 / duration) : 0;
-        }
-    }
-
-    private static AnalysisTreeNode BuildSection(List<EncodeGridPoint> points) {
+    private static AnalysisTreeNode BuildSection(List<EncodeGridPoint> points, RepresentativeClipResult clip) {
         var succeeded = points.Count(point => string.IsNullOrEmpty(point.Error));
 
         var children = points
@@ -233,9 +296,16 @@ public sealed class EncodeGrid {
                 $"encodeGrid.{point.Label}.crf{point.Crf}",
                 $"{point.Label} CRF{point.Crf}",
                 string.IsNullOrEmpty(point.Error)
-                    ? $"VMAF {point.VmafMean:0.##} @ {FormatBitrate(point.BitrateBps)}"
+                    ? $"VMAF {point.VmafMean:0.##} (harm. {point.VmafHarmonicMean:0.##}) @ {FormatBitrate(point.BitrateBps)}"
                     : point.Error))
             .ToList();
+
+        children.Insert(0, Leaf(
+            "encodeGrid.scope",
+            "Scored on",
+            clip.Windowed
+                ? $"{clip.Windows.Count} SI/TI windows ({clip.DurationSec:0.#} s)"
+                : "whole clip"));
 
         return Section(
             "encodeGrid",
