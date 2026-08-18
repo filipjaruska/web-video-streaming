@@ -402,6 +402,13 @@ public sealed class TranscodeAnalysisCollector {
 
         var size = ParseResolution(variant.Resolution);
 
+        // The delivered bitrate, not the one the rung was asked for. x264 undershoots or overshoots
+        // its target depending on how compressible the content is — which is the whole point of a
+        // content-aware ladder — so comparing ladders on target bitrates would compare the very
+        // assumption under test.
+        var measured = await MeasureBitrateBpsAsync(_probe, tempMp4, cancellationToken);
+        var target = TranscodeProfile.ParseBitrateKbps(variant.Bitrate) * 1000L;
+
         var result = await _vmaf.AnalyzeAsync(
             new VmafRequest {
                 ReferencePath = reference.Path,
@@ -410,7 +417,8 @@ public sealed class TranscodeAnalysisCollector {
                 ReferenceHeight = reference.Height,
                 DistortedWidth = size?.Width,
                 DistortedHeight = size?.Height,
-                BitrateBps = TranscodeProfile.ParseBitrateKbps(variant.Bitrate) * 1000L
+                BitrateBps = measured > 0 ? measured : target,
+                TargetBitrateBps = target
             },
             cancellationToken);
 
@@ -628,8 +636,15 @@ public sealed class TranscodeAnalysisCollector {
             if (summary.BitrateBps != null) {
                 children.Add(Leaf(
                     $"{formatId}.vmaf.{variant.Label}_bitrate",
-                    $"{variant.Label} Target bitrate",
+                    $"{variant.Label} Measured bitrate",
                     FormatBitrate(summary.BitrateBps.Value)));
+            }
+
+            if (summary.TargetBitrateBps != null) {
+                children.Add(Leaf(
+                    $"{formatId}.vmaf.{variant.Label}_target_bitrate",
+                    $"{variant.Label} Target bitrate",
+                    FormatBitrate(summary.TargetBitrateBps.Value)));
             }
         }
 

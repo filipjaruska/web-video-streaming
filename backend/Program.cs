@@ -44,6 +44,7 @@ builder.Services.AddSingleton<MediaProbe>();
 builder.Services.AddSingleton<Transcoder>();
 builder.Services.AddSingleton<SitiAnalyzer>();
 builder.Services.AddSingleton<VmafAnalyzer>();
+builder.Services.AddSingleton<ComplexityWindows>();
 builder.Services.AddSingleton<ProcessingQueue>();
 builder.Services.AddHostedService<ProcessingWorker>();
 
@@ -55,6 +56,7 @@ builder.Services.AddScoped<SubtitleExtractor>();
 builder.Services.AddScoped<TranscodeAnalysisCollector>();
 builder.Services.AddScoped<EncodeGrid>();
 builder.Services.AddScoped<LadderDerivation>();
+builder.Services.AddScoped<LadderComparison>();
 builder.Services.AddScoped<ProcessingPipeline>();
 
 builder.Services.Configure<FormOptions>(options =>
@@ -107,7 +109,6 @@ app.Logger.LogInformation("Video storage root: {StorageRoot}", storageRoot);
 
 app.Run();
 
-/// <summary>Creates the parent directory when the connection string points at a SQLite file.</summary>
 static void EnsureSqliteDirectory(string connectionString) {
     const string prefix = "Data Source=";
     var start = connectionString.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);

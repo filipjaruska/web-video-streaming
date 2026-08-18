@@ -218,4 +218,75 @@ public static class MediaFormatting {
             logger.LogWarning(ex, "Failed to delete temp directory {Path}", path);
         }
     }
+
+    public static void TryDeleteFile(string path) {
+        try {
+            if (File.Exists(path)) {
+                File.Delete(path);
+            }
+        } catch (IOException) {
+            // Best effort — a stale scratch file is harmless, it lives in a temp dir.
+        }
+    }
+
+    /// <summary>
+    /// The video stream's nominal frame rate as ffmpeg's rational string (e.g. <c>24000/1001</c>),
+    /// or null when the file carries no usable rate.
+    /// </summary>
+    public static async Task<string?> TryGetFrameRateAsync(
+        MediaProbe probe,
+        string path,
+        CancellationToken cancellationToken) {
+        var result = await probe.ProbeAsync(path, cancellationToken);
+        if (!result.Success || result.ProbeData == null) {
+            return null;
+        }
+
+        using (result.ProbeData) {
+            if (!result.ProbeData.RootElement.TryGetProperty("streams", out var streams)) {
+                return null;
+            }
+
+            foreach (var stream in streams.EnumerateArray()) {
+                if (GetString(stream, "codec_type") != "video") {
+                    continue;
+                }
+
+                var rate = GetString(stream, "r_frame_rate") ?? GetString(stream, "avg_frame_rate");
+                return string.IsNullOrWhiteSpace(rate) || rate.StartsWith("0/") ? null : rate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads a media file's real bitrate, estimating from size ÷ duration when the container does
+    /// not carry one. Both the encode grid and the packaged-rendition collector need this, and both
+    /// must measure it the same way for their rate-quality points to be comparable.
+    /// </summary>
+    public static async Task<long> MeasureBitrateBpsAsync(
+        MediaProbe probe,
+        string path,
+        CancellationToken cancellationToken) {
+        var result = await probe.ProbeAsync(path, cancellationToken);
+        if (!result.Success || result.ProbeData == null) {
+            return 0;
+        }
+
+        using (result.ProbeData) {
+            if (!result.ProbeData.RootElement.TryGetProperty("format", out var format)) {
+                return 0;
+            }
+
+            var bitRate = GetLong(format, "bit_rate");
+            if (bitRate is > 0) {
+                return bitRate.Value;
+            }
+
+            var size = GetLong(format, "size") ?? 0;
+            var duration = GetDouble(format, "duration") ?? 0;
+            return size > 0 && duration > 0.1 ? (long)(size * 8.0 / duration) : 0;
+        }
+    }
 }
