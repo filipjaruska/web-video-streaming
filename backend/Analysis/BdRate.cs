@@ -25,7 +25,7 @@ public sealed class BdRateResult {
 
 /// <summary>
 /// Bjøntegaard delta rate: the average bitrate difference between two rate-quality curves over the
-/// quality range they share (thesis 3.3.6).
+/// quality range they share.
 /// </summary>
 /// <remarks>
 /// Comparing two ladders at a single operating point says almost nothing, because the two ladders

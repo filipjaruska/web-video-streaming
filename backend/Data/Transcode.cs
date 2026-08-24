@@ -12,7 +12,7 @@ public enum LadderKind {
     Dynamic = 1,
 
     /// <summary>
-    /// Reserved for the animation-optimized packaging run (thesis 4.3.1.3 / 4.4.3). Nothing
+    /// Reserved for the animation-optimized packaging run. Nothing
     /// produces one yet — the pipeline has no third pass.
     /// </summary>
     AnimationTuned = 2

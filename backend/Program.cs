@@ -44,7 +44,6 @@ builder.Services.AddSingleton<MediaProbe>();
 builder.Services.AddSingleton<Transcoder>();
 builder.Services.AddSingleton<SitiAnalyzer>();
 builder.Services.AddSingleton<VmafAnalyzer>();
-builder.Services.AddSingleton<ComplexityWindows>();
 builder.Services.AddSingleton<ProcessingQueue>();
 builder.Services.AddHostedService<ProcessingWorker>();
 
@@ -57,6 +56,7 @@ builder.Services.AddScoped<TranscodeAnalysisCollector>();
 builder.Services.AddScoped<EncodeGrid>();
 builder.Services.AddScoped<LadderDerivation>();
 builder.Services.AddScoped<LadderComparison>();
+builder.Services.AddScoped<TuningComparison>();
 builder.Services.AddScoped<ProcessingPipeline>();
 
 builder.Services.Configure<FormOptions>(options =>

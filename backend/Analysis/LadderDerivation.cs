@@ -3,6 +3,27 @@ using static WebWVideoStreamingAPI.Analysis.AnalysisNodes;
 
 namespace WebWVideoStreamingAPI.Analysis;
 
+/// <summary>What distinguishes one derivation run from another.</summary>
+/// <param name="ProfileName">Name stamped on the emitted profile and used as its provenance.</param>
+/// <param name="Recipe">Encoder settings the grid was measured under and packaging must repeat.</param>
+/// <param name="CambiPenaltyWeight">
+/// VMAF points deducted per unit of CAMBI when ranking candidates. Zero leaves selection on VMAF
+/// alone; the animation run raises it so banding on flat cel-shaded areas — which VMAF scarcely
+/// registers — actually costs a candidate something.
+/// </param>
+/// <param name="SeriesKey">Which series field the result is stored under.</param>
+public sealed record LadderDerivationOptions(
+    string ProfileName,
+    EncodeRecipe Recipe,
+    double CambiPenaltyWeight = 0,
+    string SeriesKey = "derivedLadder") {
+    public static readonly LadderDerivationOptions Dynamic =
+        new("vmaf-crossover", EncodeRecipe.Default);
+
+    public static readonly LadderDerivationOptions Animation =
+        new("animation-tuned", EncodeRecipe.Animation, CambiPenaltyWeight: 0.5, SeriesKey: "animationLadder");
+}
+
 public sealed class LadderDerivationResult {
     public bool Success { get; init; }
     public string? ErrorMessage { get; init; }
@@ -13,7 +34,7 @@ public sealed class LadderDerivationResult {
 /// <summary>
 /// Derives a content-specific bitrate ladder from encode-grid RD points by building the convex
 /// hull of quality against log-bitrate and taking one operating point per resolution at a shared
-/// hull slope (thesis 4.3.1.2).
+/// hull slope.
 /// </summary>
 public sealed class LadderDerivation {
     /// <summary>
@@ -32,7 +53,7 @@ public sealed class LadderDerivation {
 
     /// <summary>
     /// Quality range the top rung is kept inside regardless of slope. The ceiling stops λ paying
-    /// for quality no viewer can distinguish (thesis 3.3.3); the floor stops exceptionally hard
+    /// for quality no viewer can distinguish; the floor stops exceptionally hard
     /// content from shipping a top rung that is visibly poor when the hull could do better.
     /// </summary>
     private const double TopRungCeiling = 95.0;
@@ -58,8 +79,12 @@ public sealed class LadderDerivation {
     public async Task<LadderDerivationResult> DeriveAsync(
         Guid staticTranscodeId,
         IReadOnlyList<EncodeGridPoint> points,
-        bool windowed = false,
+        LadderDerivationOptions options,
         CancellationToken cancellationToken = default) {
+        foreach (var point in points) {
+            point.CambiPenaltyWeight = options.CambiPenaltyWeight;
+        }
+
         var usable = points
             .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0 && point.DecisionQuality > 0)
             .ToList();
@@ -88,36 +113,42 @@ public sealed class LadderDerivation {
             var (variants, derivedVariants) = BuildVariants(selected);
 
             var profile = new TranscodeProfile {
-                Name = "vmaf-crossover",
+                Name = options.ProfileName,
                 Variants = variants,
                 VideoCodec = TranscodeProfile.Default.VideoCodec,
                 AudioCodec = TranscodeProfile.Default.AudioCodec,
                 AudioBitrate = TranscodeProfile.Default.AudioBitrate,
-                SegmentDurationSeconds = TranscodeProfile.Default.SegmentDurationSeconds
+                SegmentDurationSeconds = TranscodeProfile.Default.SegmentDurationSeconds,
+                // Packaging must repeat the settings the grid was measured under.
+                Tune = options.Recipe.Tune,
+                Decimate = options.Recipe.Decimate
             };
 
             var document = new DerivedLadderDocument {
                 Name = profile.Name,
                 Variants = derivedVariants,
                 Lambda = lambda,
-                CrossoverBps = FindCrossovers(hulls, envelope),
-                Windowed = windowed
+                CrossoverBps = FindCrossovers(hulls, envelope)
             };
 
+            var animation = options.SeriesKey != "derivedLadder";
             await _store.MergeSeriesAsync(
                 AnalysisOwner.Transcode,
                 staticTranscodeId,
-                new AnalysisSeriesDocument { EncodeGrid = points.ToList(), DerivedLadder = document },
+                animation
+                    ? new AnalysisSeriesDocument { EncodeGridAnimation = points.ToList(), AnimationLadder = document }
+                    : new AnalysisSeriesDocument { EncodeGrid = points.ToList(), DerivedLadder = document },
                 cancellationToken);
 
             await _store.UpsertSectionAsync(
                 AnalysisOwner.Transcode,
                 staticTranscodeId,
-                BuildSection(document),
+                BuildSection(document, options),
                 cancellationToken);
 
             _logger.LogInformation(
-                "Derived dynamic ladder with {Count} rungs at lambda={Lambda:0.###} for static transcode {TranscodeId}",
+                "Derived {Name} ladder with {Count} rungs at lambda={Lambda:0.###} for static transcode {TranscodeId}",
+                options.ProfileName,
                 variants.Count,
                 lambda,
                 staticTranscodeId);
@@ -460,28 +491,43 @@ public sealed class LadderDerivation {
             MediaFormatting.ParseResolution(variant.Resolution)?.Height ?? 0;
     }
 
-    private static AnalysisTreeNode BuildSection(DerivedLadderDocument document) {
+    private static AnalysisTreeNode BuildSection(
+        DerivedLadderDocument document,
+        LadderDerivationOptions options) {
+        var key = options.SeriesKey;
+
         var children = document.Variants
             .Select(variant => Leaf(
-                $"derivedLadder.{variant.Label}",
+                $"{key}.{variant.Label}",
                 variant.Label,
                 variant.PredictedVmafHarmonic != null
                     ? $"{variant.Bitrate} (CRF {variant.Crf}, pred. harm. VMAF {Format(variant.PredictedVmafHarmonic)})"
                     : variant.Bitrate))
             .ToList();
 
-        children.Insert(0, Leaf("derivedLadder.lambda", "Hull slope (λ)", Format(document.Lambda)));
+        children.Insert(0, Leaf($"{key}.lambda", "Hull slope (λ)", Format(document.Lambda)));
+
+        if (options.CambiPenaltyWeight > 0) {
+            children.Insert(1, Leaf(
+                $"{key}.cambiPenalty",
+                "CAMBI penalty",
+                $"{Format(options.CambiPenaltyWeight)} VMAF per CAMBI unit"));
+        }
 
         foreach (var (pair, bitrate) in document.CrossoverBps ?? []) {
             children.Add(Leaf(
-                $"derivedLadder.crossover.{pair}",
+                $"{key}.crossover.{pair}",
                 $"Crossover {pair.Replace(">", " → ")}",
                 MediaFormatting.FormatBitrate(bitrate)));
         }
 
+        var label = options.Recipe.Tune == null
+            ? "Derived ladder (VMAF crossover)"
+            : $"Animation-tuned ladder ({options.Recipe.Tune})";
+
         return Section(
-            "derivedLadder",
-            "Derived ladder (VMAF crossover)",
+            key,
+            label,
             "ladder-derivation",
             AnalysisSectionStatus.Completed,
             children: children);

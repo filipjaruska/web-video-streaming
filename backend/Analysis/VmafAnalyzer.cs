@@ -115,20 +115,23 @@ public sealed class VmafAnalyzer {
                     request.ReferencePath);
             }
 
-            var run = await RunAsync(request, models, frameRate, tempDir, logName, cancellationToken);
+            var withCambi = true;
+            var run = await RunAsync(request, models, frameRate, withCambi, tempDir, logName, cancellationToken);
 
-            // Multi-model syntax needs libvmaf 2.x and survives some fiddly filter-option escaping.
-            // Rather than guess at the build, fall back to the primary model alone and keep going
-            // with a usable score — the NEG comparison is a bonus, not a dependency.
-            if (!run.Success && models.Count > 1) {
+            // Multi-model syntax and the CAMBI feature both need libvmaf 2.x, and the model option
+            // survives some fiddly filter-option escaping. Rather than guess at the build, fall back
+            // to the primary model with no extra feature and keep going with a usable score — NEG
+            // and CAMBI are bonuses, not dependencies.
+            if (!run.Success && (models.Count > 1 || withCambi)) {
                 _logger.LogWarning(
-                    "Multi-model VMAF failed, retrying with {Model} alone: {Error}",
+                    "Extended VMAF run failed, retrying with {Model} alone: {Error}",
                     models[0].Version,
                     DescribeFailure(run.ErrorMessage ?? run.StdErr));
 
                 TryDeleteFile(logPath);
                 models = [models[0]];
-                run = await RunAsync(request, models, frameRate, tempDir, logName, cancellationToken);
+                withCambi = false;
+                run = await RunAsync(request, models, frameRate, withCambi, tempDir, logName, cancellationToken);
             }
 
             if (!run.Success) {
@@ -169,26 +172,36 @@ public sealed class VmafAnalyzer {
         VmafRequest request,
         IReadOnlyList<VmafModel> models,
         string? frameRate,
+        bool withCambi,
         string tempDir,
         string logName,
         CancellationToken cancellationToken) {
         var threads = Math.Clamp(Environment.ProcessorCount, 1, 8);
 
-        // Force both inputs onto one constant frame rate before scoring, then renumber timestamps
-        // from the frame index. Without this, libvmaf's framesync pairs frames by timestamp, and a
-        // variable-frame-rate source — which anime shot "on twos" typically is, because duplicate
-        // frames get dropped — ends up matched against the wrong frames of the constant-rate
-        // encode. The symptom is brutal and quiet: most frames score correctly while a large
-        // fraction score ~0, dragging the mean far down and the harmonic mean to nearly nothing.
+        // Zero each input's start offset, force both onto one constant frame rate, then renumber
+        // timestamps from the frame index. All three steps are load-bearing, and skipping any of
+        // them fails the same brutally quiet way: most frames score correctly while a large
+        // fraction score ~0, dragging the mean down and the harmonic mean to nearly nothing.
+        //
+        // The frame rate handles a variable-rate source — which anime shot "on twos" typically is,
+        // because duplicate frames get dropped — being matched against a constant-rate encode.
+        // The leading PTS-STARTPTS handles a subtler case: containers routinely carry a small
+        // non-zero video start time (an edit list, a seek offset), and an encode of that source
+        // gets its own, different one. Since `fps` grids from its first input timestamp, two
+        // different origins put the two streams a fraction of a frame out of phase — enough to
+        // gut the score on fast motion. Measured on a clip whose source started at 0.021 s and
+        // whose encode started at 0.041 s: 75.05 mean / 5.55 harmonic / 17 dead frames without it,
+        // 94.44 / 94.41 / none with it.
         var sync = frameRate != null
-            ? $"fps={frameRate},settb=AVTB,setpts=N/FRAME_RATE/TB"
+            ? $"setpts=PTS-STARTPTS,fps={frameRate},settb=AVTB,setpts=N/FRAME_RATE/TB"
             : "settb=AVTB,setpts=PTS-STARTPTS";
 
         // Distorted first (main), reference second — both upscaled to reference resolution.
         var filter =
             $"[0:v]scale={request.ReferenceWidth}:{request.ReferenceHeight}:flags=bicubic,{sync}[dist];" +
             $"[1:v]scale={request.ReferenceWidth}:{request.ReferenceHeight}:flags=bicubic,{sync}[ref];" +
-            $"[dist][ref]libvmaf=model={FormatModelOption(models)}:log_fmt=json:log_path={logName}:n_threads={threads}";
+            $"[dist][ref]libvmaf=model={FormatModelOption(models)}{(withCambi ? ":feature=name=cambi" : "")}:" +
+            $"log_fmt=json:log_path={logName}:n_threads={threads}";
 
         var args =
             $@"-hide_banner -y -i ""{request.DistortedPath}"" -i ""{request.ReferencePath}"" " +
@@ -244,6 +257,17 @@ public sealed class VmafAnalyzer {
 
                 series.SummaryByModel ??= [];
                 series.SummaryByModel[model.Name] = summary;
+            }
+
+            // CAMBI is a feature, not a model, so it pools once regardless of how many models ran.
+            if (pooled.TryGetProperty("cambi", out var cambi)) {
+                if (cambi.TryGetProperty("mean", out var cambiMean) && TryReadDouble(cambiMean, out var cambiValue)) {
+                    series.Summary.Cambi = cambiValue;
+                }
+
+                if (cambi.TryGetProperty("max", out var cambiMax) && TryReadDouble(cambiMax, out var cambiMaxValue)) {
+                    series.Summary.CambiMax = cambiMaxValue;
+                }
             }
         }
 

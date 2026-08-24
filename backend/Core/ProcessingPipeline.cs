@@ -27,8 +27,8 @@ public sealed class ProcessingPipeline {
     private readonly TranscodeAnalysisCollector _collector;
     private readonly EncodeGrid _encodeGrid;
     private readonly LadderDerivation _ladderDerivation;
-    private readonly ComplexityWindows _complexityWindows;
     private readonly LadderComparison _ladderComparison;
+    private readonly TuningComparison _tuningComparison;
     private readonly ILogger<ProcessingPipeline> _logger;
 
     public ProcessingPipeline(
@@ -42,8 +42,8 @@ public sealed class ProcessingPipeline {
         TranscodeAnalysisCollector collector,
         EncodeGrid encodeGrid,
         LadderDerivation ladderDerivation,
-        ComplexityWindows complexityWindows,
         LadderComparison ladderComparison,
+        TuningComparison tuningComparison,
         ILogger<ProcessingPipeline> logger) {
         _dbContext = dbContext;
         _paths = paths;
@@ -55,8 +55,8 @@ public sealed class ProcessingPipeline {
         _collector = collector;
         _encodeGrid = encodeGrid;
         _ladderDerivation = ladderDerivation;
-        _complexityWindows = complexityWindows;
         _ladderComparison = ladderComparison;
+        _tuningComparison = tuningComparison;
         _logger = logger;
     }
 
@@ -101,11 +101,13 @@ public sealed class ProcessingPipeline {
             video.ActiveTranscodeId = staticPackage.Transcode.Id;
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            dynamicTranscodeId = await RunDynamicLadderAsync(
+            var derived = await RunDerivedLaddersAsync(
                 video,
                 sourcePath,
                 staticPackage.Transcode.Id,
                 cancellationToken);
+
+            dynamicTranscodeId = derived.AnimationTranscodeId ?? derived.DynamicTranscodeId;
         }
 
         await CompleteSessionsAsync(video, staticPackage.Succeeded, cancellationToken);
@@ -176,7 +178,10 @@ public sealed class ProcessingPipeline {
                     return StepOutcome.Failed(result.ErrorMessage ?? "SI/TI analysis failed");
                 }
 
-                return StepOutcome.Ok([result.Section], new AnalysisSeriesDocument { Siti = result.Series });
+                return StepOutcome.Ok([result.Section], new AnalysisSeriesDocument {
+                    Siti = result.Series,
+                    DuplicateFrameShare = SitiAnalyzer.DuplicateFrameShare(result.Series)
+                });
             }, cancellationToken);
 
             await ReportAsync(video, PipelineStep.Thumbnail, cancellationToken);
@@ -381,99 +386,163 @@ public sealed class ProcessingPipeline {
         return result;
     }
 
-    // —— Dynamic ladder ————————————————————————————————————————————————————
+    // —— Derived ladders ———————————————————————————————————————————————————
+
+    /// <summary>Steps and settings that distinguish one derived-ladder pass from another.</summary>
+    private sealed record DerivedLadderPass(
+        LadderKind Kind,
+        LadderDerivationOptions Options,
+        PipelineStep GridStep,
+        PipelineStep DeriveStep,
+        PipelineStep HlsStep,
+        PipelineStep DashStep,
+        PipelineStep SitiStep,
+        PipelineStep VmafStep,
+        string GridSectionId,
+        double CambiPenaltyWeight);
+
+    private static readonly DerivedLadderPass DynamicPass = new(
+        LadderKind.Dynamic, LadderDerivationOptions.Dynamic,
+        PipelineStep.EncodeGrid, PipelineStep.DeriveLadder,
+        PipelineStep.DynamicHls, PipelineStep.DynamicDash,
+        PipelineStep.DynamicSiti, PipelineStep.DynamicVmaf,
+        "encodeGrid", 0);
+
+    private static readonly DerivedLadderPass AnimationPass = new(
+        LadderKind.AnimationTuned, LadderDerivationOptions.Animation,
+        PipelineStep.AnimationGrid, PipelineStep.AnimationDeriveLadder,
+        PipelineStep.AnimationHls, PipelineStep.AnimationDash,
+        PipelineStep.AnimationSiti, PipelineStep.AnimationVmaf,
+        "encodeGridAnimation", LadderDerivationOptions.Animation.CambiPenaltyWeight);
 
     /// <summary>
-    /// Sweeps the encode grid, derives a crossover ladder from it, and packages that ladder.
+    /// Builds the representative excerpt once, then runs each derived ladder over it: sweep the
+    /// grid, derive, package, verify. Finally compares the codec tunings and every ladder against
+    /// the static baseline.
+    /// </summary>
+    /// <remarks>
+    /// The excerpt is built here rather than inside each pass on purpose. Both grids must score
+    /// against the identical file for their matched (resolution, CRF) samples to isolate the
+    /// encoder settings — that pairing is the entire basis of the tuning comparison — and building
+    /// it once also avoids paying for a lossless re-cut twice.
     /// Entirely soft-fail: the static ladder is already serving, so anything here that goes wrong
     /// is logged and the run still counts as a success.
-    /// </summary>
-    private async Task<Guid?> RunDynamicLadderAsync(
+    /// </remarks>
+    private async Task<DerivedLadderOutcome> RunDerivedLaddersAsync(
         Video video,
         string sourcePath,
         Guid staticTranscodeId,
         CancellationToken cancellationToken) {
-        var workDir = MediaFormatting.NewTempDir("representative");
+        Guid? dynamicId = null;
+        Guid? animationId = null;
 
         try {
-            await ReportAsync(video, PipelineStep.RepresentativeClip, cancellationToken);
-            var clip = await BuildRepresentativeClipAsync(video, sourcePath, workDir, cancellationToken);
+            var (dynamicPackage, baseGrid) = await RunPassAsync(
+                video, sourcePath, staticTranscodeId, DynamicPass, cancellationToken);
+            dynamicId = dynamicPackage?.Transcode.Id;
 
-            await ReportAsync(video, PipelineStep.EncodeGrid, cancellationToken);
+            var (animationPackage, tunedGrid) = await RunPassAsync(
+                video, sourcePath, staticTranscodeId, AnimationPass, cancellationToken);
+            animationId = animationPackage?.Transcode.Id;
 
-            var grid = await _encodeGrid.RunAsync(
-                video.RouteId,
-                staticTranscodeId,
-                clip,
-                onProgress: (done, total, ct) => ReportGridAsync(video, done, total, ct),
-                cancellationToken);
-
-            if (!grid.Success) {
-                _logger.LogWarning("Encode grid failed for {RouteId}: {Error}", video.RouteId, grid.ErrorMessage);
-                return null;
+            if (baseGrid != null && tunedGrid != null) {
+                await ReportAsync(video, PipelineStep.TuningComparison, cancellationToken);
+                await _tuningComparison.CompareAsync(
+                    staticTranscodeId, baseGrid, tunedGrid, AnimationPass.Options.Recipe, cancellationToken);
             }
 
-            await ReportAsync(video, PipelineStep.DeriveLadder, cancellationToken);
-            var derived = await _ladderDerivation.DeriveAsync(
-                staticTranscodeId,
-                grid.Points,
-                grid.Windowed,
-                cancellationToken);
+            // Best available ladder serves: animation, then dynamic, then the static already set.
+            var active = animationPackage?.Succeeded == true ? animationPackage
+                : dynamicPackage?.Succeeded == true ? dynamicPackage
+                : null;
 
-            if (!derived.Success || derived.Profile == null) {
-                _logger.LogWarning("Ladder derivation failed for {RouteId}: {Error}", video.RouteId, derived.ErrorMessage);
-                return null;
-            }
-
-            var dynamicPackage = await PackageAndAnalyzeAsync(
-                video,
-                sourcePath,
-                LadderKind.Dynamic,
-                derived.Profile,
-                derivedFrom: staticTranscodeId,
-                PipelineStep.DynamicHls,
-                PipelineStep.DynamicDash,
-                PipelineStep.DynamicSiti,
-                PipelineStep.DynamicVmaf,
-                cancellationToken);
-
-            if (dynamicPackage.Succeeded) {
-                video.ActiveTranscodeId = dynamicPackage.Transcode.Id;
+            if (active != null) {
+                video.ActiveTranscodeId = active.Transcode.Id;
                 await _dbContext.SaveChangesAsync(cancellationToken);
-
-                await ReportAsync(video, PipelineStep.LadderComparison, cancellationToken);
-                await _ladderComparison.CompareAsync(
-                    staticTranscodeId,
-                    dynamicPackage.Transcode.Id,
-                    cancellationToken);
-            } else {
-                _logger.LogWarning(
-                    "Dynamic ladder packaging failed for {RouteId}: {Error}",
-                    video.RouteId,
-                    dynamicPackage.ErrorMessage);
             }
 
-            return dynamicPackage.Transcode.Id;
+            var candidates = new List<(LadderKind, Guid)>();
+            if (dynamicPackage?.Succeeded == true) {
+                candidates.Add((LadderKind.Dynamic, dynamicPackage.Transcode.Id));
+            }
+
+            if (animationPackage?.Succeeded == true) {
+                candidates.Add((LadderKind.AnimationTuned, animationPackage.Transcode.Id));
+            }
+
+            if (candidates.Count > 0) {
+                await ReportAsync(video, PipelineStep.LadderComparison, cancellationToken);
+                await _ladderComparison.CompareAsync(staticTranscodeId, candidates, cancellationToken);
+            }
+
+            return new DerivedLadderOutcome(dynamicId, animationId);
         } catch (Exception ex) {
-            _logger.LogWarning(ex, "Dynamic ladder path failed for {RouteId}", video.RouteId);
-            return null;
-        } finally {
-            MediaFormatting.TryDeleteDirectory(workDir, _logger);
+            _logger.LogWarning(ex, "Derived ladder path failed for {RouteId}", video.RouteId);
+            return new DerivedLadderOutcome(dynamicId, animationId);
         }
     }
 
-    /// <summary>
-    /// Cuts the grid's input down to the clip's busiest stretches, reusing the SI/TI series the
-    /// source analysis already produced. Falls back to the whole source whenever that series is
-    /// missing, which is what happens when SI/TI analysis itself failed earlier in the run.
-    /// </summary>
-    private async Task<RepresentativeClipResult> BuildRepresentativeClipAsync(
+    private sealed record DerivedLadderOutcome(Guid? DynamicTranscodeId, Guid? AnimationTranscodeId);
+
+    /// <summary>Grid, derivation and packaging for one ladder. Returns null on any soft failure.</summary>
+    private async Task<(PackageResult? Package, List<EncodeGridPoint>? Grid)> RunPassAsync(
         Video video,
         string sourcePath,
-        string workDir,
+        Guid staticTranscodeId,
+        DerivedLadderPass pass,
         CancellationToken cancellationToken) {
-        var stored = await _analysis.TryGetAsync(AnalysisOwner.Source, video.Id, cancellationToken);
-        return await _complexityWindows.BuildAsync(sourcePath, stored?.Series.Siti, workDir, cancellationToken);
+        await ReportAsync(video, pass.GridStep, cancellationToken);
+
+        var grid = await _encodeGrid.RunAsync(
+            video.RouteId,
+            staticTranscodeId,
+            sourcePath,
+            pass.Options.Recipe,
+            pass.CambiPenaltyWeight,
+            pass.GridSectionId,
+            onProgress: (done, total, ct) => ReportGridAsync(video, done, total, pass.GridStep, ct),
+            cancellationToken);
+
+        if (!grid.Success) {
+            _logger.LogWarning(
+                "{Ladder} encode grid failed for {RouteId}: {Error}",
+                pass.Kind, video.RouteId, grid.ErrorMessage);
+            return (null, null);
+        }
+
+        await ReportAsync(video, pass.DeriveStep, cancellationToken);
+        var derived = await _ladderDerivation.DeriveAsync(
+            staticTranscodeId,
+            grid.Points,
+            pass.Options,
+            cancellationToken);
+
+        if (!derived.Success || derived.Profile == null) {
+            _logger.LogWarning(
+                "{Ladder} derivation failed for {RouteId}: {Error}",
+                pass.Kind, video.RouteId, derived.ErrorMessage);
+            return (null, grid.Points);
+        }
+
+        var package = await PackageAndAnalyzeAsync(
+            video,
+            sourcePath,
+            pass.Kind,
+            derived.Profile,
+            derivedFrom: staticTranscodeId,
+            pass.HlsStep,
+            pass.DashStep,
+            pass.SitiStep,
+            pass.VmafStep,
+            cancellationToken);
+
+        if (!package.Succeeded) {
+            _logger.LogWarning(
+                "{Ladder} packaging failed for {RouteId}: {Error}",
+                pass.Kind, video.RouteId, package.ErrorMessage);
+        }
+
+        return (package, grid.Points);
     }
 
     // —— Session progress ——————————————————————————————————————————————————
@@ -487,11 +556,16 @@ public sealed class ProcessingPipeline {
             gridTotal: null,
             cancellationToken);
 
-    private Task ReportGridAsync(Video video, int done, int total, CancellationToken cancellationToken) =>
+    private Task ReportGridAsync(
+        Video video,
+        int done,
+        int total,
+        PipelineStep step,
+        CancellationToken cancellationToken) =>
         WriteProgressAsync(
             video,
-            ProcessingEta.GridPercent(done, total),
-            ProcessingEta.GridLabel(done, total),
+            ProcessingEta.GridPercent(done, total, step),
+            ProcessingEta.GridLabel(done, total, step),
             done,
             total,
             cancellationToken);

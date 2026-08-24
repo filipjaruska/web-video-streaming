@@ -135,25 +135,55 @@ public sealed class SitiAnalyzer {
         return null;
     }
 
+    /// <summary>
+    /// Share of frames identical to their predecessor, read straight off the TI series.
+    /// </summary>
+    /// <remarks>
+    /// TI is the standard deviation of the frame difference, so a frame duplicated from the one
+    /// before it scores exactly zero. Animation drawn "on twos" holds each drawing for two frames
+    /// and therefore produces a large share of these. No extra analysis is needed — the number falls
+    /// out of a series that has already been computed — and it is what says, per clip, whether
+    /// dropping duplicate frames before encoding was ever going to be worth anything.
+    /// </remarks>
+    public static double? DuplicateFrameShare(SitiSeriesData series) {
+        // The first TI sample has no predecessor to differ from.
+        var comparable = series.Ti.Skip(1).ToList();
+        if (comparable.Count == 0) {
+            return null;
+        }
+
+        return comparable.Count(value => value <= 1e-9) / (double)comparable.Count;
+    }
+
     private static AnalysisTreeNode BuildSection(SitiSeriesData series) {
         var si = ComputeStats(series.Si);
         var ti = ComputeStats(series.Ti);
+        var duplicates = DuplicateFrameShare(series);
+
+        var children = new List<AnalysisTreeNode> {
+            StatLeaf("siti.avg_si", "Average SI", si.Average),
+            StatLeaf("siti.max_si", "Max SI", si.Max),
+            StatLeaf("siti.min_si", "Min SI", si.Min),
+            StatLeaf("siti.std_si", "Std dev SI", si.StdDev),
+            StatLeaf("siti.avg_ti", "Average TI", ti.Average),
+            StatLeaf("siti.max_ti", "Max TI", ti.Max),
+            StatLeaf("siti.min_ti", "Min TI", ti.Min),
+            StatLeaf("siti.std_ti", "Std dev TI", ti.StdDev)
+        };
+
+        if (duplicates != null) {
+            children.Add(Leaf(
+                "siti.duplicate_frames",
+                "Duplicate frames (shot \"on twos\")",
+                $"{duplicates.Value * 100:0.#} %"));
+        }
 
         return Section(
             "siti",
             "SI/TI Analysis",
             "ffmpeg-siti",
             AnalysisSectionStatus.Completed,
-            children: [
-                StatLeaf("siti.avg_si", "Average SI", si.Average),
-                StatLeaf("siti.max_si", "Max SI", si.Max),
-                StatLeaf("siti.min_si", "Min SI", si.Min),
-                StatLeaf("siti.std_si", "Std dev SI", si.StdDev),
-                StatLeaf("siti.avg_ti", "Average TI", ti.Average),
-                StatLeaf("siti.max_ti", "Max TI", ti.Max),
-                StatLeaf("siti.min_ti", "Min TI", ti.Min),
-                StatLeaf("siti.std_ti", "Std dev TI", ti.StdDev)
-            ]);
+            children: children);
     }
 
     private static (double Average, double Min, double Max, double StdDev) ComputeStats(IReadOnlyList<double> values) {

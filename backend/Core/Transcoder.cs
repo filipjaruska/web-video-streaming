@@ -6,6 +6,46 @@ namespace WebWVideoStreamingAPI.Core;
 
 public sealed record TranscodeVariant(string Resolution, string Bitrate, string Label);
 
+/// <summary>
+/// The encoder settings a ladder is built and packaged with. Everything that differs between the
+/// generic and the animation-optimized run lives here, so the two runs differ in exactly one object.
+/// </summary>
+/// <remarks>
+/// The same recipe drives the encode grid and the packaging of the ladder derived from it. That is
+/// deliberate: rate-quality points measured under different encoder settings than the ones that
+/// ship would describe a ladder nobody encodes.
+/// </remarks>
+public sealed record EncodeRecipe(string? Tune, bool Decimate, int[] CoarseCrfs) {
+    public static readonly EncodeRecipe Default =
+        new(Tune: null, Decimate: false, CoarseCrfs: [20, 24, 28, 32, 36, 40]);
+
+    /// <summary>
+    /// Animation settings: x264's own animation tune and a CRF range shifted upward because flat
+    /// cel-shaded areas stay watchable further up the scale than live action does.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The range is shifted by dropping the bottom step and adding one at the top rather than by
+    /// offsetting every value, so it still shares CRF 24–40 with <see cref="Default"/>. Those shared
+    /// values are what the tuned-versus-untuned comparison joins on; an offset grid
+    /// would leave it with no matched pairs at all.
+    /// </para>
+    /// <para>
+    /// <see cref="Decimate"/> is deliberately <c>false</c> despite animation being the obvious
+    /// candidate for it. Dropping duplicate frames only saves bits if the output stays
+    /// variable-rate — re-inserting them as CFR just hands x264 skip frames it was already coding
+    /// for almost nothing — and variable-rate output was measured to shorten the stream (613 frames
+    /// / 28.6 s against the source's 720 / 30.0 s, because a static tail decimates away entirely)
+    /// and to scatter HLS segment durations across 5.6–7.2 s against a requested 6. Either effect
+    /// alone would make this ladder non-comparable with the other two: unequal duration breaks the
+    /// rate comparison, and unequal segmentation confounds the protocol and network tests that
+    /// assume identical segmenting. The flag stays plumbed so the trade-off can be re-measured.
+    /// </para>
+    /// </remarks>
+    public static readonly EncodeRecipe Animation =
+        new(Tune: "animation", Decimate: false, CoarseCrfs: [24, 28, 32, 36, 40, 44]);
+}
+
 public sealed class TranscodeProfile {
     public string Name { get; init; } = "default";
     public IReadOnlyList<TranscodeVariant> Variants { get; init; } = Array.Empty<TranscodeVariant>();
@@ -15,11 +55,14 @@ public sealed class TranscodeProfile {
     public int SegmentDurationSeconds { get; init; } = 6;
 
     /// <summary>
-    /// x264 <c>-tune</c> value, or null for the encoder's defaults. Null on both shipped profiles;
-    /// the hook exists so the animation-tuned run (thesis 4.3.1.3 / 4.4.3) becomes a profile change
-    /// rather than an encoder change, and so packaging stays identical in every other respect.
+    /// x264 <c>-tune</c> value, or null for the encoder's defaults. Null on the static and dynamic
+    /// profiles, set on the animation one, so a tuned run is a profile
+    /// change rather than an encoder change and packaging stays identical in every other respect.
     /// </summary>
     public string? Tune { get; init; }
+
+    /// <summary>Drop near-duplicate frames before encoding — animation shot "on twos".</summary>
+    public bool Decimate { get; init; }
 
     public static TranscodeProfile Default { get; } = new() {
         Name = "default",
@@ -122,8 +165,10 @@ public sealed class Transcoder {
             args.Append($@"-y -i ""{inputPath}"" ");
 
             var filterComplex = profile.Variants
-                .Select((variant, index) => $"[0:v]scale={variant.Resolution}[v{index}]");
+                .Select((variant, index) =>
+                    $"[0:v]{PreScaleFilter(profile)}scale={variant.Resolution}[v{index}]");
             args.Append($@"-filter_complex ""{string.Join(";", filterComplex)}"" ");
+            args.Append(FpsModeArg(profile));
 
             for (var i = 0; i < profile.Variants.Count; i++) {
                 var variant = profile.Variants[i];
@@ -222,14 +267,37 @@ public sealed class Transcoder {
     private static string TuneArg(TranscodeProfile profile) =>
         string.IsNullOrWhiteSpace(profile.Tune) ? "" : $"-tune {profile.Tune} ";
 
+    /// <summary>Filters that run before scaling, as a chain prefix ending in a comma.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>setpts=PTS-STARTPTS</c> is not cosmetic. Containers routinely carry a small non-zero
+    /// video start time (an edit list, a seek offset), and encoding from one without zeroing it
+    /// makes the encoder pad the head to cover the gap — a 120-frame source came back as a
+    /// 121-frame rendition. That extra frame shifts the whole stream by one against the source, so
+    /// every full-reference score afterwards is comparing frame N to frame N−1: measured 34.65 mean
+    /// with 54 dead frames before, 92.27 with none after. It also keeps renditions frame-aligned
+    /// with each other, which ABR switching depends on.
+    /// </para>
+    /// <para>
+    /// <c>mpdecimate</c> drops frames outright, which leaves gaps in the timeline that only
+    /// <c>-fps_mode vfr</c> (see <see cref="FpsModeArg"/>) resolves correctly. The two always
+    /// travel together.
+    /// </para>
+    /// </remarks>
+    private static string PreScaleFilter(TranscodeProfile profile) =>
+        "setpts=PTS-STARTPTS," + (profile.Decimate ? "mpdecimate," : "");
+
+    private static string FpsModeArg(TranscodeProfile profile) =>
+        profile.Decimate ? "-fps_mode vfr " : "";
+
     /// <summary>Encodes a single MP4 at a resolution + CRF for encode-grid RD sampling (not HLS/DASH).</summary>
     public async Task<TranscodeResult> EncodeCrfAsync(
         string inputPath,
         string outputPath,
         string resolution,
         int crf,
+        EncodeRecipe? recipe = null,
         string preset = "medium",
-        string? tune = null,
         CancellationToken cancellationToken = default) {
         var result = new TranscodeResult { Success = true };
 
@@ -238,13 +306,18 @@ public sealed class Transcoder {
             EnsureParentDir(outputPath);
             await _runner.EnsureAvailableAsync("ffmpeg", cancellationToken);
 
-            // Video-only CRF sample — audio omitted to speed encode-grid sweeps. The tune must match
-            // whatever the ladder will eventually be packaged with, or the RD points describe a
-            // different encoder than the one that ships.
-            var tuneArg = string.IsNullOrWhiteSpace(tune) ? "" : $"-tune {tune} ";
+            // Video-only CRF sample — audio omitted to speed encode-grid sweeps. The recipe must
+            // match whatever the ladder will eventually be packaged with, or the RD points describe
+            // a different encoder than the one that ships.
+            recipe ??= EncodeRecipe.Default;
+            var tuneArg = string.IsNullOrWhiteSpace(recipe.Tune) ? "" : $"-tune {recipe.Tune} ";
+            // Zero the start offset for the same reason packaging does — see PreScaleFilter.
+            var preScale = "setpts=PTS-STARTPTS," + (recipe.Decimate ? "mpdecimate," : "");
+            var fpsMode = recipe.Decimate ? "-fps_mode vfr " : "";
+
             var args =
                 $@"-y -i ""{inputPath}"" " +
-                $@"-vf scale={resolution} " +
+                $@"-vf ""{preScale}scale={resolution}"" {fpsMode}" +
                 $@"-c:v libx264 -crf {crf} -preset {preset} {tuneArg}-pix_fmt yuv420p " +
                 $@"-an ""{outputPath}""";
 
@@ -268,64 +341,6 @@ public sealed class Transcoder {
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// Concatenates the given time ranges of the source into one short clip, used as both the input
-    /// and the VMAF reference for the encode grid.
-    /// </summary>
-    /// <remarks>
-    /// CRF 0 in yuv420p is mathematically lossless, and the source has already been normalized to
-    /// 8-bit yuv420p by <see cref="NormalizeSourceAsync"/>, so the excerpt carries exactly the
-    /// pixels the grid would have seen in the full clip. Anything lossy here would silently bias
-    /// every VMAF score measured against it.
-    /// </remarks>
-    public async Task<TranscodeResult> ExtractWindowsAsync(
-        string inputPath,
-        string outputPath,
-        IReadOnlyList<(double StartSec, double EndSec)> windows,
-        CancellationToken cancellationToken = default) {
-        var result = new TranscodeResult { Success = true };
-
-        try {
-            RequireInput(inputPath);
-            EnsureParentDir(outputPath);
-            await _runner.EnsureAvailableAsync("ffmpeg", cancellationToken);
-
-            var select = string.Join("+", windows.Select(window =>
-                $"between(t,{Seconds(window.StartSec)},{Seconds(window.EndSec)})"));
-
-            // setpts closes the gaps the dropped frames leave behind, so the excerpt plays as one
-            // continuous clip with a monotonic timeline.
-            var args =
-                $@"-y -i ""{inputPath}"" " +
-                $@"-vf ""select='{select}',setpts=N/FRAME_RATE/TB"" " +
-                $@"-c:v libx264 -crf 0 -preset veryfast -pix_fmt yuv420p " +
-                $@"-an ""{outputPath}""";
-
-            var run = await _runner.RunAsync(
-                "ffmpeg",
-                args,
-                timeout: TimeSpan.FromMinutes(30),
-                cancellationToken: cancellationToken);
-
-            if (!run.Success || !File.Exists(outputPath)) {
-                result.Success = false;
-                result.ErrorMessage = run.ErrorMessage ?? run.StdErr ?? "Window extraction failed";
-                return result;
-            }
-
-            result.GeneratedFiles.Add(Path.GetFileName(outputPath));
-        } catch (Exception ex) {
-            _logger.LogError(ex, "Failed to extract complexity windows from {InputPath}", inputPath);
-            result.Success = false;
-            result.ErrorMessage = ex.Message;
-        }
-
-        return result;
-
-        static string Seconds(double value) =>
-            value.ToString("0.###", CultureInfo.InvariantCulture);
     }
 
     /// <summary>Remuxes a packaged HLS rendition into a plain MP4 so it can be probed and scored.</summary>
@@ -431,7 +446,8 @@ public sealed class Transcoder {
         var bitrateKbps = TranscodeProfile.ParseBitrateKbps(variant.Bitrate);
 
         var args = $@"-y -i ""{inputPath}"" " +
-            $@"-vf scale={variant.Resolution} " +
+            $@"-vf ""{PreScaleFilter(profile)}scale={variant.Resolution}"" " +
+            $@"{FpsModeArg(profile)}" +
             $@"-c:v {profile.VideoCodec} {TuneArg(profile)}-b:v {variant.Bitrate} -maxrate {variant.Bitrate} -bufsize {bitrateKbps * 2}k " +
             $@"-c:a {profile.AudioCodec} -b:a {profile.AudioBitrate} -ac 2 " +
             $@"-f hls " +

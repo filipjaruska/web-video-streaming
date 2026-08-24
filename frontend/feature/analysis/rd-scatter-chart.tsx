@@ -167,11 +167,13 @@ function RdLegend({
 interface RdScatterChartProps {
   encodeGrid: EncodeGridPoint[];
   derivedLadder?: DerivedLadderDocument | null;
+  title?: string;
 }
 
 export function RdScatterChart({
   encodeGrid,
   derivedLadder,
+  title = "Rate–distortion (encode grid)",
 }: RdScatterChartProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = React.useState<{
@@ -342,9 +344,7 @@ export function RdScatterChart({
       <CardHeader className="border-b py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1.5">
-            <CardTitle className="text-base">
-              Rate–distortion (encode grid)
-            </CardTitle>
+            <CardTitle className="text-base">{title}</CardTitle>
             <CardDescription>
               Measured bitrate vs VMAF per resolution×CRF sample. The line traces
               the convex hull across all resolutions; stars mark the derived

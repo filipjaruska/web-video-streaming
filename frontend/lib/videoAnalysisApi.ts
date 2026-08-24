@@ -50,6 +50,9 @@ export interface VmafSummary {
   bitrateBps?: number;
   /** Bitrate the rung was asked to hit — x264 does not land exactly on it. */
   targetBitrateBps?: number;
+  /** Mean CAMBI banding score. Higher is worse; a clean source sits near zero. */
+  cambi?: number;
+  cambiMax?: number;
 }
 
 export interface VmafSeriesData {
@@ -76,6 +79,7 @@ export interface EncodeGridPoint {
   vmafMin?: number;
   vmafNegMean?: number;
   vmafNegHarmonicMean?: number;
+  cambi?: number;
   /** Point lies on the convex hull spanning every resolution. */
   onHull?: boolean;
   error?: string;
@@ -101,8 +105,6 @@ export interface DerivedLadderDocument {
   lambda?: number;
   /** Bitrate where the hull hands over between resolutions, keyed "1080p>720p". */
   crossoverBps?: Record<string, number>;
-  /** Grid was scored on an SI/TI-selected excerpt rather than the whole clip. */
-  windowed?: boolean;
 }
 
 export interface LadderComparisonPoint {
@@ -110,17 +112,48 @@ export interface LadderComparisonPoint {
   bitrateBps: number;
   vmafHarmonicMean: number;
   vmafMean: number;
+  cambi?: number;
 }
 
-export interface LadderComparisonDocument {
-  /** Negative means the derived ladder delivers equal quality for fewer bits. */
+export interface LadderComparisonEntry {
+  /** "dynamic" | "animation" */
+  ladderKind: string;
+  label: string;
+  /** Negative means this ladder delivers equal quality for fewer bits than static. */
   bdRatePercent: number;
   overlapLowVmaf: number;
   overlapHighVmaf: number;
   bitrateSavingPercent?: number;
   vmafGainAtEqualBitrate?: number;
+  points: LadderComparisonPoint[];
+  error?: string;
+}
+
+export interface LadderComparisonDocument {
+  ladders: LadderComparisonEntry[];
   staticPoints: LadderComparisonPoint[];
-  dynamicPoints: LadderComparisonPoint[];
+}
+
+export interface TuningComparisonPair {
+  label: string;
+  height: number;
+  crf: number;
+  baseVmaf: number;
+  tunedVmaf: number;
+  vmafDelta: number;
+  baseCambi?: number;
+  tunedCambi?: number;
+  baseBitrateBps: number;
+  tunedBitrateBps: number;
+}
+
+export interface TuningComparisonDocument {
+  tune?: string;
+  decimate: boolean;
+  bdRatePercent?: number;
+  meanVmafDelta?: number;
+  meanCambiDelta?: number;
+  pairs: TuningComparisonPair[];
   error?: string;
 }
 
@@ -129,8 +162,13 @@ export interface AnalysisSeriesDocument {
   sitiByFormat?: FormatSitiSeries;
   vmafByFormat?: FormatVmafSeries;
   encodeGrid?: EncodeGridPoint[];
+  encodeGridAnimation?: EncodeGridPoint[];
   derivedLadder?: DerivedLadderDocument;
+  animationLadder?: DerivedLadderDocument;
   ladderComparison?: LadderComparisonDocument;
+  tuningComparison?: TuningComparisonDocument;
+  /** Share of source frames identical to their predecessor — animation shot "on twos". */
+  duplicateFrameShare?: number;
 }
 
 export type AnalysisTargetKind = "source" | "transcode" | "futureTest";
