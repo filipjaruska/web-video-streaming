@@ -11,13 +11,19 @@ public enum PipelineStep {
     StaticDash,
     StaticSiti,
     StaticVmaf,
-    RepresentativeClip,
     EncodeGrid,
     DeriveLadder,
     DynamicHls,
     DynamicDash,
     DynamicSiti,
     DynamicVmaf,
+    AnimationGrid,
+    AnimationDeriveLadder,
+    AnimationHls,
+    AnimationDash,
+    AnimationSiti,
+    AnimationVmaf,
+    TuningComparison,
     LadderComparison
 }
 
@@ -27,9 +33,13 @@ public enum PipelineStep {
 /// lived in two files and had to be kept in sync by hand.
 /// </summary>
 public static class ProcessingEta {
-    /// <summary>Percent range the encode grid's sub-progress is mapped across.</summary>
-    public const int GridStartPercent = 45;
-    public const int GridEndPercent = 76;
+    /// <summary>Percent range the generic encode grid's sub-progress is mapped across.</summary>
+    public const int GridStartPercent = 26;
+    public const int GridEndPercent = 52;
+
+    /// <summary>Percent range the animation encode grid's sub-progress is mapped across.</summary>
+    public const int AnimationGridStartPercent = 63;
+    public const int AnimationGridEndPercent = 89;
 
     private static readonly Dictionary<PipelineStep, (int Percent, string Label)> Steps = new() {
         [PipelineStep.Starting] = (8, "Preparing source"),
@@ -37,43 +47,54 @@ public static class ProcessingEta {
         [PipelineStep.Subtitles] = (12, "Extracting subtitles"),
         [PipelineStep.SourceSiti] = (14, "SI/TI analysis"),
         [PipelineStep.Thumbnail] = (16, "Generating thumbnail"),
-        [PipelineStep.StaticHls] = (22, "HLS transcoding"),
-        [PipelineStep.StaticDash] = (28, "DASH transcoding"),
-        [PipelineStep.StaticSiti] = (32, "Analyzing transcodes (SI/TI)"),
-        [PipelineStep.StaticVmaf] = (40, "VMAF analysis"),
-        [PipelineStep.RepresentativeClip] = (43, "Selecting complexity windows"),
+        [PipelineStep.StaticHls] = (18, "HLS transcoding"),
+        [PipelineStep.StaticDash] = (20, "DASH transcoding"),
+        [PipelineStep.StaticSiti] = (22, "Analyzing transcodes (SI/TI)"),
+        [PipelineStep.StaticVmaf] = (24, "VMAF analysis"),
         [PipelineStep.EncodeGrid] = (GridStartPercent, "Encode grid (CRF × resolution)"),
-        [PipelineStep.DeriveLadder] = (78, "Deriving VMAF crossover ladder"),
-        [PipelineStep.DynamicHls] = (82, "Dynamic HLS packaging"),
-        [PipelineStep.DynamicDash] = (86, "Dynamic DASH packaging"),
-        [PipelineStep.DynamicSiti] = (90, "Analyzing dynamic ladder (SI/TI)"),
-        [PipelineStep.DynamicVmaf] = (95, "Dynamic ladder VMAF"),
-        [PipelineStep.LadderComparison] = (98, "Comparing ladders (BD-rate)")
+        [PipelineStep.DeriveLadder] = (52, "Deriving VMAF crossover ladder"),
+        [PipelineStep.DynamicHls] = (53, "Dynamic HLS packaging"),
+        [PipelineStep.DynamicDash] = (55, "Dynamic DASH packaging"),
+        [PipelineStep.DynamicSiti] = (57, "Analyzing dynamic ladder (SI/TI)"),
+        [PipelineStep.DynamicVmaf] = (59, "Dynamic ladder VMAF"),
+        [PipelineStep.AnimationGrid] = (AnimationGridStartPercent, "Encode grid (animation tuning)"),
+        [PipelineStep.AnimationDeriveLadder] = (89, "Deriving animation-tuned ladder"),
+        [PipelineStep.AnimationHls] = (90, "Animation HLS packaging"),
+        [PipelineStep.AnimationDash] = (92, "Animation DASH packaging"),
+        [PipelineStep.AnimationSiti] = (94, "Analyzing animation ladder (SI/TI)"),
+        [PipelineStep.AnimationVmaf] = (96, "Animation ladder VMAF"),
+        [PipelineStep.TuningComparison] = (98, "Comparing codec tuning"),
+        [PipelineStep.LadderComparison] = (99, "Comparing ladders (BD-rate)")
     };
 
     // Relative cost of the work spanning each percentage band (arbitrary units, not seconds).
-    // The encode grid used to dominate wall clock outright; now that its samples are encoded from a
-    // short SI/TI-selected excerpt rather than the whole clip, it costs roughly a third of what it
-    // did even though it takes more samples, and packaging is the heaviest stage again.
+    // Each grid encodes and scores ~45 samples over the whole clip, roughly three times the work of
+    // a full packaging pass, so the two grids together dominate everything else combined.
     private static readonly Band[] Bands = [
         new(8, 10, 2),
         new(10, 12, 3),
-        new(12, 14, 8),
-        new(14, 16, 2),
-        new(16, 22, 18),
-        new(22, 28, 18),
-        new(28, 32, 10),
-        new(32, 40, 14),
-        new(40, 43, 2),
-        new(43, GridStartPercent, 4),
-        new(GridStartPercent, GridEndPercent, 28),
-        new(76, 78, 1),
-        new(78, 82, 14),
-        new(82, 86, 14),
-        new(86, 90, 8),
-        new(90, 95, 12),
-        new(95, 98, 1),
-        new(98, 100, 1)
+        new(12, 14, 3),
+        new(14, 16, 8),
+        new(16, 18, 1),
+        new(18, 20, 8),
+        new(20, 22, 8),
+        new(22, 24, 6),
+        new(24, GridStartPercent, 10),
+        new(GridStartPercent, GridEndPercent, 90),
+        new(52, 53, 1),
+        new(53, 55, 8),
+        new(55, 57, 8),
+        new(57, 59, 6),
+        new(59, 61, 10),
+        new(61, AnimationGridStartPercent, 1),
+        new(AnimationGridStartPercent, AnimationGridEndPercent, 90),
+        new(89, 90, 1),
+        new(90, 92, 8),
+        new(92, 94, 8),
+        new(94, 96, 6),
+        new(96, 98, 10),
+        new(98, 99, 1),
+        new(99, 100, 1)
     ];
 
     private const double DefaultSecondsPerWeight = 4.5;
@@ -85,18 +106,26 @@ public static class ProcessingEta {
 
     public static string LabelFor(PipelineStep step) => Steps[step].Label;
 
-    /// <summary>Maps encode-grid completion onto the percentage band reserved for it.</summary>
-    public static int GridPercent(int done, int total) {
+    /// <summary>Maps encode-grid completion onto the percentage band reserved for that grid.</summary>
+    public static int GridPercent(int done, int total, PipelineStep step = PipelineStep.EncodeGrid) {
+        var (start, end) = BandFor(step);
         if (total <= 0) {
-            return GridStartPercent;
+            return start;
         }
 
-        var span = GridEndPercent - GridStartPercent;
-        var percent = GridStartPercent + (int)Math.Round((double)span * done / total);
-        return Math.Clamp(percent, GridStartPercent, GridEndPercent);
+        var percent = start + (int)Math.Round((double)(end - start) * done / total);
+        return Math.Clamp(percent, start, end);
     }
 
-    public static string GridLabel(int done, int total) => $"Encode grid ({done}/{total})";
+    public static string GridLabel(int done, int total, PipelineStep step = PipelineStep.EncodeGrid) =>
+        step == PipelineStep.AnimationGrid
+            ? $"Encode grid — animation ({done}/{total})"
+            : $"Encode grid ({done}/{total})";
+
+    private static (int Start, int End) BandFor(PipelineStep step) =>
+        step == PipelineStep.AnimationGrid
+            ? (AnimationGridStartPercent, AnimationGridEndPercent)
+            : (GridStartPercent, GridEndPercent);
 
     public static int? EstimateRemainingSeconds(
         int progressPercent,
@@ -206,6 +235,9 @@ public static class ProcessingEta {
     }
 
     private readonly record struct Band(int Start, int End, double Weight) {
-        public bool IsEncodeGrid => Start == GridStartPercent && End == GridEndPercent;
+        /// <summary>Either encode-grid band — both report a real done/total the ETA can use.</summary>
+        public bool IsEncodeGrid =>
+            (Start == GridStartPercent && End == GridEndPercent) ||
+            (Start == AnimationGridStartPercent && End == AnimationGridEndPercent);
     }
 }
