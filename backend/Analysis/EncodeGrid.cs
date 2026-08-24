@@ -7,7 +7,6 @@ public sealed class EncodeGridResult {
     public bool Success { get; init; }
     public string? ErrorMessage { get; init; }
     public List<EncodeGridPoint> Points { get; init; } = [];
-    public bool Windowed { get; init; }
 }
 
 /// <summary>
@@ -15,12 +14,6 @@ public sealed class EncodeGridResult {
 /// The resulting RD points are what <see cref="LadderDerivation"/> builds a ladder from.
 /// </summary>
 public sealed class EncodeGrid {
-    /// <summary>
-    /// First pass: a wide, evenly spaced sweep that brackets every resolution's usable range.
-    /// Deliberately coarse — the refinement pass is what buys resolution where it matters.
-    /// </summary>
-    private static readonly int[] CoarseCrfs = [20, 24, 28, 32, 36, 40];
-
     /// <summary>
     /// The quality band ladder rungs are actually chosen from. A coarse grid leaves the hull
     /// under-sampled exactly here, which is what makes crossover estimates unstable.
@@ -55,14 +48,17 @@ public sealed class EncodeGrid {
     public async Task<EncodeGridResult> RunAsync(
         string routeId,
         Guid staticTranscodeId,
-        RepresentativeClipResult clip,
+        string sourcePath,
+        EncodeRecipe recipe,
+        double cambiPenaltyWeight = 0,
+        string sectionId = "encodeGrid",
         Func<int, int, CancellationToken, Task>? onProgress = null,
         CancellationToken cancellationToken = default) {
         var points = new List<EncodeGridPoint>();
         var tempRoot = NewTempDir("encode-grid");
 
         try {
-            var reference = await ResolveReferenceResolutionAsync(clip.Path, cancellationToken);
+            var reference = await ResolveReferenceResolutionAsync(sourcePath, cancellationToken);
             if (reference == null) {
                 return new EncodeGridResult {
                     Success = false,
@@ -86,9 +82,10 @@ public sealed class EncodeGrid {
                 var size = ParseResolution(variant.Resolution) ?? (0, 0);
                 var forVariant = new List<EncodeGridPoint>();
 
-                foreach (var crf in CoarseCrfs) {
+                foreach (var crf in recipe.CoarseCrfs) {
                     cancellationToken.ThrowIfCancellationRequested();
-                    forVariant.Add(await SampleAsync(clip, tempRoot, variant, size, crf, reference.Value, cancellationToken));
+                    forVariant.Add(await SampleAsync(
+                        sourcePath, tempRoot, variant, size, crf, reference.Value, recipe, cambiPenaltyWeight, cancellationToken));
                     await ReportAsync(onProgress, ++done, total, cancellationToken);
                 }
 
@@ -100,7 +97,8 @@ public sealed class EncodeGrid {
                     }
 
                     cancellationToken.ThrowIfCancellationRequested();
-                    forVariant.Add(await SampleAsync(clip, tempRoot, variant, size, crf.Value, reference.Value, cancellationToken));
+                    forVariant.Add(await SampleAsync(
+                        sourcePath, tempRoot, variant, size, crf.Value, reference.Value, recipe, cambiPenaltyWeight, cancellationToken));
                     await ReportAsync(onProgress, ++done, total, cancellationToken);
                 }
 
@@ -113,31 +111,32 @@ public sealed class EncodeGrid {
 
             var succeeded = points.Any(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0);
 
+            var animation = sectionId != "encodeGrid";
             await _store.MergeSeriesAsync(
                 AnalysisOwner.Transcode,
                 staticTranscodeId,
-                new AnalysisSeriesDocument { EncodeGrid = points },
+                animation
+                    ? new AnalysisSeriesDocument { EncodeGridAnimation = points }
+                    : new AnalysisSeriesDocument { EncodeGrid = points },
                 cancellationToken);
 
             await _store.UpsertSectionAsync(
                 AnalysisOwner.Transcode,
                 staticTranscodeId,
-                BuildSection(points, clip),
+                BuildSection(points, recipe, sectionId),
                 cancellationToken);
 
             return new EncodeGridResult {
                 Success = succeeded,
                 ErrorMessage = succeeded ? null : "No successful encode-grid points",
-                Points = points,
-                Windowed = clip.Windowed
+                Points = points
             };
         } catch (Exception ex) {
             _logger.LogWarning(ex, "Encode grid failed for {RouteId}", routeId);
             return new EncodeGridResult {
                 Success = false,
                 ErrorMessage = ex.Message,
-                Points = points,
-                Windowed = clip.Windowed
+                Points = points
             };
         } finally {
             TryDeleteDirectory(tempRoot, _logger);
@@ -199,26 +198,30 @@ public sealed class EncodeGrid {
         onProgress?.Invoke(done, Math.Max(done, total), cancellationToken) ?? Task.CompletedTask;
 
     private async Task<EncodeGridPoint> SampleAsync(
-        RepresentativeClipResult clip,
+        string sourcePath,
         string tempRoot,
         TranscodeVariant variant,
         (int Width, int Height) size,
         int crf,
         (int Width, int Height) reference,
+        EncodeRecipe recipe,
+        double cambiPenaltyWeight,
         CancellationToken cancellationToken) {
         var point = new EncodeGridPoint {
             Label = variant.Label,
             Width = size.Width,
             Height = size.Height,
-            Crf = crf
+            Crf = crf,
+            CambiPenaltyWeight = cambiPenaltyWeight
         };
 
         var outPath = Path.Combine(tempRoot, $"{variant.Label}_crf{crf}.mp4");
         var encode = await _transcoder.EncodeCrfAsync(
-            clip.Path,
+            sourcePath,
             outPath,
             variant.Resolution,
             crf,
+            recipe,
             cancellationToken: cancellationToken);
 
         if (!encode.Success || !File.Exists(outPath)) {
@@ -236,7 +239,7 @@ public sealed class EncodeGrid {
 
         var vmaf = await _vmaf.AnalyzeAsync(
             new VmafRequest {
-                ReferencePath = clip.Path,
+                ReferencePath = sourcePath,
                 DistortedPath = outPath,
                 ReferenceWidth = reference.Width,
                 ReferenceHeight = reference.Height,
@@ -254,6 +257,7 @@ public sealed class EncodeGrid {
         point.VmafMean = vmaf.Series.Summary.Mean;
         point.VmafHarmonicMean = vmaf.Series.Summary.HarmonicMean;
         point.VmafMin = vmaf.Series.Summary.Min;
+        point.Cambi = vmaf.Series.Summary.Cambi;
 
         if (vmaf.Series.SummaryByModel?.TryGetValue(VmafAnalyzer.NegModelName, out var neg) == true) {
             point.VmafNegMean = neg.Mean;
@@ -261,12 +265,14 @@ public sealed class EncodeGrid {
         }
 
         _logger.LogInformation(
-            "Encode grid {Label} CRF{Crf}: bitrate={Bitrate} vmaf={Vmaf:0.##} hvmaf={Harmonic:0.##}",
+            "Encode grid{Suffix} {Label} CRF{Crf}: bitrate={Bitrate} vmaf={Vmaf:0.##} hvmaf={Harmonic:0.##} cambi={Cambi:0.##}",
+            recipe.Tune == null ? "" : $" [{recipe.Tune}]",
             point.Label,
             point.Crf,
             point.BitrateBps,
             point.VmafMean,
-            point.VmafHarmonicMean);
+            point.VmafHarmonicMean,
+            point.Cambi);
 
         return point;
     }
@@ -286,30 +292,32 @@ public sealed class EncodeGrid {
         }
     }
 
-    private static AnalysisTreeNode BuildSection(List<EncodeGridPoint> points, RepresentativeClipResult clip) {
+    private static AnalysisTreeNode BuildSection(
+        List<EncodeGridPoint> points,
+        EncodeRecipe recipe,
+        string sectionId) {
         var succeeded = points.Count(point => string.IsNullOrEmpty(point.Error));
 
         var children = points
             .OrderByDescending(point => point.Height)
             .ThenBy(point => point.Crf)
             .Select(point => Leaf(
-                $"encodeGrid.{point.Label}.crf{point.Crf}",
+                $"{sectionId}.{point.Label}.crf{point.Crf}",
                 $"{point.Label} CRF{point.Crf}",
                 string.IsNullOrEmpty(point.Error)
-                    ? $"VMAF {point.VmafMean:0.##} (harm. {point.VmafHarmonicMean:0.##}) @ {FormatBitrate(point.BitrateBps)}"
+                    ? $"VMAF {point.VmafMean:0.##} (harm. {point.VmafHarmonicMean:0.##})" +
+                      (point.Cambi is { } cambi ? $", CAMBI {cambi:0.##}" : "") +
+                      $" @ {FormatBitrate(point.BitrateBps)}"
                     : point.Error))
             .ToList();
 
-        children.Insert(0, Leaf(
-            "encodeGrid.scope",
-            "Scored on",
-            clip.Windowed
-                ? $"{clip.Windows.Count} SI/TI windows ({clip.DurationSec:0.#} s)"
-                : "whole clip"));
+        var label = recipe.Tune == null
+            ? "Encode grid (res × CRF)"
+            : $"Encode grid — {recipe.Tune}{(recipe.Decimate ? " + mpdecimate" : "")}";
 
         return Section(
-            "encodeGrid",
-            "Encode grid (res × CRF)",
+            sectionId,
+            label,
             "encode-grid",
             succeeded > 0 ? AnalysisSectionStatus.Completed : AnalysisSectionStatus.Failed,
             succeeded > 0 ? null : "No successful grid points",

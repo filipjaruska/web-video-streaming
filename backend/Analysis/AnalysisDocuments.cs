@@ -132,6 +132,17 @@ public sealed class VmafSummary {
     /// </summary>
     [JsonPropertyName("targetBitrateBps")]
     public long? TargetBitrateBps { get; set; }
+
+    /// <summary>
+    /// Mean CAMBI banding score of the distorted video. Higher is worse; a clean source sits near
+    /// zero. Unlike VMAF this is a no-reference measure — it reports the banding present in the
+    /// distorted frames rather than the difference from the reference.
+    /// </summary>
+    [JsonPropertyName("cambi")]
+    public double? Cambi { get; set; }
+
+    [JsonPropertyName("cambiMax")]
+    public double? CambiMax { get; set; }
 }
 
 public sealed class VmafSeriesData {
@@ -197,6 +208,10 @@ public sealed class EncodeGridPoint {
     [JsonPropertyName("vmafNegHarmonicMean")]
     public double? VmafNegHarmonicMean { get; set; }
 
+    /// <summary>Mean CAMBI banding score of this sample. Higher is worse.</summary>
+    [JsonPropertyName("cambi")]
+    public double? Cambi { get; set; }
+
     /// <summary>True when this point survives onto the global convex hull across all resolutions.</summary>
     [JsonPropertyName("onHull")]
     public bool OnHull { get; set; }
@@ -205,12 +220,29 @@ public sealed class EncodeGridPoint {
     public string? Error { get; set; }
 
     /// <summary>
-    /// The statistic ladder decisions are made on. Harmonic mean penalises brief quality dips far
-    /// more than the arithmetic mean, which is why it, and not the mean, drives rung selection.
+    /// Weight applied to <see cref="Cambi"/> when scoring this point, in VMAF points per unit of
+    /// CAMBI. Zero for the generic ladders; the animation ladder sets it so that banding, which
+    /// VMAF barely notices but which is the dominant artifact on flat cel-shaded areas, actually
+    /// costs a candidate something.
     /// </summary>
     [JsonIgnore]
+    public double CambiPenaltyWeight { get; set; }
+
+    /// <summary>
+    /// The statistic ladder decisions are made on. Harmonic mean penalizes brief quality dips far
+    /// more than the arithmetic mean, which is why it, and not the mean, drives rung selection.
+    /// </summary>
+    /// <remarks>
+    /// CAMBI enters as a penalty rather than a threshold on purpose. Measured across CRF on real
+    /// animation it is not monotonic: banding rises as quantization coarsens, peaks, then falls
+    /// again once gradients are destroyed outright and blocking replaces them. A "reject above N"
+    /// gate would therefore discard a mid-rate sample while admitting the visibly worse one below
+    /// it. Subtracting it keeps the ordering sane at every rate.
+    /// </remarks>
+    [JsonIgnore]
     public double DecisionQuality =>
-        VmafHarmonicMean is > 0 ? VmafHarmonicMean.Value : VmafMean;
+        (VmafHarmonicMean is > 0 ? VmafHarmonicMean.Value : VmafMean) -
+        CambiPenaltyWeight * (Cambi ?? 0);
 }
 
 public sealed class DerivedLadderVariant {
@@ -259,16 +291,28 @@ public sealed class DerivedLadderDocument {
     [JsonPropertyName("crossoverBps")]
     public Dictionary<string, long>? CrossoverBps { get; set; }
 
-    /// <summary>True when the encode grid was scored on an SI/TI-selected excerpt, not the whole clip.</summary>
-    [JsonPropertyName("windowed")]
-    public bool Windowed { get; set; }
 }
 
 /// <summary>
-/// BD-rate of the derived ladder against the static one, computed from the bitrates and scores
-/// actually measured on the packaged renditions of both.
+/// BD-rate of every derived ladder against the static baseline, computed from the bitrates and
+/// scores actually measured on the packaged renditions of each.
 /// </summary>
 public sealed class LadderComparisonDocument {
+    /// <summary>One entry per non-static ladder, keyed by ladder token ("dynamic", "animation").</summary>
+    [JsonPropertyName("ladders")]
+    public List<LadderComparisonEntry> Ladders { get; set; } = [];
+
+    [JsonPropertyName("staticPoints")]
+    public List<LadderComparisonPoint> StaticPoints { get; set; } = [];
+}
+
+public sealed class LadderComparisonEntry {
+    [JsonPropertyName("ladderKind")]
+    public string LadderKind { get; set; } = "";
+
+    [JsonPropertyName("label")]
+    public string Label { get; set; } = "";
+
     [JsonPropertyName("bdRatePercent")]
     public double BdRatePercent { get; set; }
 
@@ -286,11 +330,8 @@ public sealed class LadderComparisonDocument {
     [JsonPropertyName("vmafGainAtEqualBitrate")]
     public double? VmafGainAtEqualBitrate { get; set; }
 
-    [JsonPropertyName("staticPoints")]
-    public List<LadderComparisonPoint> StaticPoints { get; set; } = [];
-
-    [JsonPropertyName("dynamicPoints")]
-    public List<LadderComparisonPoint> DynamicPoints { get; set; } = [];
+    [JsonPropertyName("points")]
+    public List<LadderComparisonPoint> Points { get; set; } = [];
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
@@ -308,6 +349,75 @@ public sealed class LadderComparisonPoint {
 
     [JsonPropertyName("vmafMean")]
     public double VmafMean { get; set; }
+
+    [JsonPropertyName("cambi")]
+    public double? Cambi { get; set; }
+}
+
+/// <summary>
+/// Default x264 against the animation-tuned encoder, joined on matched (resolution, CRF) samples
+/// of the two encode grids.
+/// </summary>
+/// <remarks>
+/// Taken from the grids rather than from packaged renditions on purpose: the two ladders differ in
+/// bitrate by construction, so packaged rungs could never hold everything but the tune constant.
+/// Grid samples share the source excerpt, the resolution and the CRF, leaving the encoder settings
+/// as the only difference.
+/// </remarks>
+public sealed class TuningComparisonDocument {
+    [JsonPropertyName("tune")]
+    public string? Tune { get; set; }
+
+    [JsonPropertyName("decimate")]
+    public bool Decimate { get; set; }
+
+    /// <summary>BD-rate of the tuned curve against the untuned one. Negative means tuning wins.</summary>
+    [JsonPropertyName("bdRatePercent")]
+    public double? BdRatePercent { get; set; }
+
+    [JsonPropertyName("meanVmafDelta")]
+    public double? MeanVmafDelta { get; set; }
+
+    [JsonPropertyName("meanCambiDelta")]
+    public double? MeanCambiDelta { get; set; }
+
+    [JsonPropertyName("pairs")]
+    public List<TuningComparisonPair> Pairs { get; set; } = [];
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+public sealed class TuningComparisonPair {
+    [JsonPropertyName("label")]
+    public string Label { get; set; } = "";
+
+    [JsonPropertyName("height")]
+    public int Height { get; set; }
+
+    [JsonPropertyName("crf")]
+    public int Crf { get; set; }
+
+    [JsonPropertyName("baseVmaf")]
+    public double BaseVmaf { get; set; }
+
+    [JsonPropertyName("tunedVmaf")]
+    public double TunedVmaf { get; set; }
+
+    [JsonPropertyName("vmafDelta")]
+    public double VmafDelta { get; set; }
+
+    [JsonPropertyName("baseCambi")]
+    public double? BaseCambi { get; set; }
+
+    [JsonPropertyName("tunedCambi")]
+    public double? TunedCambi { get; set; }
+
+    [JsonPropertyName("baseBitrateBps")]
+    public long BaseBitrateBps { get; set; }
+
+    [JsonPropertyName("tunedBitrateBps")]
+    public long TunedBitrateBps { get; set; }
 }
 
 public sealed class AnalysisSeriesDocument {
@@ -323,11 +433,25 @@ public sealed class AnalysisSeriesDocument {
     [JsonPropertyName("encodeGrid")]
     public List<EncodeGridPoint>? EncodeGrid { get; set; }
 
+    /// <summary>The same sweep re-run with the animation encoder settings.</summary>
+    [JsonPropertyName("encodeGridAnimation")]
+    public List<EncodeGridPoint>? EncodeGridAnimation { get; set; }
+
     [JsonPropertyName("derivedLadder")]
     public DerivedLadderDocument? DerivedLadder { get; set; }
 
+    [JsonPropertyName("animationLadder")]
+    public DerivedLadderDocument? AnimationLadder { get; set; }
+
     [JsonPropertyName("ladderComparison")]
     public LadderComparisonDocument? LadderComparison { get; set; }
+
+    [JsonPropertyName("tuningComparison")]
+    public TuningComparisonDocument? TuningComparison { get; set; }
+
+    /// <summary>Share of source frames identical to their predecessor — animation shot "on twos".</summary>
+    [JsonPropertyName("duplicateFrameShare")]
+    public double? DuplicateFrameShare { get; set; }
 
     /// <summary>
     /// Field-wise merge so SI/TI, VMAF, encode-grid, the derived ladder, and the ladder comparison
@@ -339,8 +463,12 @@ public sealed class AnalysisSeriesDocument {
             SitiByFormat = MergeSiti(SitiByFormat, incoming.SitiByFormat),
             VmafByFormat = MergeVmaf(VmafByFormat, incoming.VmafByFormat),
             EncodeGrid = incoming.EncodeGrid ?? EncodeGrid,
+            EncodeGridAnimation = incoming.EncodeGridAnimation ?? EncodeGridAnimation,
             DerivedLadder = incoming.DerivedLadder ?? DerivedLadder,
-            LadderComparison = incoming.LadderComparison ?? LadderComparison
+            AnimationLadder = incoming.AnimationLadder ?? AnimationLadder,
+            LadderComparison = incoming.LadderComparison ?? LadderComparison,
+            TuningComparison = incoming.TuningComparison ?? TuningComparison,
+            DuplicateFrameShare = incoming.DuplicateFrameShare ?? DuplicateFrameShare
         };
     }
 
