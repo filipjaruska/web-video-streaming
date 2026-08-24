@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type {
   AnalysisTarget,
+  DerivedLadderDocument,
   FormatVmafSeries,
   FutureTestDescriptor,
   VmafSeriesData,
@@ -39,6 +40,76 @@ type FormatKey = "hls" | "dash";
 /** Keeps the sign visible on deltas, so a saving reads as "-32" rather than "32". */
 function formatSigned(value: number) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+/** One derived ladder's operating points. Renders nothing when that ladder was not produced. */
+function DerivedLadderTable({
+  ladder,
+  caption,
+}: {
+  ladder?: DerivedLadderDocument;
+  caption: string;
+}) {
+  if (!ladder || ladder.variants.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Derived ladder ({ladder.name})
+        </CardTitle>
+        <CardDescription>
+          {caption}
+          {ladder.lambda != null
+            ? ` Shared hull slope λ = ${ladder.lambda.toFixed(2)} VMAF per bitrate doubling.`
+            : ""}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b text-muted-foreground">
+                <th className="py-2 pr-3 font-medium">Rung</th>
+                <th className="py-2 pr-3 font-medium">Resolution</th>
+                <th className="py-2 pr-3 font-medium">Bitrate</th>
+                <th className="py-2 pr-3 font-medium">CRF</th>
+                <th className="py-2 pr-3 font-medium">Pred. VMAF</th>
+                <th className="py-2 font-medium">Pred. harm. VMAF</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ladder.variants.map((v) => (
+                <tr
+                  key={v.label}
+                  className="border-b border-border/50 last:border-b-0"
+                >
+                  <td className="py-1.5 pr-3 font-mono text-xs">{v.label}</td>
+                  <td className="py-1.5 pr-3 font-mono text-xs">
+                    {v.resolution.replace(":", "×")}
+                  </td>
+                  <td className="py-1.5 pr-3 font-mono text-xs">{v.bitrate}</td>
+                  <td className="py-1.5 pr-3 font-mono text-xs">
+                    {v.crf ?? "—"}
+                  </td>
+                  <td className="py-1.5 pr-3 font-mono text-xs">
+                    {v.predictedVmaf != null ? v.predictedVmaf.toFixed(2) : "—"}
+                  </td>
+                  <td className="py-1.5 font-mono text-xs">
+                    {v.predictedVmafHarmonic != null
+                      ? v.predictedVmafHarmonic.toFixed(2)
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function collectVmafEntries(
@@ -173,8 +244,11 @@ export function AnalysisTargetTabs({
         )?.data;
 
   const encodeGrid = staticTranscode?.series.encodeGrid ?? [];
+  const encodeGridAnimation = staticTranscode?.series.encodeGridAnimation ?? [];
   const derivedLadder = staticTranscode?.series.derivedLadder;
+  const animationLadder = staticTranscode?.series.animationLadder;
   const ladderComparison = staticTranscode?.series.ladderComparison;
+  const tuningComparison = staticTranscode?.series.tuningComparison;
 
   const { mediaNodes, sitiNode } = useMemo(
     () =>
@@ -264,63 +338,75 @@ export function AnalysisTargetTabs({
       </TabsContent>
 
       <TabsContent value="quality" className="mt-4 space-y-4">
-        {ladderComparison && (
+        {ladderComparison && ladderComparison.ladders.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Dynamic vs static ladder (BD-rate)
+                Derived ladders vs static (BD-rate)
               </CardTitle>
               <CardDescription>
-                Measured on the packaged renditions of both ladders. Negative
-                BD-rate means the derived ladder delivers the same quality for
-                fewer bits.
+                Measured on the packaged renditions of each ladder against the
+                static baseline. Negative BD-rate means that ladder delivers the
+                same quality for fewer bits.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {ladderComparison.error ? (
-                <p className="text-sm text-muted-foreground">
-                  {ladderComparison.error}
-                </p>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <div
-                      className={`text-2xl font-semibold tabular-nums ${
-                        ladderComparison.bdRatePercent < 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-amber-600 dark:text-amber-400"
-                      }`}
-                    >
-                      {formatSigned(ladderComparison.bdRatePercent)}%
+              <div className="space-y-4">
+                {ladderComparison.ladders.map((entry) =>
+                  entry.error ? (
+                    <div key={entry.ladderKind}>
+                      <div className="text-sm font-medium">{entry.label}</div>
+                      <p className="text-sm text-muted-foreground">
+                        {entry.error}
+                      </p>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      BD-rate over harmonic VMAF{" "}
-                      {ladderComparison.overlapLowVmaf.toFixed(1)}–
-                      {ladderComparison.overlapHighVmaf.toFixed(1)}
+                  ) : (
+                    <div key={entry.ladderKind}>
+                      <div className="mb-2 text-sm font-medium">
+                        {entry.label}
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <div>
+                          <div
+                            className={`text-2xl font-semibold tabular-nums ${
+                              entry.bdRatePercent < 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-amber-600 dark:text-amber-400"
+                            }`}
+                          >
+                            {formatSigned(entry.bdRatePercent)}%
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            BD-rate over harmonic VMAF{" "}
+                            {entry.overlapLowVmaf.toFixed(1)}–
+                            {entry.overlapHighVmaf.toFixed(1)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-semibold tabular-nums">
+                            {entry.bitrateSavingPercent != null
+                              ? `${formatSigned(entry.bitrateSavingPercent)}%`
+                              : "—"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Bitrate at equal quality
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-semibold tabular-nums">
+                            {entry.vmafGainAtEqualBitrate != null
+                              ? formatSigned(entry.vmafGainAtEqualBitrate)
+                              : "—"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            VMAF at equal bitrate
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-semibold tabular-nums">
-                      {ladderComparison.bitrateSavingPercent != null
-                        ? `${formatSigned(ladderComparison.bitrateSavingPercent)}%`
-                        : "—"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Bitrate at equal quality
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-semibold tabular-nums">
-                      {ladderComparison.vmafGainAtEqualBitrate != null
-                        ? formatSigned(ladderComparison.vmafGainAtEqualBitrate)
-                        : "—"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      VMAF at equal bitrate
-                    </div>
-                  </div>
-                </div>
-              )}
+                  ),
+                )}
+              </div>
             </CardContent>
           </Card>
         )}
@@ -331,73 +417,22 @@ export function AnalysisTargetTabs({
               encodeGrid={encodeGrid}
               derivedLadder={derivedLadder}
             />
-            {derivedLadder && derivedLadder.variants.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    Derived ladder ({derivedLadder.name})
-                  </CardTitle>
-                  <CardDescription>
-                    Hull operating points at a shared slope
-                    {derivedLadder.lambda != null
-                      ? ` (λ = ${derivedLadder.lambda.toFixed(2)} VMAF per bitrate doubling)`
-                      : ""}
-                    , used as CBR targets for the second (dynamic) packaging run
-                    {dynamicTranscode ? " — see Transcodes tab." : "."}
-                    {derivedLadder.windowed
-                      ? " Scored on SI/TI-selected complexity windows."
-                      : ""}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b text-muted-foreground">
-                          <th className="py-2 pr-3 font-medium">Rung</th>
-                          <th className="py-2 pr-3 font-medium">Resolution</th>
-                          <th className="py-2 pr-3 font-medium">Bitrate</th>
-                          <th className="py-2 pr-3 font-medium">CRF</th>
-                          <th className="py-2 pr-3 font-medium">Pred. VMAF</th>
-                          <th className="py-2 font-medium">Pred. harm. VMAF</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {derivedLadder.variants.map((v) => (
-                          <tr
-                            key={v.label}
-                            className="border-b border-border/50 last:border-b-0"
-                          >
-                            <td className="py-1.5 pr-3 font-mono text-xs">
-                              {v.label}
-                            </td>
-                            <td className="py-1.5 pr-3 font-mono text-xs">
-                              {v.resolution.replace(":", "×")}
-                            </td>
-                            <td className="py-1.5 pr-3 font-mono text-xs">
-                              {v.bitrate}
-                            </td>
-                            <td className="py-1.5 pr-3 font-mono text-xs">
-                              {v.crf ?? "—"}
-                            </td>
-                            <td className="py-1.5 pr-3 font-mono text-xs">
-                              {v.predictedVmaf != null
-                                ? v.predictedVmaf.toFixed(2)
-                                : "—"}
-                            </td>
-                            <td className="py-1.5 font-mono text-xs">
-                              {v.predictedVmafHarmonic != null
-                                ? v.predictedVmafHarmonic.toFixed(2)
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
+            <DerivedLadderTable
+              ladder={derivedLadder}
+              caption="Hull operating points used as CBR targets for the dynamic packaging run."
+            />
+
+            {encodeGridAnimation.length > 0 && (
+              <RdScatterChart
+                encodeGrid={encodeGridAnimation}
+                derivedLadder={animationLadder}
+                title="Rate–distortion (animation grid)"
+              />
             )}
+            <DerivedLadderTable
+              ladder={animationLadder}
+              caption="Same derivation re-run over the animation-tuned grid, with banding penalised in the selection."
+            />
           </>
         )}
 
@@ -530,7 +565,7 @@ export function AnalysisTargetTabs({
       </TabsContent>
 
       <TabsContent value="tuning" className="mt-4">
-        <TuningComparisonCard />
+        <TuningComparisonCard tuning={tuningComparison} />
       </TabsContent>
     </Tabs>
   );
