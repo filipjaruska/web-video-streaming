@@ -177,12 +177,40 @@ public sealed class SubtitleExtractor {
             return;
         }
 
+        // A declared-but-empty subtitle stream converts "successfully" into a file holding nothing
+        // but the WEBVTT header, which the player would offer as a selectable track that never
+        // shows a caption. Containers do carry such streams — a cut taken from a range with no
+        // dialogue keeps the track and drops every cue — so the file is checked for a cue timing
+        // rather than merely for being non-empty.
+        if (!await HasCuesAsync(outputPath, cancellationToken)) {
+            skipped.Add(new SkippedSubtitleInfo {
+                Id = id,
+                Language = language,
+                Label = label,
+                Reason = $"Subtitle stream ({codec}) contains no cues, so no track was published."
+            });
+            TryDelete(outputPath);
+            return;
+        }
+
         tracks.Add(new SubtitleTrackInfo {
             Id = id,
             Language = language,
             Label = label,
             FileName = fileName
         });
+    }
+
+    /// <summary>True when the WebVTT file holds at least one cue, identified by its timing arrow.</summary>
+    private static async Task<bool> HasCuesAsync(string path, CancellationToken cancellationToken) {
+        using var reader = new StreamReader(path);
+        while (await reader.ReadLineAsync(cancellationToken) is { } line) {
+            if (line.Contains("-->", StringComparison.Ordinal)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<SubtitleExtractionResult> WriteEmptyAsync(

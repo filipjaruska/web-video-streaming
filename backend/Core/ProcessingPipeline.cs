@@ -76,7 +76,13 @@ public sealed class ProcessingPipeline {
 
         await ReportAsync(video, PipelineStep.Starting, cancellationToken);
 
-        // Must run before anything reads the source: it rewrites the file in place, and every
+        // Subtitles have to be lifted out first. Normalization maps only video and audio and passes
+        // -sn, then overwrites the source in place, so any subtitle stream not taken before it runs
+        // is gone for good — and MP4 cannot carry the text codecs anyway, which is why the tracks
+        // are served as separate WebVTT side-cars.
+        await ExtractSubtitlesAsync(video, sourcePath, cancellationToken);
+
+        // Must run before anything measures the source: it rewrites the file in place, and every
         // later step (probe, SI/TI, VMAF reference, packaging) should see the normalized copy.
         await NormalizeSourceAsync(video, sourcePath, cancellationToken);
 
@@ -145,6 +151,22 @@ public sealed class ProcessingPipeline {
 
     // —— Source analysis ——————————————————————————————————————————————————
 
+    /// <summary>
+    /// Pulls every soft text subtitle track out to a WebVTT side-car, before normalization strips
+    /// the streams. Soft-fails like the other source steps, so a video with unreadable subtitles
+    /// still processes.
+    /// </summary>
+    private async Task ExtractSubtitlesAsync(Video video, string sourcePath, CancellationToken cancellationToken) {
+        await ReportAsync(video, PipelineStep.Subtitles, cancellationToken);
+        await RunSourceStepAsync(video, "subtitles", "Subtitles", "ffmpeg-webvtt", async ct => {
+            var result = await _subtitles.ExtractAsync(video.RouteId, sourcePath, ct);
+            var sections = result.Section != null ? new List<AnalysisTreeNode> { result.Section } : null;
+            return result.Success
+                ? StepOutcome.Ok(sections)
+                : StepOutcome.Failed(result.ErrorMessage ?? "Subtitle extraction failed", sections);
+        }, cancellationToken);
+    }
+
     private async Task<string?> RunSourceAnalysisAsync(
         Video video,
         string sourcePath,
@@ -160,15 +182,6 @@ public sealed class ProcessingPipeline {
                 using (probe.ProbeData) {
                     return StepOutcome.Ok(MediaInfoTree.BuildSections(probe.ProbeData, sourcePath, video));
                 }
-            }, cancellationToken);
-
-            await ReportAsync(video, PipelineStep.Subtitles, cancellationToken);
-            await RunSourceStepAsync(video, "subtitles", "Subtitles", "ffmpeg-webvtt", async ct => {
-                var result = await _subtitles.ExtractAsync(video.RouteId, sourcePath, ct);
-                var sections = result.Section != null ? new List<AnalysisTreeNode> { result.Section } : null;
-                return result.Success
-                    ? StepOutcome.Ok(sections)
-                    : StepOutcome.Failed(result.ErrorMessage ?? "Subtitle extraction failed", sections);
             }, cancellationToken);
 
             await ReportAsync(video, PipelineStep.SourceSiti, cancellationToken);
