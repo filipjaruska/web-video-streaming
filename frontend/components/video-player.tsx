@@ -23,7 +23,20 @@ import type {
   StreamingMethod,
   CurrentStats,
 } from "@/types/streaming";
-import { createHlsConfig, createDashSettings } from "@/lib/streamingConfig";
+import {
+  createHlsConfig,
+  createDashSettings,
+  SEGMENT_SEC,
+  START_LEVEL_FROM_BOTTOM,
+  TARGET_BUFFER_SEC,
+} from "@/lib/streamingConfig";
+import {
+  type AbrDriver,
+  driveDash,
+  driveHls,
+  pinHighestDash,
+  pinHighestHls,
+} from "@/lib/abr/driver";
 import { getVideoUrl } from "@/lib/streamingLabels";
 import { useVideoStatsTracking } from "@/hooks/useVideoStatsTracking";
 import { ErrorBanner } from "@/components/error-banner";
@@ -82,10 +95,19 @@ export function VideoPlayer({
     onStatsUpdate,
   });
 
+  // The decision loop outlives neither the source nor the profile: switching either tears down the
+  // player, so a driver left running would keep ticking against a detached instance.
+  const driverRef = useRef<AbrDriver | null>(null);
+
   useEffect(() => {
     setError(null);
     setHlsInstance(null);
     setDashInstance(null);
+
+    return () => {
+      driverRef.current?.stop();
+      driverRef.current = null;
+    };
   }, [src, abrAlgorithm]);
 
   const onProviderChange = useCallback(
@@ -103,20 +125,30 @@ export function VideoPlayer({
       if (isHLSProvider(provider)) {
         // Vidstack `load="play"` already defers network; allow hls.js to fetch on attach.
         provider.config = {
-          ...createHlsConfig(abrAlgorithm),
+          ...createHlsConfig(),
           autoStartLoad: true,
         };
         provider.library = () => import("hls.js");
 
         provider.onInstance((hls) => {
           setHlsInstance(hls);
-          if (abrAlgorithm === "baseline") {
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-              if (hls.levels.length > 0) {
-                hls.currentLevel = hls.levels.length - 1;
-              }
-            });
-          }
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (hls.levels.length === 0) {
+              return;
+            }
+
+            if (abrAlgorithm === "baseline") {
+              pinHighestHls(hls);
+              return;
+            }
+
+            hls.nextLevel = Math.min(
+              START_LEVEL_FROM_BOTTOM,
+              hls.levels.length - 1,
+            );
+            driverRef.current?.stop();
+            driverRef.current = driveHls(hls, abrAlgorithm, TARGET_BUFFER_SEC);
+          });
         });
       }
 
@@ -125,16 +157,39 @@ export function VideoPlayer({
         provider.library = () => import("dashjs");
         provider.onInstance((dash) => {
           setDashInstance(dash);
-          if (abrAlgorithm === "baseline") {
-            const lockHighest = () => {
-              const bitrates = dash.getBitrateInfoListFor?.("video");
-              if (Array.isArray(bitrates) && bitrates.length > 0) {
-                dash.setQualityFor?.("video", bitrates.length - 1, true);
-              }
-            };
-            dash.on?.("streamInitialized", lockHighest);
-            lockHighest();
-          }
+
+          const start = () => {
+            if (abrAlgorithm === "baseline") {
+              pinHighestDash(dash);
+              return;
+            }
+
+            const levels = dash.getRepresentationsByType?.("video") ?? [];
+            if (levels.length === 0) {
+              return;
+            }
+
+            const ascending = [...levels].sort(
+              (a, b) => (a.bandwidth ?? 0) - (b.bandwidth ?? 0),
+            );
+            const startAt =
+              ascending[Math.min(START_LEVEL_FROM_BOTTOM, ascending.length - 1)];
+            dash.setRepresentationForTypeByIndex?.(
+              "video",
+              startAt?.index ?? 0,
+              true,
+            );
+
+            driverRef.current?.stop();
+            driverRef.current = driveDash(
+              dash,
+              abrAlgorithm,
+              TARGET_BUFFER_SEC,
+              SEGMENT_SEC,
+            );
+          };
+
+          dash.on?.("streamInitialized", start);
         });
       }
     },
