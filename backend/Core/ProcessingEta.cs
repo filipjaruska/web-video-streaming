@@ -43,8 +43,8 @@ public static class ProcessingEta {
 
     private static readonly Dictionary<PipelineStep, (int Percent, string Label)> Steps = new() {
         [PipelineStep.Starting] = (8, "Preparing source"),
-        [PipelineStep.MediaInfo] = (10, "Reading media info"),
-        [PipelineStep.Subtitles] = (12, "Extracting subtitles"),
+        [PipelineStep.Subtitles] = (10, "Extracting subtitles"),
+        [PipelineStep.MediaInfo] = (12, "Reading media info"),
         [PipelineStep.SourceSiti] = (14, "SI/TI analysis"),
         [PipelineStep.Thumbnail] = (16, "Generating thumbnail"),
         [PipelineStep.StaticHls] = (18, "HLS transcoding"),
