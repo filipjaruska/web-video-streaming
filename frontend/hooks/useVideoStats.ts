@@ -56,6 +56,9 @@ export function useVideoStats() {
         bandwidth: updatedCurrent.bandwidth,
         droppedFrames: updatedCurrent.droppedFrames,
         totalFrames: updatedCurrent.totalFrames,
+        // Media time, so a series can be read against the clip rather than against wall clock —
+        // the two diverge by exactly the stalled time, which is the interesting part.
+        playbackTime: updatedCurrent.playbackTime,
       };
 
       snapshotsRef.current.push(snapshot);
@@ -88,6 +91,33 @@ export function useVideoStats() {
     }
     lastRebufferingRef.current = isRebuffering;
   }, []);
+
+  /**
+   * Records a completed stall. Until this existed nothing ever incremented
+   * `rebufferingDuration`, so the rebuffering tile could only ever read zero.
+   */
+  const recordRebuffer = useCallback((durationSec: number) => {
+    if (durationSec <= 0) {
+      return;
+    }
+
+    setStats((prev) => ({
+      ...prev,
+      current: {
+        ...prev.current,
+        rebufferingEvents: prev.current.rebufferingEvents + 1,
+        rebufferingDuration: prev.current.rebufferingDuration + durationSec,
+      },
+      average: {
+        ...prev.average,
+        totalRebufferingEvents: prev.average.totalRebufferingEvents + 1,
+        totalRebufferingDuration: prev.average.totalRebufferingDuration + durationSec,
+      },
+    }));
+  }, []);
+
+  /** The raw per-second series. Read through a getter so callers always see the latest push. */
+  const getSnapshots = useCallback(() => snapshotsRef.current, []);
 
   /**
    * Reset all statistics (useful when changing videos or streaming methods)
@@ -136,6 +166,8 @@ export function useVideoStats() {
     stats,
     updateStats,
     trackRebuffering,
+    recordRebuffer,
+    getSnapshots,
     resetStats,
     exportStats,
   };

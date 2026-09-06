@@ -3,6 +3,7 @@ import type Hls from "hls.js";
 import type {
   StreamingMethod,
   CurrentStats,
+  PlaybackEvent,
   VideoQuality,
 } from "@/types/streaming";
 import { formatQualityLabel } from "@/hooks/useVideoStats";
@@ -13,6 +14,8 @@ interface UseVideoStatsTrackingProps {
   hlsInstance: Hls | null;
   dashInstance: any;
   onStatsUpdate?: (stats: Partial<CurrentStats>) => void;
+  /** Stall and lifecycle edges the 1 Hz sampler cannot see. See {@link PlaybackEvent}. */
+  onPlaybackEvent?: (event: PlaybackEvent) => void;
 }
 
 interface HttpRangeThroughputState {
@@ -34,8 +37,17 @@ export function useVideoStatsTracking({
   hlsInstance,
   dashInstance,
   onStatsUpdate,
+  onPlaybackEvent,
 }: UseVideoStatsTrackingProps) {
   const hasStartedPlayingRef = useRef(false);
+  const stalledSinceRef = useRef<number | null>(null);
+
+  // Held in refs so an inline callback from a parent does not tear down and rebuild the sampling
+  // interval on every render, which would reset the cadence a measurement depends on.
+  const statsCallbackRef = useRef(onStatsUpdate);
+  const eventCallbackRef = useRef(onPlaybackEvent);
+  statsCallbackRef.current = onStatsUpdate;
+  eventCallbackRef.current = onPlaybackEvent;
   const throughputStateRef = useRef<HttpRangeThroughputState>({
     lastBytes: 0,
     lastTimestampMs: 0,
@@ -50,6 +62,7 @@ export function useVideoStatsTracking({
 
   useEffect(() => {
     hasStartedPlayingRef.current = false;
+    stalledSinceRef.current = null;
     throughputStateRef.current = {
       lastBytes: 0,
       lastTimestampMs: 0,
@@ -64,15 +77,47 @@ export function useVideoStatsTracking({
   }, [streamingMethod, videoElement]);
 
   useEffect(() => {
-    if (!videoElement || !onStatsUpdate) return;
+    if (!videoElement) return;
+
+    const emit = (kind: PlaybackEvent["kind"], message?: string) => {
+      eventCallbackRef.current?.({ kind, atMs: performance.now(), message });
+    };
 
     const handlePlaying = () => {
-      hasStartedPlayingRef.current = true;
+      if (!hasStartedPlayingRef.current) {
+        hasStartedPlayingRef.current = true;
+        emit("startup");
+        return;
+      }
+
+      // Only a stall that began after the first frame is a rebuffer; the wait before it is the
+      // startup delay, and charging that time twice would inflate the buffering ratio.
+      if (stalledSinceRef.current !== null) {
+        stalledSinceRef.current = null;
+        emit("rebufferEnd");
+      }
     };
+
+    const handleStall = () => {
+      if (hasStartedPlayingRef.current && stalledSinceRef.current === null) {
+        stalledSinceRef.current = performance.now();
+        emit("rebufferStart");
+      }
+    };
+
+    const handleEnded = () => emit("ended");
+    const handleError = () => emit("error", videoElement.error?.message ?? "playback error");
+
     videoElement.addEventListener("playing", handlePlaying);
+    videoElement.addEventListener("waiting", handleStall);
+    videoElement.addEventListener("stalled", handleStall);
+    videoElement.addEventListener("ended", handleEnded);
+    videoElement.addEventListener("error", handleError);
 
     const interval = setInterval(() => {
-      if (!hasStartedPlayingRef.current) return;
+      // Paused and stalled time is not playback. Sampling through it used to drag every average
+      // toward whatever the player happened to be sitting at while nothing was being watched.
+      if (!hasStartedPlayingRef.current || videoElement.paused) return;
 
       const stats = collectStats(
         videoElement,
@@ -82,15 +127,20 @@ export function useVideoStatsTracking({
         throughputStateRef.current,
         bitrateStateRef.current,
       );
-      onStatsUpdate(stats);
+      statsCallbackRef.current?.(stats);
     }, 1000);
 
     return () => {
       videoElement.removeEventListener("playing", handlePlaying);
+      videoElement.removeEventListener("waiting", handleStall);
+      videoElement.removeEventListener("stalled", handleStall);
+      videoElement.removeEventListener("ended", handleEnded);
+      videoElement.removeEventListener("error", handleError);
       clearInterval(interval);
       hasStartedPlayingRef.current = false;
+      stalledSinceRef.current = null;
     };
-  }, [videoElement, streamingMethod, hlsInstance, dashInstance, onStatsUpdate]);
+  }, [videoElement, streamingMethod, hlsInstance, dashInstance]);
 }
 
 function collectStats(
