@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { StreamingMethod, AbrAlgorithm } from "@/types/streaming";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  StreamingMethod,
+  AbrAlgorithm,
+  PlaybackEvent,
+} from "@/types/streaming";
 import { SOURCE_RUN_ID, isSourceRun } from "@/types/streaming";
 import { StreamingControls } from "@/components/streaming-controls";
-import { VideoPlayer } from "@/components/video-player";
+import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
+import { BenchmarkPanel } from "@/components/benchmark-panel";
+import { useBenchmarkRunner } from "@/hooks/useBenchmarkRunner";
+import type { BenchmarkCell, NetworkProfile } from "@/lib/benchmark/types";
 import { VideoEncodingInfo } from "@/components/video-encoding-info";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -76,7 +83,53 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     useState<StreamingMethod>("source");
   const [abrAlgorithm, setAbrAlgorithm] = useState<AbrAlgorithm>("hybrid");
   const [packagingRunId, setPackagingRunId] = useState<string | null>(null);
-  const { stats, updateStats, resetStats } = useVideoStats();
+  const [runNonce, setRunNonce] = useState(0);
+  const { stats, updateStats, resetStats, recordRebuffer, getSnapshots } = useVideoStats();
+  const playerRef = useRef<VideoPlayerHandle | null>(null);
+
+  const {
+    progress: benchmarkProgress,
+    results: benchmarkResults,
+    start: startBenchmark,
+    cancel: cancelBenchmark,
+    handlePlaybackEvent,
+    markNetworkTransition,
+  } = useBenchmarkRunner({
+    routeId,
+    apiUrl,
+    playerRef,
+    // The sweep drives the same setters the selectors do, and bumps the nonce so repeating an
+    // identical configuration still remounts the player instead of reusing a warm buffer.
+    applyCell: useCallback((cell, nonce) => {
+      setPackagingRunId(cell.transcodeId ?? SOURCE_RUN_ID);
+      setStreamingMethod(cell.protocol);
+      setAbrAlgorithm(cell.algorithm);
+      setRunNonce(nonce);
+    }, []),
+    getSnapshots,
+    resetStats,
+  });
+
+  /**
+   * Feeds stalls into the live tiles as well as the benchmark.
+   *
+   * Rebuffer duration had no producer at all before this, so the statistics card could only ever
+   * show zero however badly playback stuttered.
+   */
+  const stallStartedRef = useRef<number | null>(null);
+  const onPlaybackEvent = useCallback(
+    (event: PlaybackEvent) => {
+      if (event.kind === "rebufferStart") {
+        stallStartedRef.current = event.atMs;
+      } else if (event.kind === "rebufferEnd" && stallStartedRef.current !== null) {
+        recordRebuffer((event.atMs - stallStartedRef.current) / 1000);
+        stallStartedRef.current = null;
+      }
+
+      handlePlaybackEvent(event);
+    },
+    [handlePlaybackEvent, recordRebuffer],
+  );
 
   const bestSettings = useMemo(() => {
     if (transcodesLoading) return null;
@@ -213,8 +266,27 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
         onPackagingRunChange={handlePackagingRunChange}
       />
 
+      <BenchmarkPanel
+        progress={benchmarkProgress}
+        results={benchmarkResults}
+        onStart={(profile) => {
+          // A sweep sets configurations directly, so Best mode has to be off or its sync effect
+          // would put its own choice back on the next render.
+          setBestMode(false);
+          void startBenchmark(
+            isSourceRun(effectivePackagingRunId) ? null : effectivePackagingRunId,
+            transcodes.find((item) => item.id === effectivePackagingRunId)?.ladderKind ?? "source",
+            profile,
+          );
+        }}
+        onCancel={cancelBenchmark}
+        onMarkTransition={markNetworkTransition}
+        disabled={transcodesLoading}
+      />
+
       {playerReady ? (
         <VideoPlayer
+          ref={playerRef}
           streamingMethod={effectiveMethod}
           abrAlgorithm={effectiveAbr}
           apiUrl={apiUrl}
@@ -222,6 +294,8 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
           transcodeId={playerTranscodeId}
           subtitleTracks={subtitleTracks}
           onStatsUpdate={updateStats}
+          onPlaybackEvent={onPlaybackEvent}
+          runNonce={runNonce}
         />
       ) : (
         <div className="aspect-video w-full animate-pulse rounded-md bg-muted" />

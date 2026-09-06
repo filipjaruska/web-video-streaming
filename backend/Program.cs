@@ -57,6 +57,7 @@ builder.Services.AddScoped<EncodeGrid>();
 builder.Services.AddScoped<LadderDerivation>();
 builder.Services.AddScoped<LadderComparison>();
 builder.Services.AddScoped<TuningComparison>();
+builder.Services.AddScoped<PlaybackBenchmarkStore>();
 builder.Services.AddScoped<ProcessingPipeline>();
 
 builder.Services.Configure<FormOptions>(options =>

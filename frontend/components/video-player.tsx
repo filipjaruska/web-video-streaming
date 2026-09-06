@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Hls from "hls.js";
 import {
   MediaPlayer,
@@ -22,6 +30,7 @@ import type {
   AbrAlgorithm,
   StreamingMethod,
   CurrentStats,
+  PlaybackEvent,
 } from "@/types/streaming";
 import {
   createHlsConfig,
@@ -53,17 +62,41 @@ interface VideoPlayerProps {
   transcodeId?: string | null;
   subtitleTracks?: SubtitleTrack[];
   onStatsUpdate?: (stats: Partial<CurrentStats>) => void;
+  /** Stall and lifecycle edges, forwarded from the tracking hook. */
+  onPlaybackEvent?: (event: PlaybackEvent) => void;
+  /**
+   * Bumping this remounts the player even when nothing else changed.
+   *
+   * The remount key is otherwise built from protocol, ladder and algorithm alone, so repeating an
+   * identical configuration — which is exactly what a repetition is — would reuse the existing
+   * player and its warm buffer, and the second run would not be measuring the same thing.
+   */
+  runNonce?: number;
 }
 
-export function VideoPlayer({
-  streamingMethod,
-  abrAlgorithm,
-  apiUrl,
-  routeId,
-  transcodeId = null,
-  subtitleTracks = [],
-  onStatsUpdate,
-}: VideoPlayerProps) {
+/** What a benchmark needs in order to drive playback rather than wait for a viewer. */
+export interface VideoPlayerHandle {
+  play: () => Promise<void>;
+  pause: () => void;
+  seekToStart: () => void;
+  /** Media duration in seconds, or null before metadata has loaded. */
+  getDuration: () => number | null;
+}
+
+export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer(
+  {
+    streamingMethod,
+    abrAlgorithm,
+    apiUrl,
+    routeId,
+    transcodeId = null,
+    subtitleTracks = [],
+    onStatsUpdate,
+    onPlaybackEvent,
+    runNonce = 0,
+  }: VideoPlayerProps,
+  ref,
+) {
   const playerRef = useRef<MediaPlayerInstance>(null);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
     null,
@@ -93,7 +126,30 @@ export function VideoPlayer({
     hlsInstance,
     dashInstance,
     onStatsUpdate,
+    onPlaybackEvent,
   });
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      play: async () => {
+        // Adaptive sources use load="play", so nothing is fetched until playback is asked for —
+        // an automated run has to ask, since no viewer will.
+        await playerRef.current?.play();
+      },
+      pause: () => playerRef.current?.pause(),
+      seekToStart: () => {
+        if (playerRef.current) {
+          playerRef.current.currentTime = 0;
+        }
+      },
+      getDuration: () => {
+        const duration = playerRef.current?.state.duration;
+        return duration && Number.isFinite(duration) ? duration : null;
+      },
+    }),
+    [],
+  );
 
   // The decision loop outlives neither the source nor the profile: switching either tears down the
   // player, so a driver left running would keep ticking against a detached instance.
@@ -212,7 +268,7 @@ export function VideoPlayer({
     <div className="relative space-y-3">
       {error && <ErrorBanner title="Playback Error" message={error} />}
       <MediaPlayer
-        key={`${streamingMethod}:${transcodeId ?? "source"}:${abrAlgorithm}`}
+        key={`${streamingMethod}:${transcodeId ?? "source"}:${abrAlgorithm}:${runNonce}`}
         className="aspect-video w-full overflow-hidden rounded-md bg-black shadow-sm media-player"
         title="Video"
         src={src}
@@ -250,4 +306,4 @@ export function VideoPlayer({
       </MediaPlayer>
     </div>
   );
-}
+});

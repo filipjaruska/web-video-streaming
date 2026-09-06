@@ -1,5 +1,27 @@
 export type StreamingMethod = "source" | "hls" | "dash";
 
+/**
+ * A moment in a playback session that a measurement cares about but a 1 Hz sample cannot capture.
+ *
+ * Stalls and the first frame are edges, not levels: sampling the buffer once a second says nothing
+ * about exactly when playback stopped or resumed, and a stall shorter than the sampling interval
+ * would not appear at all.
+ */
+export type PlaybackEventKind =
+  /** First frame rendered. Everything before it is startup, not rebuffering. */
+  | "startup"
+  | "rebufferStart"
+  | "rebufferEnd"
+  | "ended"
+  | "error";
+
+export interface PlaybackEvent {
+  kind: PlaybackEventKind;
+  /** `performance.now()` at the moment it happened. */
+  atMs: number;
+  message?: string;
+}
+
 export type AbrAlgorithm = "throughput" | "buffer" | "hybrid" | "baseline";
 
 /** Sentinel packaging-run id for original source progressive playback. */
@@ -58,4 +80,6 @@ export interface StatsSnapshot {
   bandwidth: number;
   droppedFrames: number;
   totalFrames: number;
+  /** Media time in seconds, which advances only while playing. */
+  playbackTime: number;
 }
