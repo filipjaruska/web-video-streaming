@@ -30,6 +30,7 @@ public class AppDbContext : DbContext {
     public DbSet<UploadSession> UploadSessions => Set<UploadSession>();
     public DbSet<Transcode> Transcodes => Set<Transcode>();
     public DbSet<AnalysisReport> AnalysisReports => Set<AnalysisReport>();
+    public DbSet<PlaybackBenchmark> PlaybackBenchmarks => Set<PlaybackBenchmark>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         modelBuilder.Entity<Video>(entity => {
@@ -85,6 +86,26 @@ public class AppDbContext : DbContext {
 
             entity.HasIndex(transcode => new { transcode.VideoId, transcode.CreatedAtUtc });
             entity.HasIndex(transcode => new { transcode.VideoId, transcode.LadderKind });
+        });
+
+        modelBuilder.Entity<PlaybackBenchmark>(entity => {
+            entity.HasKey(benchmark => benchmark.Id);
+            entity.Property(benchmark => benchmark.Mode).HasConversion<string>().HasMaxLength(32);
+            entity.Property(benchmark => benchmark.NetworkProfile).HasConversion<string>().HasMaxLength(32);
+            entity.Property(benchmark => benchmark.LadderKind).HasMaxLength(32);
+            entity.Property(benchmark => benchmark.Protocol).HasMaxLength(16);
+            entity.Property(benchmark => benchmark.AbrAlgorithm).HasMaxLength(32);
+            entity.Property(benchmark => benchmark.ErrorMessage).HasMaxLength(2000);
+            entity.Property(benchmark => benchmark.TraceJson).HasColumnType("TEXT");
+            entity.Property(benchmark => benchmark.CreatedAtUtc).IsRequired();
+
+            entity.HasOne(benchmark => benchmark.Video)
+                .WithMany()
+                .HasForeignKey(benchmark => benchmark.VideoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(benchmark => new { benchmark.VideoId, benchmark.CreatedAtUtc });
+            entity.HasIndex(benchmark => new { benchmark.VideoId, benchmark.NetworkProfile });
         });
 
         // No FK to Video/Transcode — one table serves both owners, so rows are removed

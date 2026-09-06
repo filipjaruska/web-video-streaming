@@ -31,16 +31,19 @@ public class VideosController : ControllerBase {
 
     private readonly VideoCatalogService _catalog;
     private readonly AnalysisStore _analysis;
+    private readonly PlaybackBenchmarkStore _benchmarks;
     private readonly MediaPaths _paths;
     private readonly ILogger<VideosController> _logger;
 
     public VideosController(
         VideoCatalogService catalog,
         AnalysisStore analysis,
+        PlaybackBenchmarkStore benchmarks,
         MediaPaths paths,
         ILogger<VideosController> logger) {
         _catalog = catalog;
         _analysis = analysis;
+        _benchmarks = benchmarks;
         _paths = paths;
         _logger = logger;
     }
@@ -64,6 +67,14 @@ public class VideosController : ControllerBase {
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAnalysis(string routeId, CancellationToken cancellationToken) {
         var response = await _analysis.GetByRouteIdAsync(routeId, cancellationToken);
+        return response == null ? NotFound(new { message = "Video not found" }) : Ok(response);
+    }
+
+    [HttpGet("{routeId}/benchmarks")]
+    [ProducesResponseType<VideoBenchmarksResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListBenchmarks(string routeId, CancellationToken cancellationToken) {
+        var response = await _benchmarks.ListAsync(routeId, cancellationToken);
         return response == null ? NotFound(new { message = "Video not found" }) : Ok(response);
     }
 
