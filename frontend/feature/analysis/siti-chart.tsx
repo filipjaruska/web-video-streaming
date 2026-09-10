@@ -43,6 +43,16 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
+/**
+ * Population standard deviation (÷n), deliberately not the sample form (n−1) used by
+ * `summarize` in `lib/benchmark/metrics.ts`.
+ *
+ * SI/TI is computed over every frame of the clip, so the frames are the whole population — there
+ * is nothing being sampled. Benchmark repetitions, by contrast, are a sample drawn from the runs
+ * that could have happened, hence n−1 there. Both halves match their backend counterparts
+ * (`SitiAnalyzer.ComputeStats` and `PlaybackBenchmarkStore`), so unifying them would silently
+ * desynchronise the frontend from the numbers the backend reports.
+ */
 function stdDev(values: number[], average: number) {
   if (values.length === 0) {
     return 0;

@@ -55,6 +55,11 @@ function formatBitrate(bps?: number) {
   return `${(bps / 1000).toFixed(0)} kb/s`;
 }
 
+/** Score, or an em dash when the metric was not computed for this analysis run. */
+function formatScoreOrDash(value?: number) {
+  return value == null || !Number.isFinite(value) ? "—" : formatScore(value);
+}
+
 function SummaryTable({ summary }: { summary: VmafSummary }) {
   const rows: Array<{ label: string; value: string }> = [
     { label: "Mean", value: formatScore(summary.mean) },
@@ -69,7 +74,13 @@ function SummaryTable({ summary }: { summary: VmafSummary }) {
           ? `${summary.width}×${summary.height}`
           : "—",
     },
-    { label: "Target bitrate", value: formatBitrate(summary.bitrateBps) },
+    // Measured first, target second, and both labelled for what they are. This row used to read
+    // "Target bitrate" while showing the measured value — the one confusion this view cannot
+    // afford, since the gap between the two is the whole argument for a content-adaptive ladder.
+    { label: "Measured bitrate", value: formatBitrate(summary.bitrateBps) },
+    { label: "Target bitrate", value: formatBitrate(summary.targetBitrateBps) },
+    { label: "CAMBI (banding)", value: formatScoreOrDash(summary.cambi) },
+    { label: "CAMBI max", value: formatScoreOrDash(summary.cambiMax) },
   ];
 
   return (
@@ -129,7 +140,10 @@ export function VmafChart({ data, label, format }: VmafChartProps) {
               </Badge>
             </div>
             <CardDescription>
-              Full-reference VMAF vs source (RD point: bitrate × mean VMAF).
+              Full-reference VMAF vs source (RD point: bitrate × mean VMAF). Rate–quality is
+              reported against the <em>measured</em> bitrate: x264 undershoots its target on
+              compressible content, which is exactly the headroom a content-adaptive ladder is
+              built to claim, so comparing targets would compare assumptions rather than results.
             </CardDescription>
           </div>
           {hasSeries && (
