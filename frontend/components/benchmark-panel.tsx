@@ -19,9 +19,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
-import { describeCell } from "@/lib/benchmark/matrix";
+import { describeCell, describeCellFull } from "@/lib/benchmark/matrix";
+import { ladderLabel } from "@/lib/analysisFormat";
 import { summarize } from "@/lib/benchmark/metrics";
 import {
+  NETWORK_PROFILE_CSV_IDS,
   NETWORK_PROFILE_LABELS,
   type BenchmarkRunResult,
   type NetworkProfile,
@@ -39,25 +41,64 @@ interface BenchmarkPanelProps {
 
 const PROFILES: NetworkProfile[] = ["standard", "fourG", "threeG", "variable"];
 
-/** One row per cell, collapsing its repetitions into a mean and spread. */
+/**
+ * One row per measured configuration, collapsing its repetitions into a mean and spread.
+ *
+ * Grouped on network profile and ladder as well as protocol and algorithm — those four together
+ * are what identifies a cell. Both are also shown as columns, so the split is visible rather than
+ * merely correct.
+ */
 function aggregate(results: BenchmarkRunResult[]) {
-  const groups = new Map<string, BenchmarkRunResult[]>();
+  const groups = new Map<
+    string,
+    { profile: NetworkProfile; ladderKind: string; label: string; runs: BenchmarkRunResult[] }
+  >();
+
+  const failures: BenchmarkRunResult[] = [];
 
   for (const result of results) {
-    if (result.failed) continue;
-    const key = describeCell(result.cell);
-    groups.set(key, [...(groups.get(key) ?? []), result]);
+    if (result.failed) {
+      failures.push(result);
+      continue;
+    }
+
+    const key = describeCellFull(result.cell, result.networkProfile);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.runs.push(result);
+      continue;
+    }
+
+    groups.set(key, {
+      profile: result.networkProfile,
+      ladderKind: result.cell.ladderKind,
+      label: describeCell(result.cell),
+      runs: [result],
+    });
   }
 
-  return Array.from(groups.entries()).map(([label, runs]) => {
+  const rows = Array.from(groups.entries()).map(([key, group]) => {
     const startup = summarize(
-      runs.map((run) => run.metrics.startupMs).filter((value): value is number => value !== null),
+      group.runs
+        .map((run) => run.metrics.startupMs)
+        .filter((value): value is number => value !== null),
     );
-    const buffering = summarize(runs.map((run) => run.metrics.bufferingRatio));
-    const switches = summarize(runs.map((run) => run.metrics.qualitySwitches));
+    const buffering = summarize(group.runs.map((run) => run.metrics.bufferingRatio));
+    const switches = summarize(group.runs.map((run) => run.metrics.qualitySwitches));
 
-    return { label, runs: runs.length, startup, buffering, switches };
+    return {
+      key,
+      profile: group.profile,
+      ladderKind: group.ladderKind,
+      label: group.label,
+      runs: group.runs.length,
+      startup,
+      buffering,
+      switches,
+    };
   });
+
+  return { rows, failures };
 }
 
 export function BenchmarkPanel({
@@ -69,12 +110,12 @@ export function BenchmarkPanel({
   disabled,
 }: BenchmarkPanelProps) {
   const [profile, setProfile] = useState<NetworkProfile>("standard");
-  const rows = useMemo(() => aggregate(results), [results]);
+  const { rows, failures } = useMemo(() => aggregate(results), [results]);
 
   const exportRows = useMemo(
     () =>
       results.map((result) => [
-        NETWORK_PROFILE_LABELS[result.networkProfile],
+        NETWORK_PROFILE_CSV_IDS[result.networkProfile],
         result.cell.ladderKind,
         result.cell.protocol,
         result.cell.algorithm,
@@ -187,11 +228,37 @@ export function BenchmarkPanel({
           </div>
         )}
 
+        {failures.length > 0 && (
+          <div className="space-y-2">
+            <Badge variant="destructive">
+              {failures.length} run{failures.length === 1 ? "" : "s"} failed — excluded from
+              the means below
+            </Badge>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer select-none">Show failures</summary>
+              <ul className="mt-1.5 space-y-1 pl-4">
+                {failures.map((failure, index) => (
+                  <li key={`${describeCellFull(failure.cell, failure.networkProfile)}:${failure.repetition}:${index}`}>
+                    <span className="font-mono">
+                      {NETWORK_PROFILE_LABELS[failure.networkProfile]} ·{" "}
+                      {ladderLabel(failure.cell.ladderKind)} · {describeCell(failure.cell)} · rep{" "}
+                      {failure.repetition}
+                    </span>{" "}
+                    — {failure.errorMessage ?? "failed"}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </div>
+        )}
+
         {rows.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium">Network</th>
+                  <th className="py-2 pr-3 font-medium">Ladder</th>
                   <th className="py-2 pr-3 font-medium">Configuration</th>
                   <th className="py-2 pr-3 font-medium">Runs</th>
                   <th className="py-2 pr-3 font-medium">Startup (ms)</th>
@@ -201,7 +268,11 @@ export function BenchmarkPanel({
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.label} className="border-b border-border/50 last:border-b-0">
+                  <tr key={row.key} className="border-b border-border/50 last:border-b-0">
+                    <td className="py-1.5 pr-3 text-xs">
+                      {NETWORK_PROFILE_LABELS[row.profile]}
+                    </td>
+                    <td className="py-1.5 pr-3 text-xs">{ladderLabel(row.ladderKind)}</td>
                     <td className="py-1.5 pr-3 font-mono text-xs">{row.label}</td>
                     <td className="py-1.5 pr-3 font-mono text-xs">{row.runs}</td>
                     <td className="py-1.5 pr-3 font-mono text-xs">

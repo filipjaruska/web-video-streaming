@@ -1,5 +1,5 @@
 import type { AbrAlgorithm, StatsSnapshot, StreamingMethod } from "@/types/streaming";
-import type { BenchmarkCell, BenchmarkSample } from "./types";
+import type { BenchmarkCell, BenchmarkSample, NetworkProfile } from "./types";
 
 /** The adaptive rules under test, plus the fixed-quality control. */
 const ALGORITHMS: AbrAlgorithm[] = ["throughput", "buffer", "hybrid", "baseline"];
@@ -31,10 +31,22 @@ export function buildMatrix(transcodeId: string | null, ladderKind: string): Ben
   return cells;
 }
 
+/** Short form for live progress, where the ladder and network are already fixed and on screen. */
 export function describeCell(cell: BenchmarkCell): string {
   return cell.protocol === "source"
     ? "source · HTTP Range"
     : `${cell.protocol.toUpperCase()} · ${cell.algorithm}`;
+}
+
+/**
+ * Fully qualified identity of a measured configuration, for grouping results.
+ *
+ * Aggregating on {@link describeCell} alone silently merges runs that differ in the two things the
+ * experiment actually varies — the ladder under test and the network it was measured on — so a
+ * static-ladder DASH·hybrid row and a dynamic-ladder DASH·hybrid row would average together.
+ */
+export function describeCellFull(cell: BenchmarkCell, profile: NetworkProfile): string {
+  return `${profile}|${cell.ladderKind}|${describeCell(cell)}`;
 }
 
 /**

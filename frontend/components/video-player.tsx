@@ -72,6 +72,11 @@ interface VideoPlayerProps {
    * player and its warm buffer, and the second run would not be measuring the same thing.
    */
   runNonce?: number;
+  /**
+   * A fatal provider error. Reported rather than acted on: whether to retry over another protocol
+   * is a policy question that depends on state this component does not own.
+   */
+  onFatalError?: (info: { method: StreamingMethod; message: string }) => void;
 }
 
 /** What a benchmark needs in order to drive playback rather than wait for a viewer. */
@@ -94,6 +99,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     onStatsUpdate,
     onPlaybackEvent,
     runNonce = 0,
+    onFatalError,
   }: VideoPlayerProps,
   ref,
 ) {
@@ -287,6 +293,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             (detail as { message?: string })?.message ||
             (typeof detail === "string" ? detail : "Playback failed");
           setError(String(message));
+          // The player reports; the parent decides whether another protocol is worth trying. It
+          // owns `streamingMethod` and knows whether a measurement is in flight.
+          onFatalError?.({ method: streamingMethod, message: String(message) });
         }}
       >
         <MediaProvider>

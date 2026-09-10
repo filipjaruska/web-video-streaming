@@ -41,7 +41,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head />
-      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
+      {/*
+        `suppressHydrationWarning` on <html> covers only that element's own attributes, not its
+        children. Browser extensions and the dev overlay both inject attributes onto <body> —
+        `tabindex="-1"` is the common one — which React then reports as a mismatch it cannot patch.
+        Suppression here is one level deep, so a genuine mismatch inside the app still surfaces.
+      */}
+      <body
+        suppressHydrationWarning
+        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
