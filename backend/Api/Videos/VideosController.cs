@@ -24,6 +24,17 @@ public sealed class VideoSubtitlesResponse {
     public required IReadOnlyList<SkippedSubtitleDto> Skipped { get; init; }
 }
 
+public sealed class UpdateVideoRequest {
+    public string? Title { get; set; }
+    public string? Description { get; set; }
+}
+
+public sealed class UpdateVideoResponse {
+    public required string RouteId { get; init; }
+    public string? Title { get; init; }
+    public string? Description { get; init; }
+}
+
 [ApiController]
 [Route("api/videos")]
 public class VideosController : ControllerBase {
@@ -155,6 +166,38 @@ public class VideosController : ControllerBase {
             ? "image/webp"
             : "image/jpeg";
         return PhysicalFile(path, contentType);
+    }
+
+    /// <summary>
+    /// Edits a published video's title and description.
+    /// </summary>
+    /// <remarks>
+    /// The upload-session route can only reach a video through the session that created it, which
+    /// is not exposed once the video is published — so this is the only way to rename a clip after
+    /// the fact.
+    /// </remarks>
+    [HttpPatch("{routeId}")]
+    [ProducesResponseType<UpdateVideoResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateVideo(
+        string routeId,
+        [FromBody] UpdateVideoRequest request,
+        CancellationToken cancellationToken) {
+        var video = await _catalog.UpdateMetadataAsync(
+            routeId,
+            request.Title,
+            request.Description,
+            cancellationToken);
+
+        if (video == null) {
+            return NotFound(new { message = "Video not found" });
+        }
+
+        return Ok(new UpdateVideoResponse {
+            RouteId = video.RouteId,
+            Title = video.Title,
+            Description = video.Description
+        });
     }
 
     [HttpDelete("{routeId}")]

@@ -12,8 +12,8 @@ public enum LadderKind {
     Dynamic = 1,
 
     /// <summary>
-    /// Reserved for the animation-optimized packaging run. Nothing
-    /// produces one yet — the pipeline has no third pass.
+    /// The animation-optimized packaging run: same derivation as <see cref="Dynamic"/>, but
+    /// measured under the animation encoder recipe and selected with the CAMBI penalty applied.
     /// </summary>
     AnimationTuned = 2
 }
