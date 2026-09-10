@@ -5,6 +5,7 @@ import type { StreamingMethod, AbrAlgorithm } from "@/types/streaming";
 import { SOURCE_RUN_ID, isSourceRun } from "@/types/streaming";
 import type { VideoTranscodeListItem } from "@/lib/videoTranscodesApi";
 import { getAbrLabel } from "@/lib/streamingLabels";
+import { ladderLabel } from "@/lib/analysisFormat";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,8 @@ interface StreamingControlsProps {
   onStreamingMethodChange: (method: StreamingMethod) => void;
   onAbrAlgorithmChange: (algorithm: AbrAlgorithm) => void;
   onPackagingRunChange: (packagingRunId: string) => void;
+  /** Why Best mode chose this protocol, shown so the decision is demonstrable rather than opaque. */
+  bestReason?: string;
 }
 
 function protocolLabel(method: StreamingMethod): string {
@@ -54,6 +57,7 @@ function StreamingControlsComponent({
   onStreamingMethodChange,
   onAbrAlgorithmChange,
   onPackagingRunChange,
+  bestReason,
 }: StreamingControlsProps) {
   const sourceSelected = isSourceRun(packagingRunId);
   const isAdaptive = streamingMethod === "hls" || streamingMethod === "dash";
@@ -96,9 +100,7 @@ function StreamingControlsComponent({
               <Badge variant="secondary">Source</Badge>
             ) : selectedTranscode ? (
               <Badge variant="secondary">
-                {selectedTranscode.ladderKind === "dynamic"
-                  ? "Dynamic"
-                  : "Static"}
+                {ladderLabel(selectedTranscode.ladderKind)}
                 {selectedTranscode.isActive ? " · active" : ""}
               </Badge>
             ) : null}
@@ -106,6 +108,15 @@ function StreamingControlsComponent({
             <Badge variant="secondary">
               {isAdaptive ? getAbrLabel(abrAlgorithm) : "None"}
             </Badge>
+            {bestMode && bestReason && (
+              <Badge
+                variant="outline"
+                title={bestReason}
+                className="max-w-88 truncate font-normal"
+              >
+                {bestReason}
+              </Badge>
+            )}
           </div>
         </div>
 

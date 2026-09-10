@@ -5,11 +5,12 @@ import type { PlaybackEvent, StatsSnapshot } from "@/types/streaming";
 import type { VideoPlayerHandle } from "@/components/video-player";
 import { computeMetrics } from "@/lib/benchmark/metrics";
 import { buildMatrix, describeCell, toSamples } from "@/lib/benchmark/matrix";
-import type {
-  BenchmarkCell,
-  BenchmarkEvent,
-  BenchmarkRunResult,
-  NetworkProfile,
+import {
+  toServerProfile,
+  type BenchmarkCell,
+  type BenchmarkEvent,
+  type BenchmarkRunResult,
+  type NetworkProfile,
 } from "@/lib/benchmark/types";
 
 /** Repetitions of each cell. Startup and rebuffering are noisy enough that one run proves nothing. */
@@ -270,6 +271,7 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+
 /** Resolves with the run length once playback ends, or null if it timed out or was cancelled. */
 async function waitForEnd(
   eventsRef: React.RefObject<BenchmarkEvent[]>,
@@ -292,9 +294,4 @@ async function waitForEnd(
   }
 
   return null;
-}
-
-/** The frontend's profile ids differ in case from the server enum names. */
-function toServerProfile(profile: NetworkProfile): string {
-  return { standard: "Standard", fourG: "FourG", threeG: "ThreeG", variable: "Variable" }[profile];
 }

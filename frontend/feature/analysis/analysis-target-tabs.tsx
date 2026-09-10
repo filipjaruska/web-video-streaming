@@ -3,19 +3,37 @@
 import { useMemo, useState } from "react";
 import type {
   AnalysisTarget,
-  DerivedLadderDocument,
-  FormatVmafSeries,
   FutureTestDescriptor,
-  VmafSeriesData,
 } from "@/lib/videoAnalysisApi";
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
 import { VmafChart } from "@/feature/analysis/vmaf-chart";
 import { RdScatterChart } from "@/feature/analysis/rd-scatter-chart";
+import { DerivedLadderTable } from "@/feature/analysis/derived-ladder-table";
+import { LadderComparisonCard } from "@/feature/analysis/ladder-comparison-card";
+import { ContentCharacteristicsCard } from "@/feature/analysis/content-characteristics-card";
+import { PipelineCostCard } from "@/feature/analysis/pipeline-cost-card";
 import { TranscodeAnalysisCard } from "@/feature/analysis/transcode-analysis-card";
 import { TuningComparisonCard } from "@/feature/analysis/tuning-comparison-card";
+import type { VideoTranscodeListItem } from "@/lib/videoTranscodesApi";
+import type { AnalysisTab } from "@/lib/analysisTabs";
 import { formatTargetStatus } from "@/lib/analysisLabels";
+import {
+  formatBitrate,
+  formatNumber,
+  ladderLabel,
+} from "@/lib/analysisFormat";
+import {
+  collectVmafEntries,
+  pickPackagedWithVmaf,
+  pickSourceTarget,
+  pickStaticTranscode,
+  pickTranscodeTargets,
+  type FormatKey,
+  type VmafEntry,
+} from "@/lib/analysisTargets";
+import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
 import { getPublicApiUrl } from "@/lib/env";
 import { getHlsVariantUrl } from "@/lib/streamingLabels";
 import { Badge } from "@/components/ui/badge";
@@ -33,161 +51,59 @@ interface AnalysisTargetTabsProps {
   routeId: string;
   targets: AnalysisTarget[];
   futureTests: FutureTestDescriptor[];
+  /** Packaging runs, used for the pipeline-cost view. */
+  transcodeRuns?: VideoTranscodeListItem[];
+  activeTab: AnalysisTab;
+  onTabChange: (tab: string) => void;
 }
 
-type FormatKey = "hls" | "dash";
-
-/** Keeps the sign visible on deltas, so a saving reads as "-32" rather than "32". */
-function formatSigned(value: number) {
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
-}
-
-/** One derived ladder's operating points. Renders nothing when that ladder was not produced. */
-function DerivedLadderTable({
-  ladder,
-  caption,
-}: {
-  ladder?: DerivedLadderDocument;
-  caption: string;
-}) {
-  if (!ladder || ladder.variants.length === 0) {
-    return null;
-  }
-
+/**
+ * Measured quality per packaged rendition.
+ *
+ * CAMBI and the NEG model are shown alongside the classic score because both are computed on every
+ * run and neither is visible from the mean alone: NEG withholds credit for sharpening that did not
+ * restore detail, and CAMBI is the banding metric the animation ladder is selected against.
+ */
+function RdSummaryTable({ entries }: { entries: VmafEntry[] }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          Derived ladder ({ladder.name})
-        </CardTitle>
-        <CardDescription>
-          {caption}
-          {ladder.lambda != null
-            ? ` Shared hull slope λ = ${ladder.lambda.toFixed(2)} VMAF per bitrate doubling.`
-            : ""}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b text-muted-foreground">
-                <th className="py-2 pr-3 font-medium">Rung</th>
-                <th className="py-2 pr-3 font-medium">Resolution</th>
-                <th className="py-2 pr-3 font-medium">Bitrate</th>
-                <th className="py-2 pr-3 font-medium">CRF</th>
-                <th className="py-2 pr-3 font-medium">Pred. VMAF</th>
-                <th className="py-2 font-medium">Pred. harm. VMAF</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ladder.variants.map((v) => (
-                <tr
-                  key={v.label}
-                  className="border-b border-border/50 last:border-b-0"
-                >
-                  <td className="py-1.5 pr-3 font-mono text-xs">{v.label}</td>
-                  <td className="py-1.5 pr-3 font-mono text-xs">
-                    {v.resolution.replace(":", "×")}
-                  </td>
-                  <td className="py-1.5 pr-3 font-mono text-xs">{v.bitrate}</td>
-                  <td className="py-1.5 pr-3 font-mono text-xs">
-                    {v.crf ?? "—"}
-                  </td>
-                  <td className="py-1.5 pr-3 font-mono text-xs">
-                    {v.predictedVmaf != null ? v.predictedVmaf.toFixed(2) : "—"}
-                  </td>
-                  <td className="py-1.5 font-mono text-xs">
-                    {v.predictedVmafHarmonic != null
-                      ? v.predictedVmafHarmonic.toFixed(2)
-                      : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function collectVmafEntries(
-  byFormat: FormatVmafSeries | undefined,
-): Array<{ format: FormatKey; label: string; data: VmafSeriesData }> {
-  if (!byFormat) {
-    return [];
-  }
-
-  const entries: Array<{
-    format: FormatKey;
-    label: string;
-    data: VmafSeriesData;
-  }> = [];
-
-  for (const format of ["hls", "dash"] as const) {
-    const map = byFormat[format];
-    if (!map) {
-      continue;
-    }
-    for (const [label, data] of Object.entries(map)) {
-      entries.push({ format, label, data });
-    }
-  }
-
-  return entries;
-}
-
-function RdSummaryTable({
-  entries,
-}: {
-  entries: Array<{ format: FormatKey; label: string; data: VmafSeriesData }>;
-}) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b text-muted-foreground">
-            <th className="py-2 pr-3 font-medium">Format</th>
-            <th className="py-2 pr-3 font-medium">Rung</th>
-            <th className="py-2 pr-3 font-medium">Bitrate</th>
-            <th className="py-2 pr-3 font-medium">Mean VMAF</th>
-            <th className="py-2 pr-3 font-medium">Harmonic</th>
-            <th className="py-2 font-medium">Min</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => {
-            const bps = entry.data.summary.bitrateBps;
-            const bitrate =
-              bps == null
-                ? "—"
-                : bps >= 1_000_000
-                  ? `${(bps / 1_000_000).toFixed(2)} Mb/s`
-                  : `${(bps / 1000).toFixed(0)} kb/s`;
-            return (
-              <tr
-                key={`${entry.format}-${entry.label}`}
-                className="border-b border-border/50 last:border-b-0"
-              >
-                <td className="py-1.5 pr-3 uppercase">{entry.format}</td>
-                <td className="py-1.5 pr-3 font-mono text-xs">{entry.label}</td>
-                <td className="py-1.5 pr-3 font-mono text-xs">{bitrate}</td>
-                <td className="py-1.5 pr-3 font-mono text-xs">
-                  {entry.data.summary.mean.toFixed(2)}
-                </td>
-                <td className="py-1.5 pr-3 font-mono text-xs">
-                  {entry.data.summary.harmonicMean.toFixed(2)}
-                </td>
-                <td className="py-1.5 font-mono text-xs">
-                  {entry.data.summary.min.toFixed(2)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      headers={[
+        "Format",
+        "Rung",
+        "Bitrate",
+        "Mean VMAF",
+        "Harmonic",
+        "Min",
+        "NEG harm.",
+        "CAMBI",
+      ]}
+    >
+      {entries.map((entry) => {
+        const summary = entry.data.summary;
+        const neg = entry.data.summaryByModel?.neg;
+        return (
+          <DataRow key={`${entry.format}-${entry.label}`}>
+            <DataCell mono={false} className="uppercase">
+              {entry.format}
+            </DataCell>
+            <DataCell>{entry.label}</DataCell>
+            <DataCell>{formatBitrate(summary.bitrateBps)}</DataCell>
+            <DataCell>{formatNumber(summary.mean)}</DataCell>
+            <DataCell>{formatNumber(summary.harmonicMean)}</DataCell>
+            <DataCell>{formatNumber(summary.min)}</DataCell>
+            <DataCell title="vmaf_v0.6.1neg — rejects enhancement gain from sharpening or added contrast.">
+              {formatNumber(neg?.harmonicMean)}
+            </DataCell>
+            <DataCell
+              last
+              title="Banding detector. Lower is better, and it is measured on the encode itself rather than against the source."
+            >
+              {formatNumber(summary.cambi)}
+            </DataCell>
+          </DataRow>
+        );
+      })}
+    </DataTable>
   );
 }
 
@@ -195,16 +111,14 @@ export function AnalysisTargetTabs({
   routeId,
   targets,
   futureTests,
+  transcodeRuns = [],
+  activeTab,
+  onTabChange,
 }: AnalysisTargetTabsProps) {
-  const source = targets.find((target) => target.kind === "source");
-  const transcodes = targets.filter((target) => target.kind === "transcode");
-  const staticTranscode =
-    transcodes.find((t) => t.ladderKind === "static") ??
-    transcodes.find((t) => t.series.encodeGrid?.length);
-  const dynamicTranscode = transcodes.find((t) => t.ladderKind === "dynamic");
-  const packagedWithVmaf = transcodes.filter(
-    (t) => collectVmafEntries(t.series.vmafByFormat).length > 0,
-  );
+  const source = pickSourceTarget(targets);
+  const transcodes = pickTranscodeTargets(targets);
+  const staticTranscode = pickStaticTranscode(targets);
+  const packagedWithVmaf = pickPackagedWithVmaf(targets);
 
   const [selectedTranscodeId, setSelectedTranscodeId] = useState<string | null>(
     null,
@@ -265,35 +179,37 @@ export function AnalysisTargetTabs({
     [routeId],
   );
 
+  // Read off the SI/TI time axis, which covers the whole clip. Avoids parsing the metadata tree
+  // for a number the series already carries.
+  const sourceDurationSec = useMemo(() => {
+    const times = source?.series.siti?.timeSec;
+    return times?.length ? times[times.length - 1] : null;
+  }, [source]);
+
   return (
-    <Tabs defaultValue="source">
+    <Tabs value={activeTab} onValueChange={onTabChange}>
       <TabsList>
-        <TabsTrigger value="source">Source</TabsTrigger>
-        <TabsTrigger value="transcodes">
-          Transcodes{transcodes.length > 0 ? ` (${transcodes.length})` : ""}
+        <TabsTrigger value="content">Content</TabsTrigger>
+        <TabsTrigger value="ladder">Ladder design</TabsTrigger>
+        <TabsTrigger value="tuning">Codec tuning</TabsTrigger>
+        <TabsTrigger value="cost">Pipeline cost</TabsTrigger>
+        <TabsTrigger value="delivery">Delivery &amp; ABR</TabsTrigger>
+        <TabsTrigger value="raw">
+          Raw data{transcodes.length > 0 ? ` (${transcodes.length})` : ""}
         </TabsTrigger>
-        <TabsTrigger value="quality">Quality tests</TabsTrigger>
-        <TabsTrigger value="tuning">Tuning</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="source" className="mt-4 space-y-4">
+      <TabsContent value="content" className="mt-4 space-y-4">
         {source ? (
           <>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-medium">{source.label}</h2>
               <Badge variant="outline">{formatTargetStatus(source.status)}</Badge>
             </div>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Media metadata</CardTitle>
-                <CardDescription>
-                  MediaInfo-style tree from ffprobe on the original upload.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <AnalysisTree nodes={mediaNodes} defaultOpen />
-              </CardContent>
-            </Card>
+            <ContentCharacteristicsCard
+              series={source.series}
+              durationSec={sourceDurationSec}
+            />
             {(hasSitiSeries || sitiNode) && (
               <SitiChart
                 data={source.series.siti}
@@ -308,114 +224,15 @@ export function AnalysisTargetTabs({
         )}
       </TabsContent>
 
-      <TabsContent value="transcodes" className="mt-4 space-y-4">
-        {transcodes.length === 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">No transcodes yet</CardTitle>
-              <CardDescription>
-                After HLS/DASH packaging finishes, each transcode appears here
-                with probe metadata and per-rendition SI/TI. A second dynamic
-                ladder packaging may follow encode-grid derivation.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          transcodes.map((target, index) => (
-            <TranscodeAnalysisCard
-              key={target.id}
-              target={target}
-              transcodeNumber={index + 1}
-              videoSrc={getHlsVariantUrl(
-                getPublicApiUrl(),
-                routeId,
-                "360p",
-                target.transcodeId,
-              )}
-            />
-          ))
-        )}
-      </TabsContent>
+      <TabsContent value="ladder" className="mt-4 space-y-4">
+        <LadderComparisonCard comparison={ladderComparison} />
 
-      <TabsContent value="quality" className="mt-4 space-y-4">
-        {ladderComparison && ladderComparison.ladders.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Derived ladders vs static (BD-rate)
-              </CardTitle>
-              <CardDescription>
-                Measured on the packaged renditions of each ladder against the
-                static baseline. Negative BD-rate means that ladder delivers the
-                same quality for fewer bits.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {ladderComparison.ladders.map((entry) =>
-                  entry.error ? (
-                    <div key={entry.ladderKind}>
-                      <div className="text-sm font-medium">{entry.label}</div>
-                      <p className="text-sm text-muted-foreground">
-                        {entry.error}
-                      </p>
-                    </div>
-                  ) : (
-                    <div key={entry.ladderKind}>
-                      <div className="mb-2 text-sm font-medium">
-                        {entry.label}
-                      </div>
-                      <div className="grid gap-4 sm:grid-cols-3">
-                        <div>
-                          <div
-                            className={`text-2xl font-semibold tabular-nums ${
-                              entry.bdRatePercent < 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-amber-600 dark:text-amber-400"
-                            }`}
-                          >
-                            {formatSigned(entry.bdRatePercent)}%
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            BD-rate over harmonic VMAF{" "}
-                            {entry.overlapLowVmaf.toFixed(1)}–
-                            {entry.overlapHighVmaf.toFixed(1)}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-semibold tabular-nums">
-                            {entry.bitrateSavingPercent != null
-                              ? `${formatSigned(entry.bitrateSavingPercent)}%`
-                              : "—"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Bitrate at equal quality
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-semibold tabular-nums">
-                            {entry.vmafGainAtEqualBitrate != null
-                              ? formatSigned(entry.vmafGainAtEqualBitrate)
-                              : "—"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            VMAF at equal bitrate
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ),
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {(encodeGrid.length > 0 || derivedLadder) && (
+        {encodeGrid.length > 0 || derivedLadder ? (
           <>
             <RdScatterChart
               encodeGrid={encodeGrid}
               derivedLadder={derivedLadder}
+              crossoverBps={derivedLadder?.crossoverBps}
             />
             <DerivedLadderTable
               ladder={derivedLadder}
@@ -426,6 +243,7 @@ export function AnalysisTargetTabs({
               <RdScatterChart
                 encodeGrid={encodeGridAnimation}
                 derivedLadder={animationLadder}
+                crossoverBps={animationLadder?.crossoverBps}
                 title="Rate–distortion (animation grid)"
               />
             )}
@@ -434,8 +252,35 @@ export function AnalysisTargetTabs({
               caption="Same derivation re-run over the animation-tuned grid, with banding penalised in the selection."
             />
           </>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">No encode grid yet</CardTitle>
+              <CardDescription>
+                The rate–distortion sweep runs after the static ladder is packaged. Its points are
+                what both derived ladders are built from.
+              </CardDescription>
+            </CardHeader>
+          </Card>
         )}
+      </TabsContent>
 
+      <TabsContent value="tuning" className="mt-4">
+        <TuningComparisonCard tuning={tuningComparison} />
+      </TabsContent>
+
+      <TabsContent value="cost" className="mt-4">
+        <PipelineCostCard
+          transcodes={transcodeRuns}
+          gridSizes={{
+            generic: encodeGrid.length,
+            animation: encodeGridAnimation.length,
+          }}
+          sourceDurationSec={sourceDurationSec}
+        />
+      </TabsContent>
+
+      <TabsContent value="delivery" className="mt-4 space-y-4">
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -467,11 +312,7 @@ export function AnalysisTargetTabs({
                       setSelectedLabel(null);
                     }}
                   >
-                    {t.ladderKind === "dynamic"
-                      ? "Dynamic"
-                      : t.ladderKind === "static"
-                        ? "Static"
-                        : t.label}
+                    {ladderLabel(t.ladderKind)}
                   </Button>
                 ))}
               </div>
@@ -539,6 +380,50 @@ export function AnalysisTargetTabs({
           </CardContent>
         </Card>
 
+      </TabsContent>
+
+      <TabsContent value="raw" className="mt-4 space-y-4">
+        {source && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Media metadata</CardTitle>
+              <CardDescription>
+                MediaInfo-style tree from ffprobe on the original upload.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AnalysisTree nodes={mediaNodes} defaultOpen />
+            </CardContent>
+          </Card>
+        )}
+
+        {transcodes.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">No transcodes yet</CardTitle>
+              <CardDescription>
+                After HLS/DASH packaging finishes, each transcode appears here with probe
+                metadata and per-rendition SI/TI. Two derived ladders follow once the encode
+                grids complete.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : (
+          transcodes.map((target, index) => (
+            <TranscodeAnalysisCard
+              key={target.id}
+              target={target}
+              transcodeNumber={index + 1}
+              videoSrc={getHlsVariantUrl(
+                getPublicApiUrl(),
+                routeId,
+                "360p",
+                target.transcodeId,
+              )}
+            />
+          ))
+        )}
+
         {futureTests.map((test) => (
           <Card key={test.id}>
             <CardHeader>
@@ -562,10 +447,6 @@ export function AnalysisTargetTabs({
             </CardContent>
           </Card>
         ))}
-      </TabsContent>
-
-      <TabsContent value="tuning" className="mt-4">
-        <TuningComparisonCard tuning={tuningComparison} />
       </TabsContent>
     </Tabs>
   );

@@ -30,6 +30,20 @@ public sealed class VideoTranscodeListItem {
     public bool IsActive { get; init; }
     public required string Status { get; init; }
     public DateTime CreatedAtUtc { get; init; }
+
+    /// <summary>
+    /// When packaging for this run began and finished.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so the client can report what content-adaptive packaging actually costs. Because
+    /// the pipeline runs strictly sequentially, the gap between one run's completion and the next
+    /// run's creation is the encode grid and derivation that produced it — which is how grid cost
+    /// is recovered without instrumenting every stage. That inference holds only while the
+    /// pipeline stays sequential; parallelising the derived passes would invalidate it.
+    /// </remarks>
+    public DateTime? StartedAtUtc { get; init; }
+
+    public DateTime? CompletedAtUtc { get; init; }
 }
 
 public sealed class VideoTranscodesResponse {
@@ -58,6 +72,43 @@ public sealed class VideoCatalogService {
         return _dbContext.Videos
             .Include(video => video.ActiveTranscode)
             .FirstOrDefaultAsync(video => video.RouteId == routeId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Edits the title and description of an already-published video.
+    /// </summary>
+    /// <remarks>
+    /// Metadata is otherwise only editable through the upload session that created the video, and
+    /// a published video's session id is never exposed — so without this there is no way to rename
+    /// a clip after upload. Length limits match the column constraints and the upload path.
+    /// </remarks>
+    public async Task<Video?> UpdateMetadataAsync(
+        string routeId,
+        string? title,
+        string? description,
+        CancellationToken cancellationToken = default) {
+        var video = await _dbContext.Videos
+            .FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
+
+        if (video == null) {
+            return null;
+        }
+
+        video.Title = Trim(title, 200);
+        video.Description = Trim(description, 4000);
+        video.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return video;
+    }
+
+    private static string? Trim(string? value, int maxLength) {
+        if (string.IsNullOrWhiteSpace(value)) {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
 
     public async Task<ListVideosResponse> ListPublishedAsync(CancellationToken cancellationToken = default) {
@@ -108,7 +159,9 @@ public sealed class VideoCatalogService {
                 HasDash = item.HasDash,
                 IsActive = video.ActiveTranscodeId == item.Id,
                 Status = item.Status.ToString().ToLowerInvariant(),
-                CreatedAtUtc = item.CreatedAtUtc
+                CreatedAtUtc = item.CreatedAtUtc,
+                StartedAtUtc = item.StartedAtUtc,
+                CompletedAtUtc = item.CompletedAtUtc
             })
             .ToList();
 

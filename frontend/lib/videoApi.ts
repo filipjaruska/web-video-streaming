@@ -129,6 +129,44 @@ export async function uploadSessionFile(
   return res.json() as Promise<UploadSessionResponse>;
 }
 
+export interface UpdateVideoResponse {
+  routeId: string;
+  title?: string | null;
+  description?: string | null;
+}
+
+/** Edits a published video's metadata. The upload-session route cannot reach it once published. */
+export async function updateVideo(
+  apiUrl: string,
+  routeId: string,
+  payload: { title?: string | null; description?: string | null },
+): Promise<UpdateVideoResponse> {
+  const res = await fetch(`${apiUrl}/api/videos/${routeId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to update video: ${res.status}`);
+  }
+
+  return res.json() as Promise<UpdateVideoResponse>;
+}
+
+export async function deleteVideo(
+  apiUrl: string,
+  routeId: string,
+): Promise<void> {
+  const res = await fetch(`${apiUrl}/api/videos/${routeId}`, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to delete video: ${res.status}`);
+  }
+}
+
 export const listVideos = cache(async (): Promise<ListVideosResponse> => {
   const apiUrl = getApiUrl();
   const res = await fetch(`${apiUrl}/api/videos`, {

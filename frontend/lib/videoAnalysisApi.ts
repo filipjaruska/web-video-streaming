@@ -1,3 +1,5 @@
+import type { LadderKind } from "@/lib/analysisFormat";
+
 export type AnalysisSectionStatus =
   | "pending"
   | "running"
@@ -186,7 +188,7 @@ export interface AnalysisTarget {
   kind: AnalysisTargetKind;
   status: AnalysisTargetStatus;
   transcodeId?: string;
-  ladderKind?: "static" | "dynamic";
+  ladderKind?: LadderKind;
   tree: AnalysisTreeDocument;
   series: AnalysisSeriesDocument;
 }
@@ -205,13 +207,17 @@ export interface VideoAnalysisResponse {
   futureTests: FutureTestDescriptor[];
 }
 
+/**
+ * @param init Defaults to uncached, which is what the live per-video view needs while a pipeline
+ * is still writing. Server-rendered callers that only summarise finished work should pass a
+ * revalidating config instead of re-fetching a multi-megabyte document on every navigation.
+ */
 export async function getVideoAnalysis(
   apiUrl: string,
   routeId: string,
+  init: RequestInit = { cache: "no-store" },
 ): Promise<VideoAnalysisResponse> {
-  const res = await fetch(`${apiUrl}/api/videos/${routeId}/analysis`, {
-    cache: "no-store",
-  });
+  const res = await fetch(`${apiUrl}/api/videos/${routeId}/analysis`, init);
 
   if (!res.ok) {
     throw new Error(`Failed to load video analysis: ${res.status}`);

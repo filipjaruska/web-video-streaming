@@ -8,12 +8,48 @@ import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
  */
 export type NetworkProfile = "standard" | "fourG" | "threeG" | "variable";
 
+/** Shown in the UI. The figures match what the operator sets in clumsy. */
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
-  standard: "Standardní (nedegradovaná)",
-  fourG: "4G — 8000 kb/s, 40 ms, 1 %",
-  threeG: "3G — 2000 kb/s, 100 ms, 5 %",
-  variable: "Proměnlivá síť",
+  standard: "Standard (unshaped)",
+  fourG: "4G — 8000 kb/s, 40 ms, 1 % loss",
+  threeG: "3G — 2000 kb/s, 100 ms, 5 % loss",
+  variable: "Variable network",
 };
+
+/**
+ * Written to CSV instead of the display label. Kept separate and stable so that rewording the UI
+ * cannot change the contents of an exported column that analysis downstream is keyed on.
+ */
+export const NETWORK_PROFILE_CSV_IDS: Record<NetworkProfile, string> = {
+  standard: "standard",
+  fourG: "4g",
+  threeG: "3g",
+  variable: "variable",
+};
+
+/**
+ * The server names these profiles differently — a C# enum, so `"FourG"` rather than `"fourG"`.
+ * Both directions live here so they cannot drift apart.
+ */
+const SERVER_PROFILE_NAMES: Record<NetworkProfile, string> = {
+  standard: "Standard",
+  fourG: "FourG",
+  threeG: "ThreeG",
+  variable: "Variable",
+};
+
+export function toServerProfile(profile: NetworkProfile): string {
+  return SERVER_PROFILE_NAMES[profile];
+}
+
+/** Unknown values fall back to `standard` rather than throwing — a label is not worth a crash. */
+export function fromServerProfile(value: string): NetworkProfile {
+  const match = (
+    Object.entries(SERVER_PROFILE_NAMES) as Array<[NetworkProfile, string]>
+  ).find(([, name]) => name.toLowerCase() === value?.toLowerCase());
+
+  return match?.[0] ?? "standard";
+}
 
 /** One measured configuration: which ladder, delivered how, decided by which rule. */
 export interface BenchmarkCell {

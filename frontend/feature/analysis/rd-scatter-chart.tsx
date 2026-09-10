@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   CartesianGrid,
+  ReferenceLine,
   Scatter,
   ScatterChart,
   XAxis,
@@ -167,12 +168,15 @@ function RdLegend({
 interface RdScatterChartProps {
   encodeGrid: EncodeGridPoint[];
   derivedLadder?: DerivedLadderDocument | null;
+  /** Bitrates where the hull hands over between resolutions, keyed `"1080p>720p"`. */
+  crossoverBps?: Record<string, number> | null;
   title?: string;
 }
 
 export function RdScatterChart({
   encodeGrid,
   derivedLadder,
+  crossoverBps,
   title = "Rate–distortion (encode grid)",
 }: RdScatterChartProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -274,21 +278,10 @@ export function RdScatterChart({
     return map;
   }, [derivedLadder, metric]);
 
-  if (okPoints.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Encode-grid RD points will appear here after the CRF × resolution sweep.
-      </p>
-    );
-  }
-
-  const yMin = Math.max(
-    0,
-    Math.min(...okPoints.map((p) => qualityOf(p, metric))) - 5,
-  );
-  const presentHeights = byHeight.map(([h]) => h);
-  const showDerived = derivedByHeight.size > 0;
-
+  // Declared before the early return below: this component re-renders on every 5 s analysis poll,
+  // and a poll landing mid-pipeline can empty `okPoints`. If this hook sat after the return, the
+  // hook count would drop between renders and React would throw "rendered fewer hooks than
+  // expected". It depends only on props, so its position here changes nothing else.
   const exportRows = React.useMemo(() => {
     const gridRows = encodeGrid.map((point) => [
       "encode_grid",
@@ -304,6 +297,10 @@ export function RdScatterChart({
         : "",
       point.vmafMin != null ? Number(point.vmafMin.toFixed(6)) : "",
       point.vmafNegMean != null ? Number(point.vmafNegMean.toFixed(6)) : "",
+      point.vmafNegHarmonicMean != null
+        ? Number(point.vmafNegHarmonicMean.toFixed(6))
+        : "",
+      point.cambi != null ? Number(point.cambi.toFixed(6)) : "",
       point.onHull ? 1 : 0,
       point.error ?? "",
     ]);
@@ -333,11 +330,28 @@ export function RdScatterChart({
           "",
           "",
           "",
+          "",
+          "",
         ];
       }) ?? [];
 
     return [...gridRows, ...derivedRows];
   }, [encodeGrid, derivedLadder]);
+
+  if (okPoints.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Encode-grid RD points will appear here after the CRF × resolution sweep.
+      </p>
+    );
+  }
+
+  const yMin = Math.max(
+    0,
+    Math.min(...okPoints.map((p) => qualityOf(p, metric))) - 5,
+  );
+  const presentHeights = byHeight.map(([h]) => h);
+  const showDerived = derivedByHeight.size > 0;
 
   return (
     <Card>
@@ -385,6 +399,8 @@ export function RdScatterChart({
                 "vmaf_harmonic_mean",
                 "vmaf_min",
                 "vmaf_neg_mean",
+                "vmaf_neg_harmonic_mean",
+                "cambi",
                 "on_hull",
                 "error",
               ]}
@@ -422,6 +438,23 @@ export function RdScatterChart({
                   width={40}
                 />
                 <ZAxis range={[72, 72]} />
+                {/* Where the hull hands over between resolutions. Drawing these turns the
+                    crossover from a number in a table into the visible place on the curve where
+                    one resolution stops being the right choice. */}
+                {Object.entries(crossoverBps ?? {}).map(([key, bps]) => (
+                  <ReferenceLine
+                    key={key}
+                    x={bps / 1000}
+                    stroke="var(--muted-foreground)"
+                    strokeDasharray="4 4"
+                    label={{
+                      value: key.replace(">", "→"),
+                      position: "top",
+                      fontSize: 10,
+                      fill: "var(--muted-foreground)",
+                    }}
+                  />
+                ))}
                 <ChartTooltip
                   cursor={{ stroke: "var(--border)", strokeDasharray: "3 3" }}
                   content={({ active, payload }) => {

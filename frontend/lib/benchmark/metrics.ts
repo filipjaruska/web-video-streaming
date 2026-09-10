@@ -203,7 +203,13 @@ export function computeMetrics(trace: BenchmarkTrace): BenchmarkMetrics {
   };
 }
 
-/** Mean and sample standard deviation, which is what the chapter 5 tables print per cell. */
+/**
+ * Mean and sample standard deviation, which is what the chapter 5 tables print per cell.
+ *
+ * Sample (n−1) rather than population (÷n) because repetitions of a cell are a sample of the runs
+ * that could have happened. SI/TI in `feature/analysis/siti-chart.tsx` uses the population form for
+ * the opposite reason — it covers every frame of the clip. The two are meant to differ.
+ */
 export function summarize(values: number[]): { mean: number; stdDev: number } {
   const usable = values.filter((value) => Number.isFinite(value));
   if (usable.length === 0) {

@@ -11,9 +11,11 @@ import { StreamingControls } from "@/components/streaming-controls";
 import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
 import { BenchmarkPanel } from "@/components/benchmark-panel";
 import { useBenchmarkRunner } from "@/hooks/useBenchmarkRunner";
+import { usePlaybackCapabilities } from "@/hooks/usePlaybackCapabilities";
 import type { BenchmarkCell, NetworkProfile } from "@/lib/benchmark/types";
 import { VideoEncodingInfo } from "@/components/video-encoding-info";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { useVideoStats } from "@/hooks/useVideoStats";
 import { useVideoSubtitles } from "@/hooks/useVideoSubtitles";
@@ -131,10 +133,12 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     [handlePlaybackEvent, recordRebuffer],
   );
 
+  const capabilities = usePlaybackCapabilities();
+
   const bestSettings = useMemo(() => {
     if (transcodesLoading) return null;
-    return pickBestPlaybackSettings(transcodes, activeTranscodeId);
-  }, [transcodes, activeTranscodeId, transcodesLoading]);
+    return pickBestPlaybackSettings(transcodes, activeTranscodeId, capabilities);
+  }, [transcodes, activeTranscodeId, transcodesLoading, capabilities]);
 
   // Keep manual state in sync with Best so unlocking starts from the auto pick.
   useEffect(() => {
@@ -241,6 +245,60 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     }
   }
 
+  /**
+   * Retries the other protocol when a provider fails outright.
+   *
+   * Four guards, each load-bearing:
+   *  1. Never during a benchmark sweep. A transient error mid-cell would silently change protocol
+   *     and the recorded row would be labelled with a protocol it did not actually use.
+   *  2. Never in manual mode. If a viewer explicitly selects DASH and DASH fails, the error is the
+   *     finding — swapping it away hides exactly what this app exists to surface.
+   *  3. Nothing to fall back to from the progressive source.
+   *  4. One attempt per run and protocol. `MediaPlayer` fires `onError` repeatedly, so without
+   *     this the two protocols would ping-pong.
+   */
+  const attemptedFallbackRef = useRef<Set<string>>(new Set());
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    attemptedFallbackRef.current.clear();
+    setFallbackNotice(null);
+  }, [routeId, effectivePackagingRunId]);
+
+  const handleFatalError = useCallback(
+    ({ method }: { method: StreamingMethod; message: string }) => {
+      if (benchmarkProgress.running) return;
+      if (!bestMode) return;
+      if (method === "source") return;
+
+      const key = `${effectivePackagingRunId ?? SOURCE_RUN_ID}:${method}`;
+      if (attemptedFallbackRef.current.has(key)) return;
+      attemptedFallbackRef.current.add(key);
+
+      const run = transcodes.find((item) => item.id === effectivePackagingRunId);
+      const other: StreamingMethod = method === "hls" ? "dash" : "hls";
+      const available = other === "dash" ? run?.hasDash : run?.hasHls;
+      if (!available) return;
+
+      // Pin to manual so the Best-mode sync effect cannot immediately revert the fallback.
+      setBestMode(false);
+      setPackagingRunId(effectivePackagingRunId ?? SOURCE_RUN_ID);
+      setStreamingMethod(other);
+      setAbrAlgorithm(effectiveAbr);
+      setRunNonce((nonce) => nonce + 1);
+      setFallbackNotice(
+        `${method.toUpperCase()} failed to play in this browser — retrying over ${other.toUpperCase()}.`,
+      );
+    },
+    [
+      benchmarkProgress.running,
+      bestMode,
+      effectivePackagingRunId,
+      effectiveAbr,
+      transcodes,
+    ],
+  );
+
   const bufferProgress = Math.min(
     100,
     Math.max(0, (stats.current.bufferLevel / 30) * 100),
@@ -264,6 +322,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
         onStreamingMethodChange={setStreamingMethod}
         onAbrAlgorithmChange={setAbrAlgorithm}
         onPackagingRunChange={handlePackagingRunChange}
+        bestReason={bestSettings?.reason}
       />
 
       <BenchmarkPanel
@@ -284,6 +343,12 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
         disabled={transcodesLoading}
       />
 
+      {fallbackNotice && (
+        <Alert>
+          <AlertDescription>{fallbackNotice}</AlertDescription>
+        </Alert>
+      )}
+
       {playerReady ? (
         <VideoPlayer
           ref={playerRef}
@@ -296,6 +361,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
           onStatsUpdate={updateStats}
           onPlaybackEvent={onPlaybackEvent}
           runNonce={runNonce}
+          onFatalError={handleFatalError}
         />
       ) : (
         <div className="aspect-video w-full animate-pulse rounded-md bg-muted" />
