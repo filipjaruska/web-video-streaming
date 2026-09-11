@@ -27,6 +27,7 @@ import {
   ladderLabel,
 } from "@/lib/analysisFormat";
 import { NETWORK_PROFILE_LABELS } from "@/lib/benchmark/types";
+import { describeResolutionShare, encodeResolutionShare } from "@/lib/benchmark/metrics";
 import { profileOf } from "@/lib/videoBenchmarksApi";
 import type { ClipResult, ClipStatus } from "@/lib/resultsApi";
 
@@ -170,6 +171,10 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
           agg.qualitySwitchesMean,
           agg.oscillationsMean,
           agg.timeWeightedBitrateBpsMean,
+          agg.topRungShareMean ?? "",
+          agg.timeWeightedVmafMean ?? "",
+          agg.timeWeightedVmafStdDev ?? "",
+          encodeResolutionShare(agg.resolutionShareMean),
           agg.recoveryMsMean ?? "",
         ]),
       ),
@@ -425,8 +430,9 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
               <CardTitle className="text-base">Playback</CardTitle>
               <CardDescription>
                 Session telemetry per measured configuration, as mean ± sample standard deviation
-                over repetitions. Network profiles are declared labels — conditions are shaped
-                externally, not by the page.
+                over repetitions. Delivered VMAF weights each played rung&apos;s measured score by
+                its share of played time; the resolution mix is that share per height. Network
+                profiles are declared labels — conditions are shaped externally, not by the page.
               </CardDescription>
             </div>
             <ExportCsvButton
@@ -445,6 +451,10 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "quality_switches_mean",
                 "oscillations_mean",
                 "time_weighted_bitrate_bps_mean",
+                "top_rung_share_mean",
+                "time_weighted_vmaf_mean",
+                "time_weighted_vmaf_stddev",
+                "resolution_share_mean",
                 "recovery_ms_mean",
               ]}
               rows={playbackRows}
@@ -468,6 +478,9 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "Startup (ms)",
                 "Buffering",
                 "Switches",
+                "Top rung",
+                "Delivered VMAF",
+                "Resolution mix",
               ]}
             >
               {clips.flatMap((clip) =>
@@ -488,7 +501,20 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                       {(agg.bufferingRatioMean * 100).toFixed(2)} % ±{" "}
                       {(agg.bufferingRatioStdDev * 100).toFixed(2)}
                     </DataCell>
-                    <DataCell last>{agg.qualitySwitchesMean.toFixed(1)}</DataCell>
+                    <DataCell>{agg.qualitySwitchesMean.toFixed(1)}</DataCell>
+                    <DataCell>
+                      {agg.topRungShareMean != null
+                        ? `${(agg.topRungShareMean * 100).toFixed(0)} %`
+                        : "—"}
+                    </DataCell>
+                    <DataCell>
+                      {agg.timeWeightedVmafMean != null
+                        ? `${agg.timeWeightedVmafMean.toFixed(2)} ± ${(agg.timeWeightedVmafStdDev ?? 0).toFixed(2)}`
+                        : "—"}
+                    </DataCell>
+                    <DataCell last className="whitespace-nowrap">
+                      {describeResolutionShare(agg.resolutionShareMean)}
+                    </DataCell>
                   </DataRow>
                 )),
               )}

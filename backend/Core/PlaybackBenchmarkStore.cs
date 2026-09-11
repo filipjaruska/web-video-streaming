@@ -56,6 +56,19 @@ public sealed class BenchmarkAggregateDto {
     public required double OscillationsMean { get; init; }
     public required double TimeWeightedBitrateBpsMean { get; init; }
     public double? RecoveryMsMean { get; init; }
+
+    /// <summary>
+    /// Harmonic VMAF delivered: each played rung's measured score weighted by its share of played
+    /// time. Null when no run of the cell carried it (runs recorded before it existed, the source cell).
+    /// </summary>
+    public double? TimeWeightedVmafMean { get; init; }
+    public double? TimeWeightedVmafStdDev { get; init; }
+
+    /// <summary>Share of played media time at the ladder's top rung.</summary>
+    public double? TopRungShareMean { get; init; }
+
+    /// <summary>Mean share of played media time per rendition height, keyed by height.</summary>
+    public Dictionary<string, double>? ResolutionShareMean { get; init; }
 }
 
 public sealed class VideoBenchmarksResponse {
@@ -169,6 +182,10 @@ public sealed class PlaybackBenchmarkStore {
                 var startup = Summarize(group.Select(row => row.StartupMs).OfType<double>().ToList());
                 var buffering = Summarize(group.Select(row => row.BufferingRatio).ToList());
                 var recovery = group.Select(row => row.RecoveryMs).OfType<double>().ToList();
+                var summaries = group.Select(row => ReadSummary(row.TraceJson)).OfType<RunSummary>().ToList();
+                var vmafValues = summaries.Select(item => item.TimeWeightedVmaf).OfType<double>().ToList();
+                var vmaf = Summarize(vmafValues);
+                var topShares = summaries.Select(item => item.TopRungShare).OfType<double>().ToList();
 
                 return new BenchmarkAggregateDto {
                     NetworkProfile = group.Key.NetworkProfile.ToString(),
@@ -183,13 +200,77 @@ public sealed class PlaybackBenchmarkStore {
                     QualitySwitchesMean = group.Average(row => (double)row.QualitySwitches),
                     OscillationsMean = group.Average(row => (double)row.Oscillations),
                     TimeWeightedBitrateBpsMean = group.Average(row => row.TimeWeightedBitrateBps),
-                    RecoveryMsMean = recovery.Count > 0 ? recovery.Average() : null
+                    RecoveryMsMean = recovery.Count > 0 ? recovery.Average() : null,
+                    TimeWeightedVmafMean = vmafValues.Count > 0 ? vmaf.Mean : null,
+                    TimeWeightedVmafStdDev = vmafValues.Count > 0 ? vmaf.StdDev : null,
+                    TopRungShareMean = topShares.Count > 0 ? topShares.Average() : null,
+                    ResolutionShareMean = MeanShares(summaries)
                 };
             })
             .OrderBy(item => item.NetworkProfile)
             .ThenBy(item => item.Protocol)
             .ThenBy(item => item.AbrAlgorithm)
             .ToList();
+    }
+
+    /// <summary>The per-run results the client stores inside the trace document.</summary>
+    private sealed record RunSummary(
+        double? TopRungShare,
+        double? TimeWeightedVmaf,
+        Dictionary<string, double>? ResolutionShare);
+
+    /// <summary>
+    /// Reads the <c>summary</c> the client puts in the trace, clamped like every other client value.
+    /// Null for runs recorded before it existed.
+    /// </summary>
+    private static RunSummary? ReadSummary(string? traceJson) {
+        if (string.IsNullOrWhiteSpace(traceJson)) {
+            return null;
+        }
+
+        try {
+            using var document = JsonDocument.Parse(traceJson);
+            if (!document.RootElement.TryGetProperty("summary", out var summary) ||
+                summary.ValueKind != JsonValueKind.Object) {
+                return null;
+            }
+
+            double? top = summary.TryGetProperty("topRungShare", out var topElement) && topElement.ValueKind == JsonValueKind.Number
+                ? Math.Clamp(topElement.GetDouble(), 0, 1)
+                : null;
+            double? vmaf = summary.TryGetProperty("timeWeightedVmaf", out var vmafElement) && vmafElement.ValueKind == JsonValueKind.Number
+                ? Math.Clamp(vmafElement.GetDouble(), 0, 100)
+                : null;
+
+            Dictionary<string, double>? shares = null;
+            if (summary.TryGetProperty("resolutionShare", out var shareElement) && shareElement.ValueKind == JsonValueKind.Object) {
+                shares = new Dictionary<string, double>();
+                foreach (var property in shareElement.EnumerateObject()) {
+                    if (property.Value.ValueKind == JsonValueKind.Number) {
+                        shares[property.Name] = Math.Clamp(property.Value.GetDouble(), 0, 1);
+                    }
+                }
+            }
+
+            return new RunSummary(top, vmaf, shares);
+        } catch (JsonException) {
+            return null;
+        }
+    }
+
+    /// <summary>Mean share per height over the runs that recorded one; a height a run never played counts as zero.</summary>
+    private static Dictionary<string, double>? MeanShares(List<RunSummary> summaries) {
+        var withShares = summaries.Where(item => item.ResolutionShare is { Count: > 0 }).ToList();
+        if (withShares.Count == 0) {
+            return null;
+        }
+
+        return withShares
+            .SelectMany(item => item.ResolutionShare!.Keys)
+            .Distinct()
+            .ToDictionary(
+                height => height,
+                height => withShares.Average(item => item.ResolutionShare!.GetValueOrDefault(height)));
     }
 
     /// <summary>Mean and sample standard deviation, matching the frontend's `summarize`.</summary>

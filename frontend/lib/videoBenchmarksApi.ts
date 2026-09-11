@@ -40,6 +40,13 @@ export interface BenchmarkAggregateDto {
   oscillationsMean: number;
   timeWeightedBitrateBpsMean: number;
   recoveryMsMean?: number | null;
+  /** Delivered quality: played rungs' harmonic VMAF, weighted by time. Absent for older runs and the source cell. */
+  timeWeightedVmafMean?: number | null;
+  timeWeightedVmafStdDev?: number | null;
+  /** Mean share of played time at the ladder's top rung. */
+  topRungShareMean?: number | null;
+  /** Mean share of played time per rendition height, keyed by height. */
+  resolutionShareMean?: Record<string, number> | null;
 }
 
 export interface VideoBenchmarksResponse {

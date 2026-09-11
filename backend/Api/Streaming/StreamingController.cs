@@ -87,7 +87,12 @@ public class StreamingController : ControllerBase {
         }
 
         var filePath = resolveFile(resolved.Value);
-        return filePath == null ? NotFound() : PhysicalFile(filePath, contentType);
+        if (filePath == null) {
+            return NotFound();
+        }
+
+        ApplyCachePolicy(transcodeId);
+        return PhysicalFile(filePath, contentType);
     }
 
     /// <summary>
@@ -110,7 +115,24 @@ public class StreamingController : ControllerBase {
             return isSegmentName(segment) ? NotFound() : BadRequest("Invalid segment");
         }
 
+        ApplyCachePolicy(transcodeId);
         return PhysicalFile(filePath, contentType);
+    }
+
+    /// <summary>
+    /// Explicit caching instead of the browser's heuristic, which kept these files for a tenth of their
+    /// age and let repeated benchmark runs play from cache without touching the shaped network.
+    /// </summary>
+    /// <remarks>
+    /// Files addressed by transcode id never change once packaged, so viewers may keep them for a day.
+    /// The routes without an id serve whichever ladder is currently active, which changes when a
+    /// derived ladder finishes, so those are revalidated. Benchmark runs add a per-run query token on
+    /// the client and therefore miss the cache either way.
+    /// </remarks>
+    private void ApplyCachePolicy(string? transcodeId) {
+        Response.Headers.CacheControl = string.IsNullOrWhiteSpace(transcodeId)
+            ? "no-cache"
+            : "public, max-age=86400";
     }
 
     private async Task<Guid?> ResolveTranscodeIdAsync(

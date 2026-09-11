@@ -72,8 +72,26 @@ export interface BenchmarkSample {
   bitrateBps: number;
   /** Ladder position, ascending by bitrate. -1 when unknown. */
   rungIndex: number;
+  /** Height of the rendition on screen, pixels; 0 when unknown. Absent from traces recorded before it existed. */
+  height?: number;
   droppedFrames: number;
   totalFrames: number;
+}
+
+/** The ladder a run played: its top rung and each rung's measured harmonic VMAF, keyed by height. */
+export interface LadderQuality {
+  topHeight: number;
+  vmafByHeight: Record<number, number>;
+}
+
+/**
+ * Per-run results kept inside the stored trace rather than in columns of their own, so adding them
+ * needed no schema change. The server averages them from there.
+ */
+export interface BenchmarkTraceSummary {
+  resolutionShare: Record<number, number>;
+  topRungShare: number | null;
+  timeWeightedVmaf: number | null;
 }
 
 export type BenchmarkEvent =
@@ -104,6 +122,18 @@ export interface BenchmarkMetrics {
   /** Direction reversals, not switches — a monotone climb oscillates zero times. */
   oscillations: number;
   timeWeightedBitrateBps: number;
+  /**
+   * Share of the played media time spent at each rendition height, keyed by height. Weighted by
+   * media time rather than wall time, so a stall adds nothing to the rung it happened on.
+   */
+  resolutionShare: Record<number, number>;
+  /** Share of played media time at the ladder's top rung. Null when the ladder is unknown. */
+  topRungShare: number | null;
+  /**
+   * Each played rung's measured harmonic VMAF, weighted by its share of played media time — the
+   * quality the viewer received. Null when the ladder's scores are unknown.
+   */
+  timeWeightedVmaf: number | null;
   droppedFrameRatio: number;
   /**
    * Time from a network degradation to sustained recovery, milliseconds.
