@@ -1,4 +1,5 @@
 import type Hls from "hls.js";
+import { SEGMENT_SEC } from "@/lib/streamingConfig";
 import { type AbrLevel, type AbrState, decide } from "./rules";
 
 export type AbrRuleName = "throughput" | "buffer" | "hybrid";
@@ -96,7 +97,10 @@ export function driveHls(
     readCurrentIndex: () => (hls.loadLevel >= 0 ? hls.loadLevel : (hls.currentLevel ?? 0)),
     readBandwidthBps: () => hls.bandwidthEstimate,
     readBufferSec: () => bufferAhead(hls.media),
-    readSegmentSec: () => hls.levels[hls.loadLevel]?.details?.targetduration ?? 6,
+    // The packaging segment length, as on DASH. hls.js would report TARGETDURATION, the rounded-up
+    // longest segment — 7 on ladders packaged before keyframes were forced — so reading it here
+    // handed the buffer rule a different figure on each protocol for the same segments.
+    readSegmentSec: () => SEGMENT_SEC,
     // Assigning nextLevel turns hls.js's own auto selection off and pins the choice, which is
     // exactly the handover wanted here.
     apply: (index) => {
@@ -120,6 +124,12 @@ interface DashPlayerLike {
   getAverageThroughput?: (type: string) => number;
 }
 
+/** Declared bandwidth of the audio track a DASH video rung is played with; 0 when there is none. */
+export function dashAudioBandwidth(player: DashPlayerLike): number {
+  const audio = player.getRepresentationsByType?.("audio") ?? [];
+  return audio.reduce((highest, representation) => Math.max(highest, representation.bandwidth ?? 0), 0);
+}
+
 export function driveDash(
   player: DashPlayerLike,
   algorithm: AbrRuleName,
@@ -129,14 +139,20 @@ export function driveDash(
   const representations = () => player.getRepresentationsByType?.("video") ?? [];
 
   const adapter: PlayerAdapter = {
-    readLevels: () =>
-      representations()
+    // Video plus audio, to match what hls.js reports: an HLS BANDWIDTH covers every stream the
+    // variant plays, its audio group included, while an MPD @bandwidth covers one representation.
+    // The backend declares both from the same measured peaks, so with the audio added the rules see
+    // the same number per rung on either protocol.
+    readLevels: () => {
+      const audio = dashAudioBandwidth(player);
+      return representations()
         .map((representation, position) => ({
           index: representation.index ?? position,
-          bitrateBps: representation.bandwidth ?? 0,
+          bitrateBps: (representation.bandwidth ?? 0) > 0 ? (representation.bandwidth ?? 0) + audio : 0,
           height: representation.height ?? 0,
         }))
-        .filter((level) => level.bitrateBps > 0),
+        .filter((level) => level.bitrateBps > 0);
+    },
     readCurrentIndex: () => player.getCurrentRepresentationForType?.("video")?.index ?? 0,
     // dash.js reports throughput in kbps; the rules work in bits per second throughout.
     readBandwidthBps: () => (player.getAverageThroughput?.("video") ?? 0) * 1000,

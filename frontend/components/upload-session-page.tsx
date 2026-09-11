@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useActionAuth } from "@/components/action-auth-provider";
 import { ErrorBanner } from "@/components/error-banner";
 import { getPublicApiUrl } from "@/lib/env";
+import { useEtaCountdown } from "@/hooks/useEtaCountdown";
 import {
   clearStoredUploadSessionId,
   isResumableUploadSession,
@@ -77,7 +78,10 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     return Math.max(0, Math.floor((nowMs - started) / 1000));
   }, [isProcessing, processingStartedAt, nowMs]);
 
-  const etaSeconds = session.session.estimatedRemainingSeconds ?? null;
+  const etaSeconds = useEtaCountdown(
+    session.session.estimatedRemainingSeconds ?? null,
+    isProcessing,
+  );
 
   const canUpload =
     !isUploading &&
@@ -291,7 +295,9 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
                     </span>
                   </span>
                 )}
-                {typeof etaSeconds === "number" && etaSeconds > 0 ? (
+                {etaSeconds == null ? (
+                  <span>Est. remaining: Calculating…</span>
+                ) : etaSeconds > 0 ? (
                   <span>
                     Est. remaining:{" "}
                     <span className="font-mono text-foreground">
@@ -299,7 +305,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
                     </span>
                   </span>
                 ) : (
-                  <span>Est. remaining: Calculating…</span>
+                  <span>Est. remaining: finishing current step…</span>
                 )}
               </div>
             )}

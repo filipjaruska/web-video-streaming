@@ -38,9 +38,15 @@ public static class BdRate {
     /// <summary>A cubic fit needs four points; a ladder rung count below that cannot be compared.</summary>
     private const int MinPoints = 4;
 
+    /// <param name="minQuality">
+    /// Optional lower bound on the integration range. Both curves are still fitted on every point;
+    /// only the range the gap is averaged over is narrowed, so the lowest rungs — where a viewer
+    /// would rarely be served — cannot dominate the result.
+    /// </param>
     public static BdRateResult Compute(
         IReadOnlyList<RateQualityPoint> reference,
-        IReadOnlyList<RateQualityPoint> test) {
+        IReadOnlyList<RateQualityPoint> test,
+        double? minQuality = null) {
         var refPoints = Clean(reference);
         var testPoints = Clean(test);
 
@@ -49,6 +55,10 @@ public static class BdRate {
         }
 
         var low = Math.Max(refPoints[0].Quality, testPoints[0].Quality);
+        if (minQuality is { } floor) {
+            low = Math.Max(low, floor);
+        }
+
         var high = Math.Min(refPoints[^1].Quality, testPoints[^1].Quality);
 
         if (high - low < 1e-6) {

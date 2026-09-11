@@ -26,7 +26,7 @@ export function getStreamingMethodDescription(method: StreamingMethod): string {
     case "source":
       return "Original uploaded file via progressive HTTP Range. Single quality, no ladder packaging.";
     case "hls":
-      return "Apple's streaming protocol. Multiple quality levels, automatically adapts to network conditions. Used by Twitch, Apple TV+. Format: .m3u8 + .ts segments.";
+      return "Apple's streaming protocol. Multiple quality levels, automatically adapts to network conditions. Used by Twitch, Apple TV+. Format: .m3u8 playlists + fMP4 (.m4s) segments — the same encoded video as DASH.";
     case "dash":
       return "Industry-standard streaming protocol (MPEG). Multiple quality levels, automatic adaptation. Used by YouTube, Netflix. Format: .mpd manifest + .m4s segments.";
   }

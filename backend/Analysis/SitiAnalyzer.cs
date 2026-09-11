@@ -50,7 +50,10 @@ public sealed class SitiAnalyzer {
     private async Task<SitiAnalysisResult> RunLavfiAsync(string sourcePath, CancellationToken cancellationToken) {
         var input = $"movie='{LavfiPath.EscapeForMovieFilter(sourcePath)}',siti";
         var args = $"-v error -f lavfi -i \"{input}\" -select_streams v:0 -show_frames " +
-                   "-show_entries frame=pkt_pts_time:frame_tags=lavfi.siti.si,lavfi.siti.ti " +
+                   // pts_time is what current ffprobe emits; pkt_pts_time was removed (FFmpeg 5+)
+                   // and silently returned nothing, which left every SI/TI series without a time
+                   // axis. Both are requested so older builds still work.
+                   "-show_entries frame=pts_time,pkt_pts_time:frame_tags=lavfi.siti.si,lavfi.siti.ti " +
                    "-print_format json";
 
         try {
@@ -106,7 +109,7 @@ public sealed class SitiAnalyzer {
             series.Si.Add(si);
             series.Ti.Add(ti);
 
-            var pts = GetString(frame, "pkt_pts_time");
+            var pts = GetString(frame, "pts_time") ?? GetString(frame, "pkt_pts_time");
             if (pts != null &&
                 double.TryParse(pts, NumberStyles.Float, CultureInfo.InvariantCulture, out var timeSec)) {
                 series.TimeSec ??= [];
@@ -136,14 +139,26 @@ public sealed class SitiAnalyzer {
     }
 
     /// <summary>
-    /// Share of frames identical to their predecessor, read straight off the TI series.
+    /// TI below which a frame counts as a repeat of its predecessor.
     /// </summary>
     /// <remarks>
-    /// TI is the standard deviation of the frame difference, so a frame duplicated from the one
-    /// before it scores exactly zero. Animation drawn "on twos" holds each drawing for two frames
-    /// and therefore produces a large share of these. No extra analysis is needed — the number falls
-    /// out of a series that has already been computed — and it is what says, per clip, whether
-    /// dropping duplicate frames before encoding was ever going to be worth anything.
+    /// Not zero. TI is the standard deviation of the frame difference, and on a lossily compressed
+    /// master a held drawing still differs from the frame before it by coding noise. The first
+    /// Frieren run shows this plainly: 1 frame below TI 0.5, 2 between 0.5 and 1, then a sharp
+    /// cluster of 115 between 1 and 2 before the distribution drops to 15 between 2 and 3. That
+    /// cluster is the held frames — it matches the 14.9 % mpdecimate (which is noise-tolerant)
+    /// removed from an earlier cut of the same scene — and an exact-zero test reported 0 % for it.
+    /// </remarks>
+    internal const double DuplicateTiThreshold = 2.0;
+
+    /// <summary>
+    /// Share of frames that repeat their predecessor, read straight off the TI series.
+    /// </summary>
+    /// <remarks>
+    /// Animation drawn "on twos" holds each drawing for two frames and therefore produces a large
+    /// share of these. No extra analysis is needed — the number falls out of a series that has
+    /// already been computed — and it is what says, per clip, whether dropping duplicate frames
+    /// before encoding was ever going to be worth anything.
     /// </remarks>
     public static double? DuplicateFrameShare(SitiSeriesData series) {
         // The first TI sample has no predecessor to differ from.
@@ -152,7 +167,7 @@ public sealed class SitiAnalyzer {
             return null;
         }
 
-        return comparable.Count(value => value <= 1e-9) / (double)comparable.Count;
+        return comparable.Count(value => value < DuplicateTiThreshold) / (double)comparable.Count;
     }
 
     private static AnalysisTreeNode BuildSection(SitiSeriesData series) {

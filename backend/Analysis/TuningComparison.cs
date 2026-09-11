@@ -8,12 +8,11 @@ namespace WebWVideoStreamingAPI.Analysis;
 /// samples they share.
 /// </summary>
 /// <remarks>
-/// The join is on (resolution, CRF), and both grids were measured against the same source excerpt,
-/// so a matched pair differs in nothing but the encoder settings. Packaged renditions could not
+/// The join is on (resolution, CRF), and both grids are measured against the same full source, so
+/// a matched pair differs in nothing but the encoder settings. Packaged renditions could not
 /// support this comparison: the two ladders choose different bitrates by construction, so holding
-/// the rung constant while varying the tune is impossible there. This is also why
-/// <see cref="EncodeRecipe.Animation"/> shifts its CRF range by dropping one step and adding
-/// another rather than offsetting every value — the shared values are what this joins on.
+/// the rung constant while varying the tune is impossible there. Both grids share one coarse CRF
+/// range so that every coarse sample has a partner.
 /// </remarks>
 public sealed class TuningComparison {
     private readonly AnalysisStore _store;
@@ -47,11 +46,12 @@ public sealed class TuningComparison {
 
             if (document.Error == null) {
                 _logger.LogInformation(
-                    "Tuning comparison over {Pairs} matched samples: ΔVMAF={Vmaf:0.###}, ΔCAMBI={Cambi:0.###}, BD-rate={BdRate:0.##}%",
+                    "Tuning comparison over {Pairs} matched samples: ΔVMAF={Vmaf:0.###}, ΔCAMBI={Cambi:0.###}, BD-rate={BdRate:0.##}% (mean of {Resolutions} resolutions)",
                     document.Pairs.Count,
                     document.MeanVmafDelta,
                     document.MeanCambiDelta,
-                    document.BdRatePercent);
+                    document.BdRatePercent,
+                    document.BdRateByResolution?.Count ?? 0);
             } else {
                 _logger.LogWarning("Tuning comparison unavailable: {Error}", document.Error);
             }
@@ -106,14 +106,26 @@ public sealed class TuningComparison {
             document.MeanCambiDelta = withCambi.Average(pair => pair.TunedCambi!.Value - pair.BaseCambi!.Value);
         }
 
-        // BD-rate over the whole curve, so the tune is judged on rate-quality rather than on a
-        // per-sample VMAF delta that ignores the bitrate it was bought at.
-        var result = BdRate.Compute(
-            Usable(baseGrid).Select(ToRateQuality).ToList(),
-            Usable(tunedGrid).Select(ToRateQuality).ToList());
+        // BD-rate per resolution, so the tune is judged on rate-quality rather than on a per-sample
+        // VMAF delta that ignores the bitrate it was bought at. Each resolution's CRF sweep is a
+        // genuine rate-quality curve; the whole grid is not — its resolutions interleave in bitrate
+        // — and fitting one cubic through all of them, as this used to, measured nothing coherent.
+        var byResolution = new Dictionary<string, double>();
+        foreach (var group in Usable(baseGrid).Where(AboveFloor).GroupBy(point => point.Height).OrderByDescending(group => group.Key)) {
+            var tunedCurve = Usable(tunedGrid)
+                .Where(point => point.Height == group.Key && AboveFloor(point))
+                .Select(ToRateQuality)
+                .ToList();
 
-        if (result.Success) {
-            document.BdRatePercent = result.BdRatePercent;
+            var result = BdRate.Compute(group.Select(ToRateQuality).ToList(), tunedCurve);
+            if (result.Success) {
+                byResolution[group.First().Label] = result.BdRatePercent;
+            }
+        }
+
+        if (byResolution.Count > 0) {
+            document.BdRateByResolution = byResolution;
+            document.BdRatePercent = byResolution.Values.Average();
         }
 
         return document;
@@ -121,8 +133,10 @@ public sealed class TuningComparison {
         static IEnumerable<EncodeGridPoint> Usable(IReadOnlyList<EncodeGridPoint> grid) => grid
             .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0 && point.VmafMean > 0);
 
-        static RateQualityPoint ToRateQuality(EncodeGridPoint point) =>
-            new(point.BitrateBps, point.VmafHarmonicMean is > 0 ? point.VmafHarmonicMean.Value : point.VmafMean);
+        // Same floor the ladder is derived above: below it the harmonic mean measures clipping.
+        static bool AboveFloor(EncodeGridPoint point) => point.RawQuality >= LadderDerivation.QualityFloor;
+
+        static RateQualityPoint ToRateQuality(EncodeGridPoint point) => new(point.BitrateBps, point.RawQuality);
     }
 
     private static AnalysisTreeNode BuildSection(TuningComparisonDocument document) {
@@ -142,9 +156,13 @@ public sealed class TuningComparison {
             Leaf("tuningComparison.pairs", "Matched samples", document.Pairs.Count.ToString()),
             Leaf("tuningComparison.vmaf", "Mean ΔVMAF", Signed(document.MeanVmafDelta)),
             Leaf("tuningComparison.cambi", "Mean ΔCAMBI (lower is better)", Signed(document.MeanCambiDelta)),
-            Leaf("tuningComparison.bdRate", "BD-rate vs default",
+            Leaf("tuningComparison.bdRate", "BD-rate vs default (mean of resolutions)",
                 document.BdRatePercent is { } bd ? Signed(bd) + " %" : "—")
         };
+
+        foreach (var (label, bdRate) in document.BdRateByResolution ?? []) {
+            children.Add(Leaf($"tuningComparison.bdRate.{label}", $"BD-rate · {label}", Signed(bdRate) + " %"));
+        }
 
         return Section(
             "tuningComparison",

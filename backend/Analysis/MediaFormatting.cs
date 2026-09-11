@@ -289,4 +289,38 @@ public static class MediaFormatting {
             return size > 0 && duration > 0.1 ? (long)(size * 8.0 / duration) : 0;
         }
     }
+
+    /// <summary>
+    /// Bitrate of the first video stream alone, from its packets — never the container total. Both
+    /// the encode grid and the packaged-rendition collector use this, so their rate-quality points
+    /// always sit on the same basis. See <see cref="VideoRate.Compute"/>.
+    /// </summary>
+    public static async Task<long> MeasureVideoBitrateBpsAsync(
+        MediaProbe probe,
+        string path,
+        CancellationToken cancellationToken) {
+        var stats = await MeasureVideoRateAsync(probe, path, cancellationToken);
+        return stats?.AverageBps ?? 0;
+    }
+
+    /// <summary>Average and per-segment peak of the first video stream, or null when it cannot be read.</summary>
+    public static async Task<VideoRateStats?> MeasureVideoRateAsync(
+        MediaProbe probe,
+        string path,
+        CancellationToken cancellationToken,
+        double segmentSeconds = 6) {
+        var packets = await probe.ProbeVideoPacketsAsync(path, cancellationToken);
+        return packets == null ? null : VideoRate.Compute(packets, segmentSeconds);
+    }
+
+    /// <summary>The same measurement for any one stream — used for the shared audio track.</summary>
+    public static async Task<VideoRateStats?> MeasureStreamRateAsync(
+        MediaProbe probe,
+        string path,
+        string streamSelector,
+        CancellationToken cancellationToken,
+        double segmentSeconds = 6) {
+        var packets = await probe.ProbePacketsAsync(path, streamSelector, cancellationToken);
+        return packets == null ? null : VideoRate.Compute(packets, segmentSeconds);
+    }
 }

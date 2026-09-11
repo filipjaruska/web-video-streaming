@@ -63,6 +63,14 @@ function ClipCell({ clip }: { clip: ClipResult }) {
   );
 }
 
+/** "1080p −8.1% · 720p −6.4%", highest resolution first; empty when there is nothing to show. */
+function formatPerResolution(values: Record<string, number> | null | undefined): string {
+  return Object.entries(values ?? {})
+    .sort(([a], [b]) => Number.parseInt(b, 10) - Number.parseInt(a, 10))
+    .map(([label, value]) => `${label} ${formatSigned(value)}%`)
+    .join(" · ");
+}
+
 /**
  * The cross-clip view: every measurement the thesis reports per clip, in one place.
  *
@@ -106,6 +114,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
         clip.content?.meanSi ?? "",
         clip.content?.meanTi ?? "",
         clip.content?.duplicateFrameShare ?? "",
+        clip.content?.sourceCambi ?? "",
         clip.content?.durationSec ?? "",
         clip.content?.frames ?? "",
       ]),
@@ -119,6 +128,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
           clip.title,
           ladder.kind,
           ladder.bdRatePercent ?? "",
+          ladder.bdRateHighBandPercent ?? "",
           ladder.overlapLowVmaf ?? "",
           ladder.overlapHighVmaf ?? "",
           ladder.bitrateSavingPercent ?? "",
@@ -138,6 +148,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
         clip.tuning?.meanVmafDelta ?? "",
         clip.tuning?.meanCambiDelta ?? "",
         clip.tuning?.bdRatePercent ?? "",
+        formatPerResolution(clip.tuning?.bdRateByResolution),
       ]),
     [clips],
   );
@@ -214,6 +225,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "mean_si",
                 "mean_ti",
                 "duplicate_frame_share",
+                "source_cambi",
                 "duration_sec",
                 "frames",
               ]}
@@ -223,7 +235,14 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
         </CardHeader>
         <CardContent>
           <DataTable
-            headers={["Clip", "Mean SI", "Mean TI", "Duplicate frames", "Duration"]}
+            headers={[
+              "Clip",
+              "Mean SI",
+              "Mean TI",
+              "Duplicate frames",
+              "Source CAMBI",
+              "Duration",
+            ]}
           >
             {clips.map((clip) => (
               <DataRow key={clip.routeId}>
@@ -235,6 +254,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                     ? formatPercent(clip.content.duplicateFrameShare)
                     : "—"}
                 </DataCell>
+                <DataCell>{formatNumber(clip.content?.sourceCambi)}</DataCell>
                 <DataCell last>
                   {clip.content?.durationSec != null
                     ? `${clip.content.durationSec.toFixed(1)} s`
@@ -262,6 +282,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "clip",
                 "ladder",
                 "bd_rate_percent",
+                "bd_rate_vmaf60_percent",
                 "overlap_low_vmaf",
                 "overlap_high_vmaf",
                 "bitrate_saving_percent",
@@ -284,6 +305,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "Clip",
                 "Ladder",
                 "BD-rate",
+                "BD-rate ≥ 60",
                 "Overlap band",
                 "Bitrate saving",
                 "VMAF gain",
@@ -304,6 +326,11 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                     >
                       {ladder.bdRatePercent != null
                         ? `${formatSigned(ladder.bdRatePercent)}%`
+                        : "—"}
+                    </DataCell>
+                    <DataCell title="BD-rate integrated only over harmonic VMAF ≥ 60, the range viewers are normally served at.">
+                      {ladder.bdRateHighBandPercent != null
+                        ? `${formatSigned(ladder.bdRateHighBandPercent)}%`
                         : "—"}
                     </DataCell>
                     <DataCell>
@@ -347,6 +374,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "mean_vmaf_delta",
                 "mean_cambi_delta",
                 "bd_rate_percent",
+                "bd_rate_by_resolution",
               ]}
               rows={tuningRows}
             />
@@ -354,7 +382,15 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
         </CardHeader>
         <CardContent>
           <DataTable
-            headers={["Clip", "Tune", "Pairs", "Mean ΔVMAF", "Mean ΔCAMBI", "BD-rate"]}
+            headers={[
+              "Clip",
+              "Tune",
+              "Pairs",
+              "Mean ΔVMAF",
+              "Mean ΔCAMBI",
+              "BD-rate",
+              "Per resolution",
+            ]}
           >
             {clips.map((clip) => (
               <DataRow key={clip.routeId}>
@@ -363,10 +399,18 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 <DataCell>{clip.tuning?.pairs || "—"}</DataCell>
                 <DataCell>{formatSigned(clip.tuning?.meanVmafDelta, 3)}</DataCell>
                 <DataCell>{formatSigned(clip.tuning?.meanCambiDelta, 3)}</DataCell>
-                <DataCell last title={clip.tuning?.error ?? undefined}>
+                <DataCell
+                  title={
+                    clip.tuning?.error ??
+                    "Mean of BD-rates fitted separately at each resolution."
+                  }
+                >
                   {clip.tuning?.bdRatePercent != null
                     ? `${formatSigned(clip.tuning.bdRatePercent)}%`
                     : "—"}
+                </DataCell>
+                <DataCell last>
+                  {formatPerResolution(clip.tuning?.bdRateByResolution) || "—"}
                 </DataCell>
               </DataRow>
             ))}

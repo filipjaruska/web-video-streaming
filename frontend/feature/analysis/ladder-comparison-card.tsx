@@ -185,11 +185,21 @@ export function LadderComparisonCard({
           ) : (
             <div key={entry.ladderKind}>
               <div className="mb-2 text-sm font-medium">{entry.label}</div>
-              <MetricTileGrid>
+              <MetricTileGrid columns={4}>
                 <MetricTile
                   value={`${formatSigned(entry.bdRatePercent)}%`}
                   label={`BD-rate over harmonic VMAF ${entry.overlapLowVmaf.toFixed(1)}–${entry.overlapHighVmaf.toFixed(1)}`}
                   tone={toneForSaving(entry.bdRatePercent)}
+                />
+                <MetricTile
+                  value={
+                    entry.bdRateHighBandPercent != null
+                      ? `${formatSigned(entry.bdRateHighBandPercent)}%`
+                      : "—"
+                  }
+                  label="BD-rate at harmonic VMAF ≥ 60"
+                  tone={toneForSaving(entry.bdRateHighBandPercent)}
+                  title="The same integral restricted to the quality range viewers are normally served at. Over the full overlap the lowest rungs, which exist for bad networks, weigh as much as the ones people watch."
                 />
                 <MetricTile
                   value={

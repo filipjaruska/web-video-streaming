@@ -84,6 +84,10 @@ export interface EncodeGridPoint {
   cambi?: number;
   /** Point lies on the convex hull spanning every resolution. */
   onHull?: boolean;
+  /** CAMBI penalty the ladder decision used for this point (0 on the generic grid). */
+  cambiPenaltyWeight?: number;
+  /** Wall time of the encode and its VMAF, milliseconds. */
+  elapsedMs?: number;
   error?: string;
 }
 
@@ -98,6 +102,17 @@ export interface DerivedLadderVariant {
   crf?: number;
   /** Local hull slope, in VMAF per doubling of bitrate. */
   hullSlope?: number;
+  /** The rung lies on the envelope of every resolution's hull at its bitrate. */
+  onEnvelope?: boolean;
+  /** VMAF the best resolution would add at this bitrate; 0 on the envelope. */
+  hullDeficit?: number;
+  /** Held below the crossover above which the next resolution up wins. */
+  capped?: boolean;
+  capBps?: number;
+  /** On the grid's lowest CRF with the hull still steeper than λ — the tangent lies past the grid. */
+  atGridBoundary?: boolean;
+  /** No usable grid sample at this resolution; the static rung was kept. */
+  fallback?: boolean;
 }
 
 export interface DerivedLadderDocument {
@@ -107,6 +122,30 @@ export interface DerivedLadderDocument {
   lambda?: number;
   /** Bitrate where the hull hands over between resolutions, keyed "1080p>720p". */
   crossoverBps?: Record<string, number>;
+  /** The same crossovers, ordered, with whether each was extrapolated past the lower curve. */
+  crossovers?: CrossoverInfo[];
+  /** Resolutions left out of the ladder, with the reason. */
+  dropped?: Record<string, string>;
+  /** Gaps between adjacent rungs wide enough to matter for ABR, and similar notes. */
+  warnings?: string[];
+  /** Harmonic VMAF below which grid points are left out of the hulls. */
+  qualityFloor?: number;
+  cambiPenaltyWeight?: number;
+}
+
+export interface CrossoverInfo {
+  /** "upper>lower": the resolution winning above the bitrate, then the one below it. */
+  key: string;
+  bitrateBps: number;
+  extrapolated: boolean;
+}
+
+/** The animation ladder re-derived from the same grid under another CAMBI weight. */
+export interface LadderSensitivityEntry {
+  weight: number;
+  lambda?: number;
+  variants: DerivedLadderVariant[];
+  error?: string;
 }
 
 export interface LadderComparisonPoint {
@@ -125,6 +164,8 @@ export interface LadderComparisonEntry {
   bdRatePercent: number;
   overlapLowVmaf: number;
   overlapHighVmaf: number;
+  /** BD-rate integrated only over harmonic VMAF ≥ 60, the range viewers are actually served at. */
+  bdRateHighBandPercent?: number;
   bitrateSavingPercent?: number;
   vmafGainAtEqualBitrate?: number;
   points: LadderComparisonPoint[];
@@ -152,15 +193,59 @@ export interface TuningComparisonPair {
 export interface TuningComparisonDocument {
   tune?: string;
   decimate: boolean;
+  /** Mean of the per-resolution BD-rates below. */
   bdRatePercent?: number;
+  /** BD-rate fitted separately at each resolution, keyed by rung label. */
+  bdRateByResolution?: Record<string, number>;
   meanVmafDelta?: number;
   meanCambiDelta?: number;
   pairs: TuningComparisonPair[];
   error?: string;
 }
 
+export interface StageTiming {
+  durationMs: number;
+  frames?: number;
+  pixels?: number;
+  count?: number;
+}
+
+export interface PackagingIntegrityRung {
+  label: string;
+  renditionSha256?: string;
+  hlsSha256?: string;
+  dashSha256?: string;
+  renditionPackets?: number;
+  hlsPackets?: number;
+  dashPackets?: number;
+  hlsSegmentsSec?: number[];
+  dashSegmentsSec?: number[];
+  hlsAvDeltaMs?: number;
+  dashAvDeltaMs?: number;
+  hlsBandwidthBps?: number;
+  hlsAverageBandwidthBps?: number;
+  dashBandwidthBps?: number;
+  averageBps?: number;
+  peakSegmentBps?: number;
+}
+
+/** Proof that HLS and DASH carry the one encoded bitstream per rung. */
+export interface PackagingIntegrityDocument {
+  passed: boolean;
+  segmentTablesIdentical: boolean;
+  problems: string[];
+  rungs: PackagingIntegrityRung[];
+}
+
 export interface AnalysisSeriesDocument {
   siti?: SitiSeriesData;
+  packagingIntegrity?: PackagingIntegrityDocument;
+  animationLadderSensitivity?: LadderSensitivityEntry[];
+  /** CAMBI of the source against itself — the banding already present before encoding. */
+  sourceCambi?: number;
+  sourceCambiMax?: number;
+  /** Wall time per pipeline step, keyed by step name. */
+  stageTimings?: Record<string, StageTiming>;
   sitiByFormat?: FormatSitiSeries;
   vmafByFormat?: FormatVmafSeries;
   encodeGrid?: EncodeGridPoint[];
