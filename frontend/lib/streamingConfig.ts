@@ -43,6 +43,34 @@ export function pickStartLevel<T>(
   return fitting.at(-1) ?? ascending[0];
 }
 
+/** How long fast start waits for its opening segment before dropping to the bottom rung. */
+export const FAST_START_TIMEOUT_MS = 4000;
+
+/**
+ * The rung fast start opens on: the top one. Best mode only, never a measured profile.
+ *
+ * The measured profiles all start from the same fixed estimate so their runs are comparable, and
+ * every one of them opens low: the shared panic rule sees the empty startup buffer and forces the
+ * bottom rung, and hybrid then climbs only as fast as the buffer fills. That is the right choice for
+ * a measurement and the wrong first impression for a viewer.
+ *
+ * Deliberately not the browser's downlink hint (Network Information API). It is coarse, capped at
+ * 10 Mb/s in Chromium, and blind to local traffic: served from localhost it reported 1.25 Mb/s and
+ * "3g", which opened on the bottom rung — and on localhost hls.js buffers the whole clip at that
+ * rung before the first decision, so the opening segment played at 360p regardless. What protects
+ * a genuinely slow link is the driver's timeout, which drops to the bottom rung if the opening
+ * segment has not arrived within `FAST_START_TIMEOUT_MS`.
+ */
+export function pickFastStartLevel<T>(
+  levels: readonly T[],
+  bitrateOf: (level: T) => number,
+): T | undefined {
+  return levels.reduce<T | undefined>(
+    (top, level) => (top === undefined || bitrateOf(level) > bitrateOf(top) ? level : top),
+    undefined,
+  );
+}
+
 /**
  * hls.js configuration, identical for every profile.
  *

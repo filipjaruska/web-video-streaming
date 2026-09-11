@@ -35,6 +35,7 @@ import type {
 import {
   createHlsConfig,
   createDashSettings,
+  pickFastStartLevel,
   pickStartLevel,
   SEGMENT_SEC,
   TARGET_BUFFER_SEC,
@@ -78,6 +79,12 @@ interface VideoPlayerProps {
    * is a policy question that depends on state this component does not own.
    */
   onFatalError?: (info: { method: StreamingMethod; message: string }) => void;
+  /**
+   * Best mode's fast start: open on the highest rung the connection allows and hold it until the
+   * first segment is in. Presentation only — a benchmark sweep turns Best mode off, so no measured
+   * run ever starts this way. See `pickFastStartLevel`.
+   */
+  fastStart?: boolean;
 }
 
 /** What a benchmark needs in order to drive playback rather than wait for a viewer. */
@@ -101,6 +108,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     onPlaybackEvent,
     runNonce = 0,
     onFatalError,
+    fastStart = false,
   }: VideoPlayerProps,
   ref,
 ) {
@@ -171,7 +179,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       driverRef.current?.stop();
       driverRef.current = null;
     };
-  }, [src, abrAlgorithm]);
+  }, [src, abrAlgorithm, fastStart]);
 
   const onProviderChange = useCallback(
     (
@@ -205,13 +213,22 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               return;
             }
 
-            const startLevel = pickStartLevel(
-              hls.levels.map((level, index) => ({ index, bitrate: level.bitrate })),
-              (level) => level.bitrate,
-            );
-            hls.nextLevel = startLevel?.index ?? 0;
+            const choices = hls.levels.map((level, index) => ({ index, bitrate: level.bitrate }));
+            const startLevel = fastStart
+              ? pickFastStartLevel(choices, (level) => level.bitrate)
+              : pickStartLevel(choices, (level) => level.bitrate);
+
+            if (fastStart) {
+              // Immediately, not on the next fragment: loading may already have begun at hls.js's
+              // own opening guess, which probes bandwidth on the lowest rung.
+              hls.startLevel = startLevel?.index ?? 0;
+              hls.currentLevel = startLevel?.index ?? 0;
+            } else {
+              hls.nextLevel = startLevel?.index ?? 0;
+            }
+
             driverRef.current?.stop();
-            driverRef.current = driveHls(hls, abrAlgorithm, TARGET_BUFFER_SEC);
+            driverRef.current = driveHls(hls, abrAlgorithm, TARGET_BUFFER_SEC, { fastStart });
           });
         });
       }
@@ -236,7 +253,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             // Video plus audio — the figure an HLS BANDWIDTH declares — so both protocols open
             // on the same rung.
             const audio = dashAudioBandwidth(dash);
-            const startAt = pickStartLevel<{ index?: number; bandwidth?: number }>(
+            const pick = fastStart ? pickFastStartLevel : pickStartLevel;
+            const startAt = pick<{ index?: number; bandwidth?: number }>(
               levels,
               (level) => (level.bandwidth ?? 0) + audio,
             );
@@ -252,6 +270,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               abrAlgorithm,
               TARGET_BUFFER_SEC,
               SEGMENT_SEC,
+              { fastStart },
             );
           };
 
@@ -259,7 +278,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         });
       }
     },
-    [abrAlgorithm],
+    [abrAlgorithm, fastStart],
   );
 
   const onProviderSetup = useCallback(
@@ -278,7 +297,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     <div className="relative space-y-3">
       {error && <ErrorBanner title="Playback Error" message={error} />}
       <MediaPlayer
-        key={`${streamingMethod}:${transcodeId ?? "source"}:${abrAlgorithm}:${runNonce}`}
+        key={`${streamingMethod}:${transcodeId ?? "source"}:${abrAlgorithm}:${fastStart ? "fast" : "fixed"}:${runNonce}`}
         className="aspect-video w-full overflow-hidden rounded-md bg-black shadow-sm media-player"
         title="Video"
         src={src}

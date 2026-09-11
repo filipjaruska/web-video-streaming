@@ -55,10 +55,13 @@ export interface BestPlaybackSettings {
 /**
  * Picks the delivery protocol for one packaged ladder, given what the browser supports.
  *
- * Order matters. Native HLS comes first because on Safari and iOS it plays without MSE at all,
- * which is the only path available there before iOS 17. MSE-driven HLS is next: hls.js is the
- * better-tested path here, and existing DASH packages sometimes carry multi-adaptation-set 5.1
- * audio that Chrome's MSE rejects with CHUNK_DEMUXER append failures.
+ * Order matters, and it follows what the player actually does. hls.js comes first wherever MSE
+ * exists: Vidstack prefers it over the browser's own HLS (`preferNativeHLS` is false), and only
+ * through hls.js do the rules in `lib/abr` choose the quality — native playback hands that choice to
+ * the browser. Native HLS is the fallback for browsers without MSE, which on iOS before 17 is the
+ * only path there is. This used to check native HLS first, and since Chrome started answering
+ * `canPlayType` for HLS, every Chrome session was labelled "native" while playing through hls.js.
+ * DASH comes last: it needs MSE too, so it only wins when the ladder has no HLS package.
  *
  * With no capability probe yet — server render, or the first frame before the effect runs — this
  * falls through to the availability-only branch, which is exactly the behaviour that shipped
@@ -69,10 +72,6 @@ function pickDeliveryForLadder(
   capabilities?: PlaybackCapabilities | null,
 ): { method: StreamingMethod; reason: string } | null {
   if (capabilities) {
-    if (item.hasHls && capabilities.nativeHls) {
-      return { method: "hls", reason: "HLS — native playback, no MSE needed" };
-    }
-
     if (item.hasHls && capabilities.mseHls) {
       return {
         method: "hls",
@@ -80,6 +79,10 @@ function pickDeliveryForLadder(
           ? "HLS via hls.js — ManagedMediaSource"
           : "HLS via hls.js — MSE available",
       };
+    }
+
+    if (item.hasHls && capabilities.nativeHls) {
+      return { method: "hls", reason: "HLS — native playback, no MSE available" };
     }
 
     if (item.hasDash && capabilities.dash) {
@@ -99,8 +102,14 @@ function pickDeliveryForLadder(
 }
 
 /**
- * Best-mode defaults: the active packaging run, the protocol this browser handles best, hybrid
- * ABR. Falls back to the original source over HTTP Range when no ladder is playable.
+ * Best-mode defaults: the active packaging run, the protocol this browser handles best, and the
+ * throughput rule behind a fast start. Falls back to the original source over HTTP Range when no
+ * ladder is playable.
+ *
+ * Throughput rather than hybrid: hybrid takes the more cautious of the throughput and buffer rules,
+ * and the buffer rule only climbs as the buffer fills — the right conservatism for a measured
+ * profile, but a viewer on a fast link would watch the first segments at the bottom of the ladder.
+ * Best mode is never part of the measurement matrix, so it is free to optimise for first impression.
  */
 export function pickBestPlaybackSettings(
   transcodes: VideoTranscodeListItem[],
@@ -120,7 +129,7 @@ export function pickBestPlaybackSettings(
       return {
         packagingRunId: active.id,
         streamingMethod: delivery.method,
-        abrAlgorithm: "hybrid",
+        abrAlgorithm: "throughput",
         reason: delivery.reason,
       };
     }
@@ -129,7 +138,7 @@ export function pickBestPlaybackSettings(
   return {
     packagingRunId: SOURCE_RUN_ID,
     streamingMethod: "source",
-    abrAlgorithm: "hybrid",
+    abrAlgorithm: "throughput",
     reason: "Progressive HTTP Range — no packaged ladder available",
   };
 }

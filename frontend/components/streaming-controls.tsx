@@ -105,8 +105,17 @@ function StreamingControlsComponent({
               </Badge>
             ) : null}
             <Badge variant="secondary">{protocolLabel(streamingMethod)}</Badge>
-            <Badge variant="secondary">
-              {isAdaptive ? getAbrLabel(abrAlgorithm) : "None"}
+            <Badge
+              variant="secondary"
+              title={
+                bestMode && isAdaptive
+                  ? "Opens on the top rung and holds it until the first segment is in — dropping to the bottom if that takes over 4 s — then follows measured throughput. Presentation only: measured profiles start on a fixed rung."
+                  : undefined
+              }
+            >
+              {isAdaptive
+                ? `${getAbrLabel(abrAlgorithm)}${bestMode ? " · fast start" : ""}`
+                : "None"}
             </Badge>
             {bestMode && bestReason && (
               <Badge
