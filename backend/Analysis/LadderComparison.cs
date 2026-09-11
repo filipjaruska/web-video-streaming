@@ -13,6 +13,12 @@ namespace WebWVideoStreamingAPI.Analysis;
 /// same collector against the same source, so the only difference between them is the ladder.
 /// </remarks>
 public sealed class LadderComparison {
+    /// <summary>
+    /// Lower edge of the band the second, restricted BD-rate is integrated over. Below it the rungs
+    /// exist for bad networks, not for viewing, and on the full overlap they dominate the integral.
+    /// </summary>
+    internal const double HighBandFloorVmaf = 60;
+
     private readonly AnalysisStore _store;
     private readonly ILogger<LadderComparison> _logger;
 
@@ -51,11 +57,13 @@ public sealed class LadderComparison {
             foreach (var entry in document.Ladders) {
                 if (entry.Error == null) {
                     _logger.LogInformation(
-                        "{Label} BD-rate vs static: {BdRate:0.##}% over VMAF [{Low:0.#}, {High:0.#}]",
+                        "{Label} BD-rate vs static: {BdRate:0.##}% over VMAF [{Low:0.#}, {High:0.#}], {HighBand:0.##}% at VMAF ≥ {Floor}",
                         entry.Label,
                         entry.BdRatePercent,
                         entry.OverlapLowVmaf,
-                        entry.OverlapHighVmaf);
+                        entry.OverlapHighVmaf,
+                        entry.BdRateHighBandPercent,
+                        HighBandFloorVmaf);
                 } else {
                     _logger.LogWarning("{Label} comparison unavailable: {Error}", entry.Label, entry.Error);
                 }
@@ -78,10 +86,10 @@ public sealed class LadderComparison {
             Points = points
         };
 
-        var result = BdRate.Compute(
-            staticPoints.Select(ToRateQuality).ToList(),
-            points.Select(ToRateQuality).ToList());
+        var reference = staticPoints.Select(ToRateQuality).ToList();
+        var test = points.Select(ToRateQuality).ToList();
 
+        var result = BdRate.Compute(reference, test);
         if (!result.Success) {
             entry.Error = result.ErrorMessage;
             return entry;
@@ -92,6 +100,12 @@ public sealed class LadderComparison {
         entry.OverlapHighVmaf = result.OverlapHighQuality;
         entry.BitrateSavingPercent = result.BitrateSavingPercent;
         entry.VmafGainAtEqualBitrate = result.QualityGainAtEqualBitrate;
+
+        var highBand = BdRate.Compute(reference, test, HighBandFloorVmaf);
+        if (highBand.Success) {
+            entry.BdRateHighBandPercent = highBand.BdRatePercent;
+        }
+
         return entry;
 
         static RateQualityPoint ToRateQuality(LadderComparisonPoint point) =>
@@ -99,14 +113,14 @@ public sealed class LadderComparison {
     }
 
     /// <summary>
-    /// Reads one ladder's measured rungs. HLS is used because both packagings encode identical
-    /// content and only HLS renditions are remuxed back to a file the collector can probe.
+    /// Reads one ladder's measured rungs. HLS and DASH carry the same encoded rendition byte for
+    /// byte — the collector verifies it — so either format's scores describe both; HLS is read.
     /// </summary>
     private async Task<List<LadderComparisonPoint>> LoadPointsAsync(
         Guid transcodeId,
         CancellationToken cancellationToken) {
         var stored = await _store.TryGetAsync(AnalysisOwner.Transcode, transcodeId, cancellationToken);
-        var byRendition = stored?.Series.VmafByFormat?.Hls;
+        var byRendition = stored?.Series.VmafByFormat?.Hls ?? stored?.Series.VmafByFormat?.Dash;
 
         if (byRendition == null) {
             return [];
@@ -142,6 +156,10 @@ public sealed class LadderComparison {
                 $"ladderComparison.{entry.LadderKind}.overlap",
                 $"{entry.Label} — measured over harmonic VMAF",
                 $"{Number(entry.OverlapLowVmaf)} – {Number(entry.OverlapHighVmaf)}"));
+            children.Add(Leaf(
+                $"ladderComparison.{entry.LadderKind}.bdRateHigh",
+                $"{entry.Label} — BD-rate at VMAF ≥ {Number(HighBandFloorVmaf)}",
+                entry.BdRateHighBandPercent is { } high ? Percent(high) : "—"));
             children.Add(Leaf(
                 $"ladderComparison.{entry.LadderKind}.saving",
                 $"{entry.Label} — bitrate at equal quality",

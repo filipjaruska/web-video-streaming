@@ -5,7 +5,7 @@ namespace WebWVideoStreamingAPI.Analysis;
 
 public static class AnalysisSchema {
     /// <summary>Version echoed to the frontend on every analysis response.</summary>
-    public const int Version = 5;
+    public const int Version = 6;
 
     /// <summary>
     /// How tree and series documents are stored in <c>AnalysisReport</c> and returned to the
@@ -122,7 +122,7 @@ public sealed class VmafSummary {
     [JsonPropertyName("height")]
     public int? Height { get; set; }
 
-    /// <summary>Bitrate actually measured on the scored file.</summary>
+    /// <summary>Bitrate actually measured on the scored video stream.</summary>
     [JsonPropertyName("bitrateBps")]
     public long? BitrateBps { get; set; }
 
@@ -219,13 +219,21 @@ public sealed class EncodeGridPoint {
     [JsonPropertyName("error")]
     public string? Error { get; set; }
 
+    /// <summary>Wall time spent encoding and scoring this sample — what the time estimate is fitted to.</summary>
+    [JsonPropertyName("elapsedMs")]
+    public long? ElapsedMs { get; set; }
+
     /// <summary>
     /// Weight applied to <see cref="Cambi"/> when scoring this point, in VMAF points per unit of
     /// CAMBI. Zero for the generic ladders; the animation ladder sets it so that banding, which
     /// VMAF barely notices but which is the dominant artifact on flat cel-shaded areas, actually
     /// costs a candidate something.
     /// </summary>
-    [JsonIgnore]
+    /// <remarks>
+    /// Persisted rather than implied, so the stored grid reproduces the exact decisions it drove —
+    /// without it the saved points could only be re-ranked on VMAF alone.
+    /// </remarks>
+    [JsonPropertyName("cambiPenaltyWeight")]
     public double CambiPenaltyWeight { get; set; }
 
     /// <summary>
@@ -240,9 +248,18 @@ public sealed class EncodeGridPoint {
     /// it. Subtracting it keeps the ordering sane at every rate.
     /// </remarks>
     [JsonIgnore]
-    public double DecisionQuality =>
-        (VmafHarmonicMean is > 0 ? VmafHarmonicMean.Value : VmafMean) -
-        CambiPenaltyWeight * (Cambi ?? 0);
+    public double DecisionQuality => RawQuality - CambiPenaltyWeight * (Cambi ?? 0);
+
+    /// <summary>Harmonic-mean VMAF, falling back to the mean for samples scored before it existed.</summary>
+    [JsonIgnore]
+    public double RawQuality => VmafHarmonicMean is > 0 ? VmafHarmonicMean.Value : VmafMean;
+
+    /// <summary>A copy scored under a different CAMBI weight, for sensitivity sweeps that must not touch the stored grid.</summary>
+    internal EncodeGridPoint WithPenaltyWeight(double weight) {
+        var copy = (EncodeGridPoint)MemberwiseClone();
+        copy.CambiPenaltyWeight = weight;
+        return copy;
+    }
 }
 
 public sealed class DerivedLadderVariant {
@@ -274,6 +291,54 @@ public sealed class DerivedLadderVariant {
     /// <summary>Local hull slope ΔVMAF/Δlog₂(bitrate) at the operating point.</summary>
     [JsonPropertyName("hullSlope")]
     public double? HullSlope { get; set; }
+
+    /// <summary>True when the rung lies inside the bitrate window where its resolution is the best choice.</summary>
+    [JsonPropertyName("onEnvelope")]
+    public bool? OnEnvelope { get; set; }
+
+    /// <summary>How far below the pooled convex hull the rung sits, in decision-quality points.</summary>
+    [JsonPropertyName("hullDeficit")]
+    public double? HullDeficit { get; set; }
+
+    /// <summary>
+    /// True when the shared-slope operating point lay above the bitrate at which the next
+    /// resolution up takes over, so the rung was pulled down to stay on the envelope.
+    /// </summary>
+    [JsonPropertyName("capped")]
+    public bool? Capped { get; set; }
+
+    /// <summary>The bitrate the rung was capped at — its resolution's upper crossover.</summary>
+    [JsonPropertyName("capBps")]
+    public long? CapBps { get; set; }
+
+    /// <summary>
+    /// True when the rung is the lowest-CRF sample of its resolution and the hull is still steeper
+    /// than λ there: the tangent point lies past the sampled range, so the grid, not the content,
+    /// set this rung.
+    /// </summary>
+    [JsonPropertyName("atGridBoundary")]
+    public bool? AtGridBoundary { get; set; }
+
+    /// <summary>A default-ladder rung added only because its resolution produced no measurement at all.</summary>
+    [JsonPropertyName("fallback")]
+    public bool? Fallback { get; set; }
+}
+
+/// <summary>Where the envelope hands over from one resolution to the next.</summary>
+public sealed class CrossoverInfo {
+    /// <summary>"upper&gt;lower": the resolution that wins above the bitrate, then the one below it.</summary>
+    [JsonPropertyName("key")]
+    public string Key { get; set; } = "";
+
+    [JsonPropertyName("bitrateBps")]
+    public long BitrateBps { get; set; }
+
+    /// <summary>
+    /// True when the crossover lies beyond the lower resolution's highest measured bitrate, so it
+    /// rests on extending that curve flat rather than on a measurement.
+    /// </summary>
+    [JsonPropertyName("extrapolated")]
+    public bool Extrapolated { get; set; }
 }
 
 public sealed class DerivedLadderDocument {
@@ -287,10 +352,43 @@ public sealed class DerivedLadderDocument {
     [JsonPropertyName("lambda")]
     public double? Lambda { get; set; }
 
-    /// <summary>Bitrates at which the hull hands over from one resolution to the next, keyed "1080p&gt;720p".</summary>
+    /// <summary>Bitrates at which the envelope hands over from one resolution to the next, keyed "1080p&gt;720p".</summary>
     [JsonPropertyName("crossoverBps")]
     public Dictionary<string, long>? CrossoverBps { get; set; }
 
+    /// <summary>The same crossovers with the flag saying whether each rests on a measurement.</summary>
+    [JsonPropertyName("crossovers")]
+    public List<CrossoverInfo>? Crossovers { get; set; }
+
+    /// <summary>Resolutions measured but deliberately left out of the ladder, with the reason.</summary>
+    [JsonPropertyName("dropped")]
+    public Dictionary<string, string>? Dropped { get; set; }
+
+    /// <summary>Things worth a reader's attention — chiefly rung gaps one rung per resolution cannot fill.</summary>
+    [JsonPropertyName("warnings")]
+    public List<string>? Warnings { get; set; }
+
+    /// <summary>Harmonic VMAF below which grid samples were excluded from hull construction.</summary>
+    [JsonPropertyName("qualityFloor")]
+    public double? QualityFloor { get; set; }
+
+    [JsonPropertyName("cambiPenaltyWeight")]
+    public double? CambiPenaltyWeight { get; set; }
+}
+
+/// <summary>The animation ladder re-derived under one alternative CAMBI weight.</summary>
+public sealed class LadderSensitivityEntry {
+    [JsonPropertyName("weight")]
+    public double Weight { get; set; }
+
+    [JsonPropertyName("lambda")]
+    public double? Lambda { get; set; }
+
+    [JsonPropertyName("variants")]
+    public List<DerivedLadderVariant> Variants { get; set; } = [];
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
 }
 
 /// <summary>
@@ -321,6 +419,13 @@ public sealed class LadderComparisonEntry {
 
     [JsonPropertyName("overlapHighVmaf")]
     public double OverlapHighVmaf { get; set; }
+
+    /// <summary>
+    /// BD-rate restricted to the part of the overlap at or above VMAF 60 — the range a viewer
+    /// would actually be served, so the low rungs cannot dominate the integral.
+    /// </summary>
+    [JsonPropertyName("bdRateHighBandPercent")]
+    public double? BdRateHighBandPercent { get; set; }
 
     /// <summary>Bitrate saved at the midpoint of the overlapping quality range, in percent.</summary>
     [JsonPropertyName("bitrateSavingPercent")]
@@ -361,8 +466,8 @@ public sealed class LadderComparisonPoint {
 /// <remarks>
 /// Taken from the grids rather than from packaged renditions on purpose: the two ladders differ in
 /// bitrate by construction, so packaged rungs could never hold everything but the tune constant.
-/// Grid samples share the source excerpt, the resolution and the CRF, leaving the encoder settings
-/// as the only difference.
+/// Grid samples share the full source, the resolution and the CRF, leaving the encoder settings as
+/// the only difference.
 /// </remarks>
 public sealed class TuningComparisonDocument {
     [JsonPropertyName("tune")]
@@ -371,9 +476,16 @@ public sealed class TuningComparisonDocument {
     [JsonPropertyName("decimate")]
     public bool Decimate { get; set; }
 
-    /// <summary>BD-rate of the tuned curve against the untuned one. Negative means tuning wins.</summary>
+    /// <summary>Mean of the per-resolution BD-rates of the tuned curves against the untuned ones. Negative means tuning wins.</summary>
     [JsonPropertyName("bdRatePercent")]
     public double? BdRatePercent { get; set; }
+
+    /// <summary>
+    /// BD-rate per resolution. Each resolution's CRF sweep is a genuine rate-quality curve; the
+    /// grid as a whole is not, because points from different resolutions interleave in bitrate.
+    /// </summary>
+    [JsonPropertyName("bdRateByResolution")]
+    public Dictionary<string, double>? BdRateByResolution { get; set; }
 
     [JsonPropertyName("meanVmafDelta")]
     public double? MeanVmafDelta { get; set; }
@@ -420,9 +532,102 @@ public sealed class TuningComparisonPair {
     public long TunedBitrateBps { get; set; }
 }
 
+/// <summary>How long one pipeline stage took, with the work size it was taken over.</summary>
+public sealed class StageTiming {
+    [JsonPropertyName("durationMs")]
+    public long DurationMs { get; set; }
+
+    /// <summary>Source frames processed — the time estimate scales with this.</summary>
+    [JsonPropertyName("frames")]
+    public int? Frames { get; set; }
+
+    /// <summary>Source pixels per frame.</summary>
+    [JsonPropertyName("pixels")]
+    public long? Pixels { get; set; }
+
+    /// <summary>Units of work inside the stage, e.g. grid samples or rungs.</summary>
+    [JsonPropertyName("count")]
+    public int? Count { get; set; }
+}
+
+/// <summary>
+/// Evidence that both delivery formats carry the one encoded bitstream, and that packaging kept
+/// segmentation, A/V sync and declared bandwidth identical between them.
+/// </summary>
+public sealed class PackagingIntegrityDocument {
+    [JsonPropertyName("passed")]
+    public bool Passed { get; set; }
+
+    /// <summary>Every rung, in both protocols, cut at the same instants.</summary>
+    [JsonPropertyName("segmentTablesIdentical")]
+    public bool SegmentTablesIdentical { get; set; }
+
+    [JsonPropertyName("problems")]
+    public List<string> Problems { get; set; } = [];
+
+    [JsonPropertyName("rungs")]
+    public List<PackagingIntegrityRung> Rungs { get; set; } = [];
+}
+
+public sealed class PackagingIntegrityRung {
+    [JsonPropertyName("label")]
+    public string Label { get; set; } = "";
+
+    [JsonPropertyName("renditionSha256")]
+    public string? RenditionSha256 { get; set; }
+
+    [JsonPropertyName("hlsSha256")]
+    public string? HlsSha256 { get; set; }
+
+    [JsonPropertyName("dashSha256")]
+    public string? DashSha256 { get; set; }
+
+    [JsonPropertyName("renditionPackets")]
+    public int? RenditionPackets { get; set; }
+
+    [JsonPropertyName("hlsPackets")]
+    public int? HlsPackets { get; set; }
+
+    [JsonPropertyName("dashPackets")]
+    public int? DashPackets { get; set; }
+
+    [JsonPropertyName("hlsSegmentsSec")]
+    public List<double>? HlsSegmentsSec { get; set; }
+
+    [JsonPropertyName("dashSegmentsSec")]
+    public List<double>? DashSegmentsSec { get; set; }
+
+    /// <summary>Change in the A/V offset introduced by HLS packaging, against the encoded inputs.</summary>
+    [JsonPropertyName("hlsAvDeltaMs")]
+    public double? HlsAvDeltaMs { get; set; }
+
+    [JsonPropertyName("dashAvDeltaMs")]
+    public double? DashAvDeltaMs { get; set; }
+
+    /// <summary>HLS BANDWIDTH — video peak plus audio peak.</summary>
+    [JsonPropertyName("hlsBandwidthBps")]
+    public long? HlsBandwidthBps { get; set; }
+
+    [JsonPropertyName("hlsAverageBandwidthBps")]
+    public long? HlsAverageBandwidthBps { get; set; }
+
+    /// <summary>MPD video <c>@bandwidth</c> plus audio <c>@bandwidth</c>.</summary>
+    [JsonPropertyName("dashBandwidthBps")]
+    public long? DashBandwidthBps { get; set; }
+
+    [JsonPropertyName("averageBps")]
+    public long? AverageBps { get; set; }
+
+    [JsonPropertyName("peakSegmentBps")]
+    public long? PeakSegmentBps { get; set; }
+}
+
 public sealed class AnalysisSeriesDocument {
     [JsonPropertyName("siti")]
     public SitiSeriesData? Siti { get; set; }
+
+    [JsonPropertyName("packagingIntegrity")]
+    public PackagingIntegrityDocument? PackagingIntegrity { get; set; }
 
     [JsonPropertyName("sitiByFormat")]
     public FormatSitiSeriesDocument? SitiByFormat { get; set; }
@@ -443,33 +648,76 @@ public sealed class AnalysisSeriesDocument {
     [JsonPropertyName("animationLadder")]
     public DerivedLadderDocument? AnimationLadder { get; set; }
 
+    /// <summary>The animation ladder re-derived under alternative CAMBI weights, from the same grid.</summary>
+    [JsonPropertyName("animationLadderSensitivity")]
+    public List<LadderSensitivityEntry>? AnimationLadderSensitivity { get; set; }
+
     [JsonPropertyName("ladderComparison")]
     public LadderComparisonDocument? LadderComparison { get; set; }
 
     [JsonPropertyName("tuningComparison")]
     public TuningComparisonDocument? TuningComparison { get; set; }
 
-    /// <summary>Share of source frames identical to their predecessor — animation shot "on twos".</summary>
+    /// <summary>Share of source frames that repeat their predecessor — animation shot "on twos".</summary>
     [JsonPropertyName("duplicateFrameShare")]
     public double? DuplicateFrameShare { get; set; }
+
+    /// <summary>
+    /// CAMBI of the source scored against itself: the banding already in the master, so that
+    /// banding added by compression can be told apart from banding the encoder was handed.
+    /// </summary>
+    [JsonPropertyName("sourceCambi")]
+    public double? SourceCambi { get; set; }
+
+    [JsonPropertyName("sourceCambiMax")]
+    public double? SourceCambiMax { get; set; }
+
+    /// <summary>Per-stage wall times of the run, keyed by pipeline step — the prior for the next run's estimate.</summary>
+    [JsonPropertyName("stageTimings")]
+    public Dictionary<string, StageTiming>? StageTimings { get; set; }
 
     /// <summary>
     /// Field-wise merge so SI/TI, VMAF, encode-grid, the derived ladder, and the ladder comparison
     /// can each be written independently without clobbering the others.
     /// </summary>
+    /// <remarks>Every field added to this document must be added here too, or the next merge silently drops it.</remarks>
     public AnalysisSeriesDocument MergedWith(AnalysisSeriesDocument incoming) {
         return new AnalysisSeriesDocument {
             Siti = incoming.Siti ?? Siti,
+            PackagingIntegrity = incoming.PackagingIntegrity ?? PackagingIntegrity,
             SitiByFormat = MergeSiti(SitiByFormat, incoming.SitiByFormat),
             VmafByFormat = MergeVmaf(VmafByFormat, incoming.VmafByFormat),
             EncodeGrid = incoming.EncodeGrid ?? EncodeGrid,
             EncodeGridAnimation = incoming.EncodeGridAnimation ?? EncodeGridAnimation,
             DerivedLadder = incoming.DerivedLadder ?? DerivedLadder,
             AnimationLadder = incoming.AnimationLadder ?? AnimationLadder,
+            AnimationLadderSensitivity = incoming.AnimationLadderSensitivity ?? AnimationLadderSensitivity,
             LadderComparison = incoming.LadderComparison ?? LadderComparison,
             TuningComparison = incoming.TuningComparison ?? TuningComparison,
-            DuplicateFrameShare = incoming.DuplicateFrameShare ?? DuplicateFrameShare
+            DuplicateFrameShare = incoming.DuplicateFrameShare ?? DuplicateFrameShare,
+            SourceCambi = incoming.SourceCambi ?? SourceCambi,
+            SourceCambiMax = incoming.SourceCambiMax ?? SourceCambiMax,
+            StageTimings = MergeTimings(StageTimings, incoming.StageTimings)
         };
+    }
+
+    private static Dictionary<string, StageTiming>? MergeTimings(
+        Dictionary<string, StageTiming>? existing,
+        Dictionary<string, StageTiming>? incoming) {
+        if (incoming == null) {
+            return existing;
+        }
+
+        if (existing == null) {
+            return incoming;
+        }
+
+        var merged = new Dictionary<string, StageTiming>(existing);
+        foreach (var (key, value) in incoming) {
+            merged[key] = value;
+        }
+
+        return merged;
     }
 
     private static FormatSitiSeriesDocument? MergeSiti(
