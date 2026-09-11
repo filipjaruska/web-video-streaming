@@ -1,5 +1,5 @@
 import type Hls from "hls.js";
-import { SEGMENT_SEC } from "@/lib/streamingConfig";
+import { FAST_START_TIMEOUT_MS, SEGMENT_SEC } from "@/lib/streamingConfig";
 import { type AbrLevel, type AbrState, decide } from "./rules";
 
 export type AbrRuleName = "throughput" | "buffer" | "hybrid";
@@ -14,8 +14,23 @@ export type AbrRuleName = "throughput" | "buffer" | "hybrid";
  */
 const TICK_MS = 1000;
 
+/**
+ * Share of one segment that must be buffered before fast start hands over to the rules. Just under
+ * a whole segment, because a buffered range can end a few milliseconds short of the segment edge.
+ */
+const STARTUP_BUFFERED_FRACTION = 0.9;
+
 export interface AbrDriver {
   stop(): void;
+}
+
+export interface DriverOptions {
+  /**
+   * Best mode's fast start. Holds the opening rung, with no rule applied, until its first segment
+   * is buffered; drops straight to the bottom rung if that takes longer than
+   * `FAST_START_TIMEOUT_MS`. Never set for a measured profile — see `pickFastStartLevel`.
+   */
+  fastStart?: boolean;
 }
 
 /**
@@ -31,9 +46,19 @@ interface PlayerAdapter {
   readBufferSec(): number;
   readSegmentSec(): number;
   apply(index: number): void;
+  /** Switches now, abandoning a segment already in flight — used only when fast start times out. */
+  applyNow(index: number): void;
 }
 
-function run(adapter: PlayerAdapter, algorithm: AbrRuleName, targetBufferSec: number): AbrDriver {
+function run(
+  adapter: PlayerAdapter,
+  algorithm: AbrRuleName,
+  targetBufferSec: number,
+  options: DriverOptions = {},
+): AbrDriver {
+  const startedAt = performance.now();
+  let startingUp = options.fastStart === true;
+
   const tick = () => {
     const levels = adapter.readLevels();
     if (levels.length === 0) {
@@ -48,6 +73,29 @@ function run(adapter: PlayerAdapter, algorithm: AbrRuleName, targetBufferSec: nu
       targetBufferSec,
       segmentSec: adapter.readSegmentSec(),
     };
+
+    if (startingUp) {
+      // An empty buffer at startup is expected, not an emergency, and the throughput estimate is
+      // still the configured default rather than a measurement — neither may move the opening rung.
+      if (state.bufferSec >= state.segmentSec * STARTUP_BUFFERED_FRACTION) {
+        startingUp = false;
+      } else if (performance.now() - startedAt >= FAST_START_TIMEOUT_MS) {
+        startingUp = false;
+        const lowest = levels.reduce((low, level) => (level.bitrateBps < low.bitrateBps ? level : low));
+        if (lowest.index !== state.currentIndex) {
+          adapter.applyNow(lowest.index);
+        }
+        return;
+      } else {
+        return;
+      }
+    }
+
+    // After a fast start the opening segment is the only measurement there is; until the player
+    // reports an estimate from it, holding the rung beats reading "no estimate" as zero throughput.
+    if (options.fastStart && !(state.bandwidthBps > 0)) {
+      return;
+    }
 
     const decision = decide(algorithm, state);
     if (decision.index !== state.currentIndex) {
@@ -85,6 +133,7 @@ export function driveHls(
   hls: Hls,
   algorithm: AbrRuleName,
   targetBufferSec: number,
+  options: DriverOptions = {},
 ): AbrDriver {
   const adapter: PlayerAdapter = {
     readLevels: () =>
@@ -106,9 +155,12 @@ export function driveHls(
     apply: (index) => {
       hls.nextLevel = index;
     },
+    applyNow: (index) => {
+      hls.currentLevel = index;
+    },
   };
 
-  return run(adapter, algorithm, targetBufferSec);
+  return run(adapter, algorithm, targetBufferSec, options);
 }
 
 /** Minimal shape of the dash.js player, kept local so dashjs need not be imported at module load. */
@@ -135,6 +187,7 @@ export function driveDash(
   algorithm: AbrRuleName,
   targetBufferSec: number,
   segmentSec: number,
+  options: DriverOptions = {},
 ): AbrDriver {
   const representations = () => player.getRepresentationsByType?.("video") ?? [];
 
@@ -161,9 +214,13 @@ export function driveDash(
     apply: (index) => {
       player.setRepresentationForTypeByIndex?.("video", index, true);
     },
+    // forceReplace already abandons buffered and in-flight segments of the old rung.
+    applyNow: (index) => {
+      player.setRepresentationForTypeByIndex?.("video", index, true);
+    },
   };
 
-  return run(adapter, algorithm, targetBufferSec);
+  return run(adapter, algorithm, targetBufferSec, options);
 }
 
 /**

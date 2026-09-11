@@ -276,7 +276,10 @@ export default async function ConceptsPage() {
         <Section title="Your browser">
           <p>
             Best mode probes these capabilities and picks a protocol accordingly, rather than
-            hardcoding one. The answers below are from the browser you are reading this in.
+            hardcoding one. The answers below are from the browser you are reading this in. It
+            also starts differently from the measured profiles: it opens on the top rung and holds
+            it until the first segment is in, instead of starting from a fixed estimate that the
+            panic rule immediately overrides on an empty buffer.
           </p>
           <BrowserCapabilities />
         </Section>

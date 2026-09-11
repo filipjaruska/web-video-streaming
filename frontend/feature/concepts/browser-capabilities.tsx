@@ -40,7 +40,7 @@ export function BrowserCapabilities() {
     {
       label: "Native HLS",
       value: capabilities.nativeHls,
-      note: "Plays .m3u8 without any JavaScript library.",
+      note: "Plays .m3u8 without any JavaScript library — used only where MSE is missing, since the browser then picks the quality itself.",
     },
     {
       label: "H.264 in MSE",
@@ -49,10 +49,12 @@ export function BrowserCapabilities() {
     },
   ];
 
-  const chosen = capabilities.nativeHls
-    ? "HLS, played natively"
-    : capabilities.mseHls
-      ? "HLS through hls.js"
+  // Same order as `pickDeliveryForLadder`: hls.js wherever MSE exists, because only then do the
+  // project's own ABR rules choose the quality; native HLS only where there is no MSE at all.
+  const chosen = capabilities.mseHls
+    ? "HLS through hls.js"
+    : capabilities.nativeHls
+      ? "HLS, played natively"
       : capabilities.dash
         ? "DASH through dash.js"
         : "progressive download over HTTP Range";

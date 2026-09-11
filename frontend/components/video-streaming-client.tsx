@@ -354,6 +354,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
           ref={playerRef}
           streamingMethod={effectiveMethod}
           abrAlgorithm={effectiveAbr}
+          fastStart={bestMode && bestSettings !== null}
           apiUrl={apiUrl}
           routeId={routeId}
           transcodeId={playerTranscodeId}
