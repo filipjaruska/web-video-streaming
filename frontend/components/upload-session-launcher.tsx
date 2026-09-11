@@ -14,6 +14,7 @@ import {
   uploadSessionButtonLabel,
 } from "@/lib/uploadSessionStorage";
 import { createUploadSession, getUploadSession } from "@/lib/videoApi";
+import { useEtaCountdown } from "@/hooks/useEtaCountdown";
 
 export function UploadSessionLauncher() {
   const router = useRouter();
@@ -140,10 +141,15 @@ export function UploadSessionLauncher() {
     }
   }
 
+  const remainingSeconds = useEtaCountdown(
+    estimatedRemainingSeconds,
+    sessionStatus === "Processing",
+  );
+
   const idleLabel = uploadSessionButtonLabel(
     sessionStatus,
     currentStep,
-    estimatedRemainingSeconds,
+    remainingSeconds,
   );
 
   return (

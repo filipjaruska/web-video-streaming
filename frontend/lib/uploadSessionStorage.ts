@@ -47,6 +47,20 @@ function shortenProcessingStep(step: string | null | undefined): string | null {
     const match = step.match(/\((\d+)\s*\/\s*(\d+)\)/);
     return match ? `Grid ${match[1]}/${match[2]}` : "Encode grid";
   }
+  if (normalized.startsWith("encoding audio")) {
+    return "Audio";
+  }
+  if (normalized.startsWith("encoding")) {
+    const match = step.match(/\((\d+)\s*\/\s*(\d+)\)/);
+    return match ? `Encode ${match[1]}/${match[2]}` : "Encode";
+  }
+  // Before the HLS/DASH checks below: every packaging label names both formats.
+  if (normalized.startsWith("packaging")) {
+    return "Package";
+  }
+  if (normalized.includes("cambi")) {
+    return "CAMBI";
+  }
   if (normalized.includes("si/ti") || normalized.includes("siti")) {
     return "SI/TI";
   }
