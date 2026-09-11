@@ -41,11 +41,11 @@ public class StreamingController : ControllerBase {
 
     [HttpGet("hls/{routeId}/{segment}")]
     public Task<IActionResult> GetHlsSegment(string routeId, string segment, CancellationToken cancellationToken) =>
-        ServeSegmentAsync(routeId, null, id => _paths.ResolveHlsSegment(routeId, id, segment), segment, IsHlsSegment, "video/mp2t", requireHls: true, cancellationToken);
+        ServeSegmentAsync(routeId, null, id => _paths.ResolveHlsSegment(routeId, id, segment), segment, MediaPaths.IsHlsSegmentName, HlsSegmentType(segment), requireHls: true, cancellationToken);
 
     [HttpGet("hls/{routeId}/t/{transcodeId}/{segment}")]
     public Task<IActionResult> GetHlsSegmentForTranscode(string routeId, string transcodeId, string segment, CancellationToken cancellationToken) =>
-        ServeSegmentAsync(routeId, transcodeId, id => _paths.ResolveHlsSegment(routeId, id, segment), segment, IsHlsSegment, "video/mp2t", requireHls: true, cancellationToken);
+        ServeSegmentAsync(routeId, transcodeId, id => _paths.ResolveHlsSegment(routeId, id, segment), segment, MediaPaths.IsHlsSegmentName, HlsSegmentType(segment), requireHls: true, cancellationToken);
 
     // —— DASH —————————————————————————————————————————————————————————————
 
@@ -59,13 +59,20 @@ public class StreamingController : ControllerBase {
 
     [HttpGet("dash/{routeId}/{segment}")]
     public Task<IActionResult> GetDashSegment(string routeId, string segment, CancellationToken cancellationToken) =>
-        ServeSegmentAsync(routeId, null, id => _paths.ResolveDashSegment(routeId, id, segment), segment, IsDashSegment, "video/mp4", requireHls: false, cancellationToken);
+        ServeSegmentAsync(routeId, null, id => _paths.ResolveDashSegment(routeId, id, segment), segment, MediaPaths.IsDashSegmentName, "video/mp4", requireHls: false, cancellationToken);
 
     [HttpGet("dash/{routeId}/t/{transcodeId}/{segment}")]
     public Task<IActionResult> GetDashSegmentForTranscode(string routeId, string transcodeId, string segment, CancellationToken cancellationToken) =>
-        ServeSegmentAsync(routeId, transcodeId, id => _paths.ResolveDashSegment(routeId, id, segment), segment, IsDashSegment, "video/mp4", requireHls: false, cancellationToken);
+        ServeSegmentAsync(routeId, transcodeId, id => _paths.ResolveDashSegment(routeId, id, segment), segment, MediaPaths.IsDashSegmentName, "video/mp4", requireHls: false, cancellationToken);
 
     // —— Shared ———————————————————————————————————————————————————————————
+
+    /// <summary>
+    /// HLS segments are fMP4 now; <c>.ts</c> remains for runs packaged before the switch, and each
+    /// must be served with its own type or MSE rejects the append.
+    /// </summary>
+    private static string HlsSegmentType(string segment) =>
+        segment.EndsWith(".ts", StringComparison.OrdinalIgnoreCase) ? "video/mp2t" : "video/mp4";
 
     private async Task<IActionResult> ServeAsync(
         string routeId,
@@ -127,11 +134,4 @@ public class StreamingController : ControllerBase {
             requireDash: !requireHls,
             cancellationToken);
     }
-
-    private static bool IsHlsSegment(string segment) =>
-        segment.EndsWith(".ts", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsDashSegment(string segment) =>
-        segment.EndsWith(".m4s", StringComparison.OrdinalIgnoreCase) ||
-        segment.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase);
 }

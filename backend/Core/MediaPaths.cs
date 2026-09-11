@@ -13,8 +13,24 @@ public static class MediaNames {
     public const string DashManifest = "manifest.mpd";
     public const string SubsManifest = "manifest.json";
 
+    /// <summary>The shared audio track, encoded once per video.</summary>
+    public const string SharedAudio = "audio.mp4";
+
+    public static string RenditionFile(string label) => $"{label}.mp4";
+
     public static string HlsPlaylist(string label) => $"{label}.m3u8";
-    public static string HlsSegmentPattern(string label) => $"{label}_%03d.ts";
+
+    /// <summary>ffmpeg-side HLS templates — `%v` is expanded per variant stream by ffmpeg itself.</summary>
+    public const string HlsVariantTemplate = "%v.m3u8";
+    public const string HlsInitTemplate = "%v_init.mp4";
+    public const string HlsSegmentTemplate = "%v_%03d.m4s";
+
+    /// <summary>Name the audio rendition group's stream is given, and so the name of its playlist.</summary>
+    public const string HlsAudioName = "audio";
+    public const string HlsAudioPlaylist = "audio.m3u8";
+
+    /// <summary>Reader-side equivalent of <see cref="HlsInitTemplate"/> for a known variant.</summary>
+    public static string HlsInit(string label) => $"{label}_init.mp4";
 
     /// <summary>ffmpeg-side templates — `$RepresentationID$` is expanded by ffmpeg itself.</summary>
     public const string DashInitTemplate = "init-$RepresentationID$.m4s";
@@ -50,6 +66,13 @@ public sealed class UploadOptions {
 /// build a path, the `Resolve*` methods return null when the file is not there.
 /// </summary>
 public sealed class MediaPaths {
+    /// <summary>
+    /// Segment files a packaged format may serve. HLS accepts <c>.ts</c> as well so runs packaged
+    /// before the switch to fMP4 keep playing.
+    /// </summary>
+    private static readonly string[] HlsSegmentExtensions = [".ts", ".m4s", ".mp4"];
+    private static readonly string[] DashSegmentExtensions = [".m4s", ".mp4"];
+
     private readonly string _root;
     private readonly ILogger<MediaPaths> _logger;
 
@@ -70,8 +93,27 @@ public sealed class MediaPaths {
 
     public string LegacyThumbnailFile(string routeId) => Path.Combine(SourceDir(routeId), MediaNames.LegacyThumbnail);
 
+    /// <summary>Artefacts shared by every ladder of one video — the audio track.</summary>
+    public string SharedDir(string routeId) => Path.Combine(VideoRoot(routeId), "shared");
+
+    public string SharedAudioFile(string routeId) => Path.Combine(SharedDir(routeId), MediaNames.SharedAudio);
+
     public string TranscodeDir(string routeId, Guid transcodeId) =>
         Path.Combine(VideoRoot(routeId), transcodeId.ToString("N"));
+
+    /// <summary>The encoded rungs of one packaging run — the exact bitstreams HLS and DASH carry.</summary>
+    public string RenditionsDir(string routeId, Guid transcodeId) =>
+        Path.Combine(TranscodeDir(routeId, transcodeId), "renditions");
+
+    public string RenditionFile(string routeId, Guid transcodeId, string label) =>
+        Path.Combine(RenditionsDir(routeId, transcodeId), MediaNames.RenditionFile(label));
+
+    /// <summary>Scratch space for the 2-pass statistics of every rung; removed once the ladder is encoded.</summary>
+    public string WorkRoot(string routeId, Guid transcodeId) =>
+        Path.Combine(TranscodeDir(routeId, transcodeId), "work");
+
+    public string WorkDir(string routeId, Guid transcodeId, string label) =>
+        Path.Combine(WorkRoot(routeId, transcodeId), label);
 
     public string HlsDir(string routeId, Guid transcodeId) =>
         Path.Combine(TranscodeDir(routeId, transcodeId), "hls");
@@ -94,40 +136,51 @@ public sealed class MediaPaths {
         Existing(Path.Combine(HlsDir(routeId, transcodeId), MediaNames.HlsMaster));
 
     public string? ResolveHlsPlaylist(string routeId, Guid transcodeId, string quality) =>
-        Existing(Path.Combine(HlsDir(routeId, transcodeId), MediaNames.HlsPlaylist(quality)));
+        ResolveWithin(HlsDir(routeId, transcodeId), MediaNames.HlsPlaylist(quality), [".m3u8"]);
 
     public string? ResolveHlsSegment(string routeId, Guid transcodeId, string segment) =>
-        segment.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
-            ? Existing(Path.Combine(HlsDir(routeId, transcodeId), segment))
-            : null;
+        ResolveWithin(HlsDir(routeId, transcodeId), segment, HlsSegmentExtensions);
 
     public string? ResolveDashManifest(string routeId, Guid transcodeId) =>
         Existing(Path.Combine(DashDir(routeId, transcodeId), MediaNames.DashManifest));
 
     public string? ResolveDashSegment(string routeId, Guid transcodeId, string segment) =>
-        segment.EndsWith(".m4s", StringComparison.OrdinalIgnoreCase) ||
-        segment.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
-            ? Existing(Path.Combine(DashDir(routeId, transcodeId), segment))
-            : null;
+        ResolveWithin(DashDir(routeId, transcodeId), segment, DashSegmentExtensions);
 
     /// <summary>Resolves a subtitle side-car, rejecting anything that escapes the subs directory.</summary>
-    public string? ResolveSubtitle(string routeId, string fileName) {
+    public string? ResolveSubtitle(string routeId, string fileName) =>
+        ResolveWithin(SubsDir(routeId), fileName, [".vtt"]);
+
+    public static bool IsHlsSegmentName(string name) => HasExtension(name, HlsSegmentExtensions);
+
+    public static bool IsDashSegmentName(string name) => HasExtension(name, DashSegmentExtensions);
+
+    /// <summary>
+    /// A file inside <paramref name="directory"/>, or null. Rejects separators and <c>..</c> outright
+    /// and then checks the resolved path is still inside the directory — on Windows an encoded
+    /// backslash in a URL segment is a path separator, so extension checks alone are not enough.
+    /// </summary>
+    private static string? ResolveWithin(string directory, string fileName, string[] extensions) {
         if (string.IsNullOrWhiteSpace(fileName) ||
             fileName.Contains('/') ||
             fileName.Contains('\\') ||
             fileName.Contains("..", StringComparison.Ordinal) ||
-            !fileName.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase)) {
+            !HasExtension(fileName, extensions)) {
             return null;
         }
 
-        var subsRoot = Path.GetFullPath(SubsDir(routeId));
-        var fullPath = Path.GetFullPath(Path.Combine(SubsDir(routeId), fileName));
-        if (!fullPath.StartsWith(subsRoot, StringComparison.OrdinalIgnoreCase)) {
+        var root = Path.GetFullPath(directory);
+        var fullPath = Path.GetFullPath(Path.Combine(directory, fileName));
+        var rootWithSeparator = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase)) {
             return null;
         }
 
         return Existing(fullPath);
     }
+
+    private static bool HasExtension(string name, string[] extensions) =>
+        extensions.Any(extension => name.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
 
     public void EnsureSourceDir(string routeId) => Directory.CreateDirectory(SourceDir(routeId));
 
