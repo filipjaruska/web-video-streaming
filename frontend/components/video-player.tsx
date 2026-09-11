@@ -49,6 +49,7 @@ import {
   pinHighestHls,
 } from "@/lib/abr/driver";
 import { getVideoUrl } from "@/lib/streamingLabels";
+import { loadDashLibrary } from "@/lib/dashLibrary";
 import { useVideoStatsTracking } from "@/hooks/useVideoStatsTracking";
 import { ErrorBanner } from "@/components/error-banner";
 import type { SubtitleTrack } from "@/lib/videoSubtitlesApi";
@@ -235,9 +236,23 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
       if (isDASHProvider(provider)) {
         provider.config = createDashSettings(abrAlgorithm);
-        provider.library = () => import("dashjs");
+        // Not `() => import("dashjs")`: see `loadDashLibrary` — that left Vidstack without a dash.js
+        // instance while dash.js's auto-create played the stream with its own ABR. Vidstack's type
+        // wants the constructor itself under `default`; its loader also accepts the namespace.
+        provider.library = loadDashLibrary as unknown as typeof provider.library;
         provider.onInstance((dash) => {
           setDashInstance(dash);
+
+          // Vidstack's quality menu still calls dash.js 4's setQualityFor, which dash.js 5 removed;
+          // without this, picking a quality from the player's own menu would throw.
+          const legacy = dash as unknown as {
+            setQualityFor?: unknown;
+            setRepresentationForTypeByIndex?: (type: string, index: number, forceReplace?: boolean) => void;
+          };
+          if (typeof legacy.setQualityFor !== "function" && legacy.setRepresentationForTypeByIndex) {
+            legacy.setQualityFor = (type: string, index: number, forceReplace?: boolean) =>
+              legacy.setRepresentationForTypeByIndex?.(type, index, forceReplace);
+          }
 
           const start = () => {
             if (abrAlgorithm === "baseline") {
