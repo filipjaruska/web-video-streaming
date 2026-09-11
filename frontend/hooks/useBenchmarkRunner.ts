@@ -5,11 +5,14 @@ import type { PlaybackEvent, StatsSnapshot } from "@/types/streaming";
 import type { VideoPlayerHandle } from "@/components/video-player";
 import { computeMetrics } from "@/lib/benchmark/metrics";
 import { buildMatrix, describeCell, toSamples } from "@/lib/benchmark/matrix";
+import { loadLadderQuality } from "@/lib/benchmark/ladderQuality";
 import {
   toServerProfile,
   type BenchmarkCell,
   type BenchmarkEvent,
   type BenchmarkRunResult,
+  type BenchmarkTraceSummary,
+  type LadderQuality,
   type NetworkProfile,
 } from "@/lib/benchmark/types";
 
@@ -74,6 +77,8 @@ export function useBenchmarkRunner({
   const runStartWallRef = useRef(0);
   const cancelRef = useRef(false);
   const nonceRef = useRef(0);
+  /** Rung heights and measured VMAF of the ladder under test, loaded once per sweep. */
+  const ladderRef = useRef<LadderQuality | null>(null);
 
   /**
    * Feeds player lifecycle edges into the run currently being recorded.
@@ -184,7 +189,8 @@ export function useBenchmarkRunner({
         cell,
         networkProfile: profile,
         repetition,
-        metrics: computeMetrics(trace),
+        // The source cell plays the original file, not a rung of the ladder, so it has no ladder VMAF.
+        metrics: computeMetrics(trace, cell.transcodeId ? (ladderRef.current ?? undefined) : undefined),
         trace,
         failed: !!errored,
         errorMessage: errored && "message" in errored ? errored.message : undefined,
@@ -211,7 +217,16 @@ export function useBenchmarkRunner({
             ...result.metrics,
             failed: result.failed,
             errorMessage: result.errorMessage,
-            trace: result.trace,
+            // The newer per-run results travel inside the trace, which the server stores as-is,
+            // so they reach the aggregates without a schema change.
+            trace: {
+              ...result.trace,
+              summary: {
+                resolutionShare: result.metrics.resolutionShare,
+                topRungShare: result.metrics.topRungShare,
+                timeWeightedVmaf: result.metrics.timeWeightedVmaf,
+              } satisfies BenchmarkTraceSummary,
+            },
           }),
         });
       } catch {
@@ -231,6 +246,7 @@ export function useBenchmarkRunner({
     ) => {
       cancelRef.current = false;
       setResults([]);
+      ladderRef.current = await loadLadderQuality(apiUrl, routeId, transcodeId);
 
       const matrix = cells ?? buildMatrix(transcodeId, ladderKind);
       const collected: BenchmarkRunResult[] = [];
@@ -252,6 +268,14 @@ export function useBenchmarkRunner({
           });
 
           const result = await runOne(matrix[index], profile, repetition);
+
+          // A run cut short by Cancel is neither a result nor a failure: it stopped partway through
+          // the clip, so recording it would average a truncated run in with complete ones.
+          if (cancelRef.current) {
+            setProgress(IDLE);
+            return collected;
+          }
+
           collected.push(result);
           setResults([...collected]);
           await submit(result);
@@ -261,7 +285,7 @@ export function useBenchmarkRunner({
       setProgress(IDLE);
       return collected;
     },
-    [runOne, submit],
+    [apiUrl, routeId, runOne, submit],
   );
 
   return { progress, results, start, cancel, handlePlaybackEvent, markNetworkTransition };

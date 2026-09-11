@@ -71,6 +71,23 @@ export function pickFastStartLevel<T>(
   );
 }
 
+/** Query parameter a benchmark run adds to every request, so the browser's HTTP cache cannot answer it. */
+export const CACHE_BUST_PARAM = "bench";
+
+/**
+ * Adds the benchmark run's token to a URL, once.
+ *
+ * Without it repeated runs were served from the browser's cache — the API sent no Cache-Control, so
+ * Chrome kept segments for a tenth of their age — and never crossed the network clumsy was shaping.
+ */
+export function withCacheBust(url: string, token: string | null): string {
+  if (!token || url.includes(`${CACHE_BUST_PARAM}=`)) {
+    return url;
+  }
+
+  return `${url}${url.includes("?") ? "&" : "?"}${CACHE_BUST_PARAM}=${encodeURIComponent(token)}`;
+}
+
 /**
  * hls.js configuration, identical for every profile.
  *

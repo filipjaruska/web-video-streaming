@@ -21,7 +21,12 @@ import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
 import { describeCell, describeCellFull } from "@/lib/benchmark/matrix";
 import { ladderLabel } from "@/lib/analysisFormat";
-import { summarize } from "@/lib/benchmark/metrics";
+import {
+  describeResolutionShare,
+  encodeResolutionShare,
+  meanResolutionShare,
+  summarize,
+} from "@/lib/benchmark/metrics";
 import {
   NETWORK_PROFILE_CSV_IDS,
   NETWORK_PROFILE_LABELS,
@@ -85,6 +90,13 @@ function aggregate(results: BenchmarkRunResult[]) {
     );
     const buffering = summarize(group.runs.map((run) => run.metrics.bufferingRatio));
     const switches = summarize(group.runs.map((run) => run.metrics.qualitySwitches));
+    const bitrate = summarize(group.runs.map((run) => run.metrics.timeWeightedBitrateBps));
+    const vmafValues = group.runs
+      .map((run) => run.metrics.timeWeightedVmaf)
+      .filter((value): value is number => value !== null);
+    const topValues = group.runs
+      .map((run) => run.metrics.topRungShare)
+      .filter((value): value is number => value !== null);
 
     return {
       key,
@@ -95,6 +107,10 @@ function aggregate(results: BenchmarkRunResult[]) {
       startup,
       buffering,
       switches,
+      bitrate,
+      vmaf: vmafValues.length > 0 ? summarize(vmafValues) : null,
+      top: topValues.length > 0 ? summarize(topValues) : null,
+      mix: meanResolutionShare(group.runs.map((run) => run.metrics.resolutionShare)),
     };
   });
 
@@ -127,6 +143,9 @@ export function BenchmarkPanel({
         result.metrics.qualitySwitches,
         result.metrics.oscillations,
         Number(result.metrics.timeWeightedBitrateBps.toFixed(0)),
+        result.metrics.topRungShare != null ? Number(result.metrics.topRungShare.toFixed(4)) : "",
+        result.metrics.timeWeightedVmaf != null ? Number(result.metrics.timeWeightedVmaf.toFixed(3)) : "",
+        encodeResolutionShare(result.metrics.resolutionShare),
         result.metrics.recoveryMs ?? "",
         result.failed ? result.errorMessage ?? "failed" : "",
       ]),
@@ -141,9 +160,12 @@ export function BenchmarkPanel({
             <CardTitle className="text-base">Playback benchmark</CardTitle>
             <CardDescription>
               Plays every protocol and ABR rule against the selected ladder, three times
-              each, and records startup time, buffering ratio and switching behaviour.
-              Set the network in clumsy first — the page cannot shape the link, so the
-              profile below is recorded as a label.
+              each, and records startup time, buffering ratio, switching behaviour and which
+              resolution was on screen for how much of the clip — weighted by each rung&apos;s
+              measured VMAF into the quality actually delivered. Every run requests its files
+              under a fresh URL, so nothing is served from the browser cache. Set the network
+              in clumsy first — the page cannot shape the link, so the profile below is
+              recorded as a label.
             </CardDescription>
           </div>
           {results.length > 0 && (
@@ -162,6 +184,9 @@ export function BenchmarkPanel({
                 "quality_switches",
                 "oscillations",
                 "time_weighted_bitrate_bps",
+                "top_rung_share",
+                "time_weighted_vmaf",
+                "resolution_share",
                 "recovery_ms",
                 "error",
               ]}
@@ -263,7 +288,20 @@ export function BenchmarkPanel({
                   <th className="py-2 pr-3 font-medium">Runs</th>
                   <th className="py-2 pr-3 font-medium">Startup (ms)</th>
                   <th className="py-2 pr-3 font-medium">Buffering ratio</th>
-                  <th className="py-2 font-medium">Switches</th>
+                  <th className="py-2 pr-3 font-medium">Switches</th>
+                  <th className="py-2 pr-3 font-medium" title="Share of played time at the ladder's top rung">
+                    Top rung
+                  </th>
+                  <th
+                    className="py-2 pr-3 font-medium"
+                    title="Each played rung's measured harmonic VMAF, weighted by its share of played time"
+                  >
+                    Delivered VMAF
+                  </th>
+                  <th className="py-2 pr-3 font-medium" title="Time-weighted declared bitrate of the rungs played">
+                    Avg bitrate
+                  </th>
+                  <th className="py-2 font-medium">Resolution mix</th>
                 </tr>
               </thead>
               <tbody>
@@ -281,8 +319,20 @@ export function BenchmarkPanel({
                     <td className="py-1.5 pr-3 font-mono text-xs">
                       {(row.buffering.mean * 100).toFixed(2)} % ± {(row.buffering.stdDev * 100).toFixed(2)}
                     </td>
-                    <td className="py-1.5 font-mono text-xs">
+                    <td className="py-1.5 pr-3 font-mono text-xs">
                       {row.switches.mean.toFixed(1)} ± {row.switches.stdDev.toFixed(1)}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-xs">
+                      {row.top ? `${(row.top.mean * 100).toFixed(0)} %` : "—"}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-xs">
+                      {row.vmaf ? `${row.vmaf.mean.toFixed(2)} ± ${row.vmaf.stdDev.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-xs">
+                      {(row.bitrate.mean / 1_000_000).toFixed(2)} Mb/s
+                    </td>
+                    <td className="py-1.5 font-mono text-xs whitespace-nowrap">
+                      {describeResolutionShare(row.mix)}
                     </td>
                   </tr>
                 ))}

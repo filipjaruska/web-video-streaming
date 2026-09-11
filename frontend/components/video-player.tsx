@@ -39,6 +39,7 @@ import {
   pickStartLevel,
   SEGMENT_SEC,
   TARGET_BUFFER_SEC,
+  withCacheBust,
 } from "@/lib/streamingConfig";
 import {
   type AbrDriver,
@@ -86,7 +87,18 @@ interface VideoPlayerProps {
    * run ever starts this way. See `pickFastStartLevel`.
    */
   fastStart?: boolean;
+  /**
+   * A benchmark run: every request this mount makes carries a per-run token, so none can be answered
+   * from the browser's HTTP cache. Without it, repeated runs never touched the shaped network.
+   */
+  cacheBust?: boolean;
 }
+
+/**
+ * Prefix of every benchmark token, fixed per page load. Combined with the per-run nonce it keeps
+ * tokens unique across runs and across reloads, without calling anything impure during render.
+ */
+const PAGE_LOAD_TOKEN = Date.now().toString(36);
 
 /** What a benchmark needs in order to drive playback rather than wait for a viewer. */
 export interface VideoPlayerHandle {
@@ -110,6 +122,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     runNonce = 0,
     onFatalError,
     fastStart = false,
+    cacheBust = false,
   }: VideoPlayerProps,
   ref,
 ) {
@@ -121,15 +134,21 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   const [dashInstance, setDashInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // One token per benchmark run: the player remounts on every runNonce, so no two runs share a URL.
+  const cacheBustToken = cacheBust ? `${PAGE_LOAD_TOKEN}.${runNonce}` : null;
+
   const src = useMemo(
     () =>
-      getVideoUrl(
-        streamingMethod,
-        apiUrl,
-        routeId,
-        streamingMethod === "source" ? null : transcodeId,
+      withCacheBust(
+        getVideoUrl(
+          streamingMethod,
+          apiUrl,
+          routeId,
+          streamingMethod === "source" ? null : transcodeId,
+        ),
+        cacheBustToken,
       ),
-    [streamingMethod, apiUrl, routeId, transcodeId],
+    [streamingMethod, apiUrl, routeId, transcodeId, cacheBustToken],
   );
 
   // Deferred load for adaptive streams; progressive can idle-load when visible.
@@ -199,6 +218,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         provider.config = {
           ...createHlsConfig(),
           autoStartLoad: true,
+          // Playlists and segments resolve relative to the manifest and lose its query string, so
+          // the token has to be added to every request hls.js makes, not only the first.
+          ...(cacheBustToken
+            ? {
+                xhrSetup: (xhr: XMLHttpRequest, url: string) =>
+                  xhr.open("GET", withCacheBust(url, cacheBustToken), true),
+              }
+            : {}),
         };
         provider.library = () => import("hls.js");
 
@@ -254,6 +281,20 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               legacy.setRepresentationForTypeByIndex?.(type, index, forceReplace);
           }
 
+          if (cacheBustToken) {
+            // Segment URLs come from the MPD's template and carry no query, so every request is
+            // stamped on its way out. Registered before Vidstack attaches the source.
+            const interceptable = dash as unknown as {
+              addRequestInterceptor?: (
+                interceptor: (request: { url: string }) => Promise<{ url: string }>,
+              ) => void;
+            };
+            interceptable.addRequestInterceptor?.((request) => {
+              request.url = withCacheBust(request.url, cacheBustToken);
+              return Promise.resolve(request);
+            });
+          }
+
           const start = () => {
             if (abrAlgorithm === "baseline") {
               pinHighestDash(dash);
@@ -293,7 +334,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         });
       }
     },
-    [abrAlgorithm, fastStart],
+    [abrAlgorithm, fastStart, cacheBustToken],
   );
 
   const onProviderSetup = useCallback(

@@ -73,6 +73,7 @@ export function toSamples(snapshots: StatsSnapshot[], runStartMs: number): Bench
     bandwidthBps: snapshot.bandwidth * 1_000_000,
     bitrateBps: snapshot.quality?.bitrate ?? 0,
     rungIndex: snapshot.quality?.height ? heights.indexOf(snapshot.quality.height) : -1,
+    height: snapshot.quality?.height ?? 0,
     droppedFrames: snapshot.droppedFrames,
     totalFrames: snapshot.totalFrames,
   }));

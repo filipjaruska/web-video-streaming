@@ -1,4 +1,10 @@
-import type { BenchmarkEvent, BenchmarkMetrics, BenchmarkSample, BenchmarkTrace } from "./types";
+import type {
+  BenchmarkEvent,
+  BenchmarkMetrics,
+  BenchmarkSample,
+  BenchmarkTrace,
+  LadderQuality,
+} from "./types";
 
 /**
  * Derives every metric chapter 4.4 reports from one playback trace.
@@ -16,6 +22,9 @@ import type { BenchmarkEvent, BenchmarkMetrics, BenchmarkSample, BenchmarkTrace 
  * meant to expose.
  */
 const RECOVERY_DWELL_SAMPLES = 3;
+
+/** Longest media-time step credited to one sample; a larger jump is a seek, not playback. */
+const MAX_SAMPLE_STEP_SEC = 5;
 
 function firstEvent<K extends BenchmarkEvent["kind"]>(
   events: BenchmarkEvent[],
@@ -116,6 +125,72 @@ function timeWeightedBitrate(samples: BenchmarkSample[], durationMs: number): nu
 }
 
 /**
+ * Share of the played media time spent at each rendition height.
+ *
+ * Weighted by how far the media clock advanced from one sample to the next rather than by wall
+ * time. A wall-clock gap that spans a stall would otherwise charge the stalled seconds to whichever
+ * rung happened to be on screen, and a stalling configuration would look as if it had held its rung.
+ * The last sample has no successor and is credited with the median step.
+ */
+function resolutionShare(samples: BenchmarkSample[], startupMs: number): Record<number, number> {
+  const playing = samples.filter((sample) => sample.atMs >= startupMs && (sample.height ?? 0) > 0);
+  if (playing.length === 0) {
+    return {};
+  }
+
+  const steps: number[] = [];
+  for (let i = 0; i + 1 < playing.length; i++) {
+    const step = playing[i + 1].playbackSec - playing[i].playbackSec;
+    steps.push(step > 0 && step <= MAX_SAMPLE_STEP_SEC ? step : 0);
+  }
+
+  const ordered = steps.filter((step) => step > 0).sort((a, b) => a - b);
+  const typicalStep = ordered.length > 0 ? ordered[Math.floor(ordered.length / 2)] : 1;
+
+  const seconds = new Map<number, number>();
+  playing.forEach((sample, index) => {
+    const height = sample.height as number;
+    const step = index < steps.length ? steps[index] : typicalStep;
+    seconds.set(height, (seconds.get(height) ?? 0) + step);
+  });
+
+  const total = Array.from(seconds.values()).reduce((sum, value) => sum + value, 0);
+  if (total <= 0) {
+    return {};
+  }
+
+  return Object.fromEntries(Array.from(seconds, ([height, value]) => [height, value / total]));
+}
+
+/**
+ * Harmonic VMAF of each rung played, weighted by its share of played media time: the quality the
+ * viewer actually received.
+ *
+ * Needed because time-weighted bitrate cannot compare ladders: a more efficient ladder reaches the
+ * same quality at a lower bitrate and would score worse on it. Null when the ladder's scores are
+ * unknown, or when a rung that was played has no measured score — averaging over only part of the
+ * run would report a quality nobody measured.
+ */
+function deliveredVmaf(share: Record<number, number>, ladder?: LadderQuality): number | null {
+  const entries = Object.entries(share);
+  if (!ladder || entries.length === 0) {
+    return null;
+  }
+
+  let total = 0;
+  for (const [height, fraction] of entries) {
+    const vmaf = ladder.vmafByHeight[Number(height)];
+    if (vmaf === undefined) {
+      return null;
+    }
+
+    total += fraction * vmaf;
+  }
+
+  return total;
+}
+
+/**
  * Time from the first marked network change to sustained recovery of the pre-change rung.
  *
  * Returns null when nothing was marked, and also when quality never actually fell after the change —
@@ -153,7 +228,11 @@ function measureRecovery(samples: BenchmarkSample[], events: BenchmarkEvent[]): 
   return null;
 }
 
-export function computeMetrics(trace: BenchmarkTrace): BenchmarkMetrics {
+/**
+ * @param ladder Top rung and measured VMAF of the ladder that was played. Without it the resolution
+ * share is still reported, but the top-rung share and the delivered VMAF cannot be.
+ */
+export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): BenchmarkMetrics {
   const { samples, events, durationMs } = trace;
   const startup = firstEvent(events, "startup");
   const startupMs = startup?.atMs ?? null;
@@ -166,6 +245,9 @@ export function computeMetrics(trace: BenchmarkTrace): BenchmarkMetrics {
     qualitySwitches: 0,
     oscillations: 0,
     timeWeightedBitrateBps: 0,
+    resolutionShare: {},
+    topRungShare: null,
+    timeWeightedVmaf: null,
     droppedFrameRatio: 0,
     recoveryMs: null,
   };
@@ -180,6 +262,7 @@ export function computeMetrics(trace: BenchmarkTrace): BenchmarkMetrics {
   const playingWindowMs = Math.max(0, durationMs - startupMs);
   const rungs = rungSeries(samples, startupMs);
   const directions = switchDirections(rungs);
+  const share = resolutionShare(samples, startupMs);
 
   let oscillations = 0;
   for (let i = 1; i < directions.length; i++) {
@@ -198,6 +281,9 @@ export function computeMetrics(trace: BenchmarkTrace): BenchmarkMetrics {
     qualitySwitches: directions.length,
     oscillations,
     timeWeightedBitrateBps: timeWeightedBitrate(samples, durationMs),
+    resolutionShare: share,
+    topRungShare: ladder && Object.keys(share).length > 0 ? (share[ladder.topHeight] ?? 0) : null,
+    timeWeightedVmaf: deliveredVmaf(share, ladder),
     droppedFrameRatio: last && last.totalFrames > 0 ? last.droppedFrames / last.totalFrames : 0,
     recoveryMs: measureRecovery(samples, events),
   };
@@ -227,4 +313,45 @@ export function summarize(values: number[]): { mean: number; stdDev: number } {
     usable.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (usable.length - 1);
 
   return { mean, stdDev: Math.sqrt(variance) };
+}
+
+/** Mean of several runs' resolution shares; a height one run never played counts as zero for it. */
+export function meanResolutionShare(
+  shares: Array<Record<number | string, number>>,
+): Record<string, number> {
+  const usable = shares.filter((share) => Object.keys(share).length > 0);
+  if (usable.length === 0) {
+    return {};
+  }
+
+  const heights = new Set(usable.flatMap((share) => Object.keys(share)));
+  return Object.fromEntries(
+    Array.from(heights, (height) => [
+      height,
+      usable.reduce((sum, share) => sum + (share[height] ?? 0), 0) / usable.length,
+    ]),
+  );
+}
+
+/** "1080p 71 % · 720p 20 % · 480p 9 %", highest first; shares under half a percent are left out. */
+export function describeResolutionShare(
+  share: Record<number | string, number> | null | undefined,
+): string {
+  const parts = Object.entries(share ?? {})
+    .map(([height, fraction]) => [Number(height), fraction] as const)
+    .filter(([height, fraction]) => Number.isFinite(height) && fraction >= 0.005)
+    .sort((a, b) => b[0] - a[0])
+    .map(([height, fraction]) => `${height}p ${Math.round(fraction * 100)} %`);
+
+  return parts.length > 0 ? parts.join(" · ") : "—";
+}
+
+/** CSV form, highest first: "1080:0.7123;720:0.2011". */
+export function encodeResolutionShare(
+  share: Record<number | string, number> | null | undefined,
+): string {
+  return Object.entries(share ?? {})
+    .sort((a, b) => Number(b[0]) - Number(a[0]))
+    .map(([height, fraction]) => `${height}:${fraction.toFixed(4)}`)
+    .join(";");
 }
