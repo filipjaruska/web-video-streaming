@@ -134,6 +134,10 @@ export function TuningComparisonCard({
     );
   }
 
+  const perResolution = Object.entries(tuning.bdRateByResolution ?? {}).sort(
+    ([a], [b]) => Number.parseInt(b, 10) - Number.parseInt(a, 10),
+  );
+
   return (
     <div className="space-y-4">
       <Card>
@@ -170,16 +174,29 @@ export function TuningComparisonCard({
                   ? `${formatSigned(tuning.bdRatePercent)}%`
                   : "—"
               }
-              label="BD-rate vs default settings"
+              label="BD-rate vs default (mean over resolutions)"
               tone={toneForSaving(tuning.bdRatePercent)}
             />
           </MetricTileGrid>
+          {perResolution.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Per resolution:</span>
+              {perResolution.map(([label, value]) => (
+                <Badge key={label} variant="outline" className="font-mono text-xs">
+                  {label} {formatSigned(value)}%
+                </Badge>
+              ))}
+            </div>
+          )}
           <p className="text-sm text-muted-foreground">
             Measured with{" "}
             <code className="font-mono text-xs">-tune {tuning.tune}</code>
             {tuning.decimate ? " + mpdecimate" : ""}. BD-rate is computed over the whole curve
             rather than per sample, because a ΔVMAF at fixed CRF says nothing about the bitrate it
-            was bought at — the same CRF lands on a different bitrate once the tune changes.
+            was bought at — the same CRF lands on a different bitrate once the tune changes. Each
+            resolution is fitted on its own and the results averaged: one curve pooled across
+            resolutions would fold the choice of resolution into what is meant to be a comparison
+            of encoder settings.
           </p>
         </CardContent>
       </Card>

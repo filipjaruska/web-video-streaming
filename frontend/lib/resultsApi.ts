@@ -17,6 +17,8 @@ export interface ClipContent {
   meanSi: number | null;
   meanTi: number | null;
   duplicateFrameShare: number | null;
+  /** Banding already present in the source (CAMBI of the source against itself). */
+  sourceCambi: number | null;
   durationSec: number | null;
   frames: number;
 }
@@ -25,6 +27,8 @@ export interface ClipLadder {
   kind: string;
   label: string;
   bdRatePercent: number | null;
+  /** BD-rate integrated only over harmonic VMAF ≥ 60. */
+  bdRateHighBandPercent: number | null;
   overlapLowVmaf: number | null;
   overlapHighVmaf: number | null;
   bitrateSavingPercent: number | null;
@@ -37,7 +41,9 @@ export interface ClipTuning {
   pairs: number;
   meanVmafDelta: number | null;
   meanCambiDelta: number | null;
+  /** Mean of the per-resolution BD-rates. */
   bdRatePercent: number | null;
+  bdRateByResolution: Record<string, number> | null;
   error: string | null;
 }
 
@@ -135,6 +141,7 @@ export async function loadAllResults(): Promise<ClipResult[]> {
         meanSi: mean(siti?.si),
         meanTi: mean(siti?.ti),
         duplicateFrameShare: source.series.duplicateFrameShare ?? null,
+        sourceCambi: source.series.sourceCambi ?? null,
         durationSec: times?.length ? times[times.length - 1] : null,
         frames: siti?.si?.length ?? 0,
       };
@@ -149,6 +156,7 @@ export async function loadAllResults(): Promise<ClipResult[]> {
         kind: entry.ladderKind,
         label: entry.label,
         bdRatePercent: entry.error ? null : entry.bdRatePercent,
+        bdRateHighBandPercent: entry.error ? null : (entry.bdRateHighBandPercent ?? null),
         overlapLowVmaf: entry.error ? null : entry.overlapLowVmaf,
         overlapHighVmaf: entry.error ? null : entry.overlapHighVmaf,
         bitrateSavingPercent: entry.bitrateSavingPercent ?? null,
@@ -163,6 +171,7 @@ export async function loadAllResults(): Promise<ClipResult[]> {
             meanVmafDelta: tuningDoc.meanVmafDelta ?? null,
             meanCambiDelta: tuningDoc.meanCambiDelta ?? null,
             bdRatePercent: tuningDoc.bdRatePercent ?? null,
+            bdRateByResolution: tuningDoc.bdRateByResolution ?? null,
             error: tuningDoc.error ?? null,
           }
         : null;

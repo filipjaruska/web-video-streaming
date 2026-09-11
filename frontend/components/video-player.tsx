@@ -35,12 +35,13 @@ import type {
 import {
   createHlsConfig,
   createDashSettings,
+  pickStartLevel,
   SEGMENT_SEC,
-  START_LEVEL_FROM_BOTTOM,
   TARGET_BUFFER_SEC,
 } from "@/lib/streamingConfig";
 import {
   type AbrDriver,
+  dashAudioBandwidth,
   driveDash,
   driveHls,
   pinHighestDash,
@@ -204,10 +205,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               return;
             }
 
-            hls.nextLevel = Math.min(
-              START_LEVEL_FROM_BOTTOM,
-              hls.levels.length - 1,
+            const startLevel = pickStartLevel(
+              hls.levels.map((level, index) => ({ index, bitrate: level.bitrate })),
+              (level) => level.bitrate,
             );
+            hls.nextLevel = startLevel?.index ?? 0;
             driverRef.current?.stop();
             driverRef.current = driveHls(hls, abrAlgorithm, TARGET_BUFFER_SEC);
           });
@@ -231,11 +233,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               return;
             }
 
-            const ascending = [...levels].sort(
-              (a, b) => (a.bandwidth ?? 0) - (b.bandwidth ?? 0),
+            // Video plus audio — the figure an HLS BANDWIDTH declares — so both protocols open
+            // on the same rung.
+            const audio = dashAudioBandwidth(dash);
+            const startAt = pickStartLevel<{ index?: number; bandwidth?: number }>(
+              levels,
+              (level) => (level.bandwidth ?? 0) + audio,
             );
-            const startAt =
-              ascending[Math.min(START_LEVEL_FROM_BOTTOM, ascending.length - 1)];
             dash.setRepresentationForTypeByIndex?.(
               "video",
               startAt?.index ?? 0,

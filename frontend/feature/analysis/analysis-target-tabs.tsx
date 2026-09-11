@@ -161,6 +161,7 @@ export function AnalysisTargetTabs({
   const encodeGridAnimation = staticTranscode?.series.encodeGridAnimation ?? [];
   const derivedLadder = staticTranscode?.series.derivedLadder;
   const animationLadder = staticTranscode?.series.animationLadder;
+  const animationSensitivity = staticTranscode?.series.animationLadderSensitivity;
   const ladderComparison = staticTranscode?.series.ladderComparison;
   const tuningComparison = staticTranscode?.series.tuningComparison;
 
@@ -236,7 +237,7 @@ export function AnalysisTargetTabs({
             />
             <DerivedLadderTable
               ladder={derivedLadder}
-              caption="Hull operating points used as CBR targets for the dynamic packaging run."
+              caption="Envelope operating points, used as 2-pass VBR targets (maxrate 1.5×) for the dynamic packaging run."
             />
 
             {encodeGridAnimation.length > 0 && (
@@ -249,6 +250,7 @@ export function AnalysisTargetTabs({
             )}
             <DerivedLadderTable
               ladder={animationLadder}
+              sensitivity={animationSensitivity}
               caption="Same derivation re-run over the animation-tuned grid, with banding penalised in the selection."
             />
           </>
