@@ -1,5 +1,5 @@
 import type Hls from "hls.js";
-import { FAST_START_TIMEOUT_MS, SEGMENT_SEC } from "@/lib/streamingConfig";
+import { FAST_START_TIMEOUT_MS, INITIAL_BANDWIDTH_BPS, SEGMENT_SEC } from "@/lib/streamingConfig";
 import { type AbrLevel, type AbrState, decide } from "./rules";
 
 export type AbrRuleName = "throughput" | "buffer" | "hybrid";
@@ -207,8 +207,13 @@ export function driveDash(
         .filter((level) => level.bitrateBps > 0);
     },
     readCurrentIndex: () => player.getCurrentRepresentationForType?.("video")?.index ?? 0,
-    // dash.js reports throughput in kbps; the rules work in bits per second throughout.
-    readBandwidthBps: () => (player.getAverageThroughput?.("video") ?? 0) * 1000,
+    // dash.js reports throughput in kbps; the rules work in bits per second throughout. Until it has
+    // measured a segment it reports 0, where hls.js reports its configured opening estimate — so
+    // DASH is handed that same estimate until then, and both protocols start from identical inputs.
+    readBandwidthBps: () => {
+      const kbps = player.getAverageThroughput?.("video") ?? 0;
+      return kbps > 0 ? kbps * 1000 : INITIAL_BANDWIDTH_BPS;
+    },
     readBufferSec: () => player.getBufferLength?.("video") ?? 0,
     readSegmentSec: () => segmentSec,
     apply: (index) => {
