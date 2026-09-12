@@ -23,7 +23,8 @@ interface UseVideoStatsTrackingProps {
 const END_OF_MEDIA_TOLERANCE_SEC = 0.25;
 
 interface HttpRangeThroughputState {
-  lastBytes: number;
+  /** Furthest buffered media time at the previous sample, seconds. */
+  lastBufferedEnd: number;
   lastTimestampMs: number;
   lastBandwidthMbps: number;
 }
@@ -53,7 +54,7 @@ export function useVideoStatsTracking({
   statsCallbackRef.current = onStatsUpdate;
   eventCallbackRef.current = onPlaybackEvent;
   const throughputStateRef = useRef<HttpRangeThroughputState>({
-    lastBytes: 0,
+    lastBufferedEnd: 0,
     lastTimestampMs: 0,
     lastBandwidthMbps: 0,
   });
@@ -68,7 +69,7 @@ export function useVideoStatsTracking({
     hasStartedPlayingRef.current = false;
     stalledSinceRef.current = null;
     throughputStateRef.current = {
-      lastBytes: 0,
+      lastBufferedEnd: 0,
       lastTimestampMs: 0,
       lastBandwidthMbps: 0,
     };
@@ -261,7 +262,7 @@ function collectHttpRangeStats(
   const quality = getVideoElementQuality(video, bitrateState.bitrateBps);
   stats.quality = quality;
 
-  const measured = measureHttpRangeThroughput(video, throughputState);
+  const measured = measureHttpRangeThroughput(video, throughputState, bitrateState.bitrateBps);
   if (measured > 0) {
     stats.bandwidth = measured;
   } else if (throughputState.lastBandwidthMbps > 0) {
@@ -271,32 +272,42 @@ function collectHttpRangeStats(
   }
 }
 
+/**
+ * Download rate of the progressive source, Mb/s: how far the buffered range grew since the previous
+ * sample, at the source's average bitrate.
+ *
+ * Not Resource Timing, which this used to read: the browser records a request there only once it has
+ * finished, and a progressive download of the whole source over a slow link does not finish within a
+ * run, so on 3G no byte was ever counted and the throughput read empty. The buffered range grows as
+ * the data arrives. Averaging a VBR file's bitrate makes a single sample approximate; the mean over a
+ * run is not. A seek, which moves the range backwards, is ignored.
+ *
+ * On a link slower than the source's own bitrate — every shaped profile — the browser downloads
+ * flat out and this is the link's capacity. On a faster one it downloads only as fast as it plays,
+ * so an unshaped run reads roughly the source bitrate instead.
+ */
 function measureHttpRangeThroughput(
   video: HTMLVideoElement,
   state: HttpRangeThroughputState,
+  sourceBitrateBps: number | null,
 ): number {
-  const mediaUrl = video.currentSrc || video.src;
-  if (!mediaUrl || typeof performance === "undefined") {
-    return state.lastBandwidthMbps;
-  }
-
-  const totalBytes = sumResourceTransferBytes(mediaUrl);
   const now = performance.now();
+  const bufferedEnd = furthestBufferedEnd(video);
 
-  if (state.lastTimestampMs <= 0) {
-    state.lastBytes = totalBytes;
+  if (state.lastTimestampMs <= 0 || !sourceBitrateBps || sourceBitrateBps <= 0) {
+    state.lastBufferedEnd = bufferedEnd;
     state.lastTimestampMs = now;
     return state.lastBandwidthMbps;
   }
 
-  const deltaBytes = totalBytes - state.lastBytes;
+  const grownSec = bufferedEnd - state.lastBufferedEnd;
   const deltaSeconds = (now - state.lastTimestampMs) / 1000;
 
-  state.lastBytes = totalBytes;
+  state.lastBufferedEnd = bufferedEnd;
   state.lastTimestampMs = now;
 
-  if (deltaBytes > 0 && deltaSeconds > 0) {
-    const mbps = (deltaBytes * 8) / deltaSeconds / 1_000_000;
+  if (grownSec > 0 && deltaSeconds > 0) {
+    const mbps = (grownSec * sourceBitrateBps) / deltaSeconds / 1_000_000;
     state.lastBandwidthMbps = mbps;
     return mbps;
   }
@@ -304,46 +315,9 @@ function measureHttpRangeThroughput(
   return state.lastBandwidthMbps;
 }
 
-function sumResourceTransferBytes(mediaUrl: string): number {
-  try {
-    const entries = performance.getEntriesByType(
-      "resource",
-    ) as PerformanceResourceTiming[];
-
-    let total = 0;
-    for (const entry of entries) {
-      if (!resourceMatchesMediaUrl(entry.name, mediaUrl)) continue;
-      const bytes =
-        entry.transferSize > 0
-          ? entry.transferSize
-          : entry.encodedBodySize > 0
-            ? entry.encodedBodySize
-            : 0;
-      total += bytes;
-    }
-    return total;
-  } catch {
-    return 0;
-  }
-}
-
-function resourceMatchesMediaUrl(entryName: string, mediaUrl: string): boolean {
-  if (entryName === mediaUrl) return true;
-
-  try {
-    const entry = new URL(entryName);
-    const media = new URL(mediaUrl, window.location.href);
-    return (
-      entry.origin === media.origin &&
-      entry.pathname === media.pathname &&
-      entry.pathname.includes("/api/httprange/")
-    );
-  } catch {
-    return (
-      entryName.includes("/api/httprange/") &&
-      mediaUrl.includes("/api/httprange/")
-    );
-  }
+function furthestBufferedEnd(video: HTMLVideoElement): number {
+  const { buffered } = video;
+  return buffered.length > 0 ? buffered.end(buffered.length - 1) : 0;
 }
 
 function ensureSourceBitrate(
