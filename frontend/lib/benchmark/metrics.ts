@@ -80,6 +80,37 @@ function measureRebuffering(
   return { count, totalMs };
 }
 
+/**
+ * Frozen-picture time after the first frame, and how many freezes made it up.
+ *
+ * Reported separately from rebuffering rather than added to it: rebuffering is what the element
+ * admits to, a freeze is what it hides — the clock runs on while the picture stands still — and
+ * which of the two a configuration produces is itself a finding.
+ */
+function measureFreezes(
+  events: BenchmarkEvent[],
+  startupMs: number,
+  durationMs: number,
+): { count: number; totalMs: number } {
+  let count = 0;
+  let totalMs = 0;
+
+  for (const event of events) {
+    if (event.kind !== "freeze") {
+      continue;
+    }
+
+    const start = Math.max(event.atMs, startupMs);
+    const end = Math.min(event.atMs + event.durationMs, durationMs);
+    if (end > start) {
+      count++;
+      totalMs += end - start;
+    }
+  }
+
+  return { count, totalMs };
+}
+
 /** Rung indices in sample order, restricted to playback and to samples that reported a rung. */
 function rungSeries(samples: BenchmarkSample[], startupMs: number): number[] {
   return samples
@@ -242,6 +273,9 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
     rebufferCount: 0,
     rebufferMs: 0,
     bufferingRatio: 0,
+    freezeCount: 0,
+    freezeMs: 0,
+    freezeRatio: 0,
     qualitySwitches: 0,
     oscillations: 0,
     timeWeightedBitrateBps: 0,
@@ -259,6 +293,7 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
   }
 
   const rebuffering = measureRebuffering(events, startupMs, durationMs);
+  const freezes = measureFreezes(events, startupMs, durationMs);
   const playingWindowMs = Math.max(0, durationMs - startupMs);
   const rungs = rungSeries(samples, startupMs);
   const directions = switchDirections(rungs);
@@ -278,6 +313,9 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
     rebufferCount: rebuffering.count,
     rebufferMs: rebuffering.totalMs,
     bufferingRatio: playingWindowMs > 0 ? rebuffering.totalMs / playingWindowMs : 0,
+    freezeCount: freezes.count,
+    freezeMs: freezes.totalMs,
+    freezeRatio: playingWindowMs > 0 ? freezes.totalMs / playingWindowMs : 0,
     qualitySwitches: directions.length,
     oscillations,
     timeWeightedBitrateBps: timeWeightedBitrate(samples, durationMs),

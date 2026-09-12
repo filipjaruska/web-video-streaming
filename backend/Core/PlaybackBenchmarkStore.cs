@@ -69,6 +69,15 @@ public sealed class BenchmarkAggregateDto {
 
     /// <summary>Mean share of played media time per rendition height, keyed by height.</summary>
     public Dictionary<string, double>? ResolutionShareMean { get; init; }
+
+    /// <summary>
+    /// Frozen-picture time as a fraction of time since the first frame: no new frame presented while
+    /// the element reported itself playing, which the buffering ratio cannot see. Null for runs
+    /// recorded before it was measured.
+    /// </summary>
+    public double? FreezeRatioMean { get; init; }
+    public double? FreezeRatioStdDev { get; init; }
+    public double? FreezeCountMean { get; init; }
 }
 
 public sealed class VideoBenchmarksResponse {
@@ -186,6 +195,9 @@ public sealed class PlaybackBenchmarkStore {
                 var vmafValues = summaries.Select(item => item.TimeWeightedVmaf).OfType<double>().ToList();
                 var vmaf = Summarize(vmafValues);
                 var topShares = summaries.Select(item => item.TopRungShare).OfType<double>().ToList();
+                var freezeRatios = summaries.Select(item => item.FreezeRatio).OfType<double>().ToList();
+                var freeze = Summarize(freezeRatios);
+                var freezeCounts = summaries.Select(item => item.FreezeCount).OfType<double>().ToList();
 
                 return new BenchmarkAggregateDto {
                     NetworkProfile = group.Key.NetworkProfile.ToString(),
@@ -204,7 +216,10 @@ public sealed class PlaybackBenchmarkStore {
                     TimeWeightedVmafMean = vmafValues.Count > 0 ? vmaf.Mean : null,
                     TimeWeightedVmafStdDev = vmafValues.Count > 0 ? vmaf.StdDev : null,
                     TopRungShareMean = topShares.Count > 0 ? topShares.Average() : null,
-                    ResolutionShareMean = MeanShares(summaries)
+                    ResolutionShareMean = MeanShares(summaries),
+                    FreezeRatioMean = freezeRatios.Count > 0 ? freeze.Mean : null,
+                    FreezeRatioStdDev = freezeRatios.Count > 0 ? freeze.StdDev : null,
+                    FreezeCountMean = freezeCounts.Count > 0 ? freezeCounts.Average() : null
                 };
             })
             .OrderBy(item => item.NetworkProfile)
@@ -217,7 +232,9 @@ public sealed class PlaybackBenchmarkStore {
     private sealed record RunSummary(
         double? TopRungShare,
         double? TimeWeightedVmaf,
-        Dictionary<string, double>? ResolutionShare);
+        Dictionary<string, double>? ResolutionShare,
+        double? FreezeRatio,
+        double? FreezeCount);
 
     /// <summary>
     /// Reads the <c>summary</c> the client puts in the trace, clamped like every other client value.
@@ -235,12 +252,10 @@ public sealed class PlaybackBenchmarkStore {
                 return null;
             }
 
-            double? top = summary.TryGetProperty("topRungShare", out var topElement) && topElement.ValueKind == JsonValueKind.Number
-                ? Math.Clamp(topElement.GetDouble(), 0, 1)
-                : null;
-            double? vmaf = summary.TryGetProperty("timeWeightedVmaf", out var vmafElement) && vmafElement.ValueKind == JsonValueKind.Number
-                ? Math.Clamp(vmafElement.GetDouble(), 0, 100)
-                : null;
+            double? ReadNumber(string name, double max) =>
+                summary.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.Number
+                    ? Math.Clamp(element.GetDouble(), 0, max)
+                    : null;
 
             Dictionary<string, double>? shares = null;
             if (summary.TryGetProperty("resolutionShare", out var shareElement) && shareElement.ValueKind == JsonValueKind.Object) {
@@ -252,7 +267,12 @@ public sealed class PlaybackBenchmarkStore {
                 }
             }
 
-            return new RunSummary(top, vmaf, shares);
+            return new RunSummary(
+                ReadNumber("topRungShare", 1),
+                ReadNumber("timeWeightedVmaf", 100),
+                shares,
+                ReadNumber("freezeRatio", 1),
+                ReadNumber("freezeCount", 10_000));
         } catch (JsonException) {
             return null;
         }

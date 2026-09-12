@@ -31,11 +31,20 @@ export function buildMatrix(transcodeId: string | null, ladderKind: string): Ben
   return cells;
 }
 
+/**
+ * Display name of an algorithm. The fixed-quality control is spelled out because "baseline" alone
+ * reads as the source file — it is the ladder's top rung, pinned, while the source file is the
+ * separate HTTP Range cell.
+ */
+export function algorithmLabel(algorithm: string): string {
+  return algorithm === "baseline" ? "baseline (top rung)" : algorithm;
+}
+
 /** Short form for live progress, where the ladder and network are already fixed and on screen. */
 export function describeCell(cell: BenchmarkCell): string {
   return cell.protocol === "source"
     ? "source · HTTP Range"
-    : `${cell.protocol.toUpperCase()} · ${cell.algorithm}`;
+    : `${cell.protocol.toUpperCase()} · ${algorithmLabel(cell.algorithm)}`;
 }
 
 /**

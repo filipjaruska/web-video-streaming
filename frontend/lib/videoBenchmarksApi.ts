@@ -47,6 +47,10 @@ export interface BenchmarkAggregateDto {
   topRungShareMean?: number | null;
   /** Mean share of played time per rendition height, keyed by height. */
   resolutionShareMean?: Record<string, number> | null;
+  /** Frozen-picture time as a fraction of time since the first frame. Absent for older runs. */
+  freezeRatioMean?: number | null;
+  freezeRatioStdDev?: number | null;
+  freezeCountMean?: number | null;
 }
 
 export interface VideoBenchmarksResponse {

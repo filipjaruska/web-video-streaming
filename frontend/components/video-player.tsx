@@ -43,9 +43,9 @@ import {
 } from "@/lib/streamingConfig";
 import {
   type AbrDriver,
+  createRuleAbrController,
   dashAudioBandwidth,
   driveDash,
-  driveHls,
   pinHighestDash,
   pinHighestHls,
 } from "@/lib/abr/driver";
@@ -218,6 +218,19 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         provider.config = {
           ...createHlsConfig(),
           autoStartLoad: true,
+          // The adaptive profiles answer hls.js's own per-fragment question with the shared rules,
+          // opening rung included; the fixed-quality control keeps the stock controller and is
+          // pinned once the manifest is in.
+          ...(abrAlgorithm !== "baseline"
+            ? {
+                abrController: createRuleAbrController(
+                  Hls.DefaultConfig.abrController,
+                  abrAlgorithm,
+                  TARGET_BUFFER_SEC,
+                  { fastStart },
+                ),
+              }
+            : {}),
           // Playlists and segments resolve relative to the manifest and lose its query string, so
           // the token has to be added to every request hls.js makes, not only the first.
           ...(cacheBustToken
@@ -231,33 +244,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
         provider.onInstance((hls) => {
           setHlsInstance(hls);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            if (hls.levels.length === 0) {
-              return;
-            }
-
-            if (abrAlgorithm === "baseline") {
-              pinHighestHls(hls);
-              return;
-            }
-
-            const choices = hls.levels.map((level, index) => ({ index, bitrate: level.bitrate }));
-            const startLevel = fastStart
-              ? pickFastStartLevel(choices, (level) => level.bitrate)
-              : pickStartLevel(choices, (level) => level.bitrate);
-
-            if (fastStart) {
-              // Immediately, not on the next fragment: loading may already have begun at hls.js's
-              // own opening guess, which probes bandwidth on the lowest rung.
-              hls.startLevel = startLevel?.index ?? 0;
-              hls.currentLevel = startLevel?.index ?? 0;
-            } else {
-              hls.nextLevel = startLevel?.index ?? 0;
-            }
-
-            driverRef.current?.stop();
-            driverRef.current = driveHls(hls, abrAlgorithm, TARGET_BUFFER_SEC, { fastStart });
-          });
+          if (abrAlgorithm === "baseline") {
+            hls.on(Hls.Events.MANIFEST_PARSED, () => pinHighestHls(hls));
+          }
         });
       }
 

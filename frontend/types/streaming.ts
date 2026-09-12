@@ -12,13 +12,20 @@ export type PlaybackEventKind =
   | "startup"
   | "rebufferStart"
   | "rebufferEnd"
+  /**
+   * The picture stood still while the element kept playing — no "waiting", clock running. Chrome
+   * lets audio and the timeline carry on for a few seconds when only the video decoder runs dry.
+   */
+  | "freeze"
   | "ended"
   | "error";
 
 export interface PlaybackEvent {
   kind: PlaybackEventKind;
-  /** `performance.now()` at the moment it happened. */
+  /** `performance.now()` at the moment it happened; for a freeze, the last frame before it. */
   atMs: number;
+  /** How long a freeze lasted, milliseconds. */
+  durationMs?: number;
   message?: string;
 }
 

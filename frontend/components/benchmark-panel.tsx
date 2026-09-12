@@ -90,6 +90,8 @@ function aggregate(results: BenchmarkRunResult[]) {
     );
     const buffering = summarize(group.runs.map((run) => run.metrics.bufferingRatio));
     const switches = summarize(group.runs.map((run) => run.metrics.qualitySwitches));
+    const freeze = summarize(group.runs.map((run) => run.metrics.freezeRatio));
+    const freezeCount = summarize(group.runs.map((run) => run.metrics.freezeCount));
     const bitrate = summarize(group.runs.map((run) => run.metrics.timeWeightedBitrateBps));
     const vmafValues = group.runs
       .map((run) => run.metrics.timeWeightedVmaf)
@@ -106,6 +108,8 @@ function aggregate(results: BenchmarkRunResult[]) {
       runs: group.runs.length,
       startup,
       buffering,
+      freeze,
+      freezeCount,
       switches,
       bitrate,
       vmaf: vmafValues.length > 0 ? summarize(vmafValues) : null,
@@ -140,6 +144,9 @@ export function BenchmarkPanel({
         Number(result.metrics.bufferingRatio.toFixed(6)),
         result.metrics.rebufferCount,
         Number(result.metrics.rebufferMs.toFixed(0)),
+        result.metrics.freezeCount,
+        Number(result.metrics.freezeMs.toFixed(0)),
+        Number(result.metrics.freezeRatio.toFixed(6)),
         result.metrics.qualitySwitches,
         result.metrics.oscillations,
         Number(result.metrics.timeWeightedBitrateBps.toFixed(0)),
@@ -181,6 +188,9 @@ export function BenchmarkPanel({
                 "buffering_ratio",
                 "rebuffer_count",
                 "rebuffer_ms",
+                "freeze_count",
+                "freeze_ms",
+                "freeze_ratio",
                 "quality_switches",
                 "oscillations",
                 "time_weighted_bitrate_bps",
@@ -288,6 +298,12 @@ export function BenchmarkPanel({
                   <th className="py-2 pr-3 font-medium">Runs</th>
                   <th className="py-2 pr-3 font-medium">Startup (ms)</th>
                   <th className="py-2 pr-3 font-medium">Buffering ratio</th>
+                  <th
+                    className="py-2 pr-3 font-medium"
+                    title="Picture stood still while the player kept playing — no stall reported, clock running"
+                  >
+                    Frozen video
+                  </th>
                   <th className="py-2 pr-3 font-medium">Switches</th>
                   <th className="py-2 pr-3 font-medium" title="Share of played time at the ladder's top rung">
                     Top rung
@@ -318,6 +334,9 @@ export function BenchmarkPanel({
                     </td>
                     <td className="py-1.5 pr-3 font-mono text-xs">
                       {(row.buffering.mean * 100).toFixed(2)} % ± {(row.buffering.stdDev * 100).toFixed(2)}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
+                      {(row.freeze.mean * 100).toFixed(2)} % · {row.freezeCount.mean.toFixed(1)}×
                     </td>
                     <td className="py-1.5 pr-3 font-mono text-xs">
                       {row.switches.mean.toFixed(1)} ± {row.switches.stdDev.toFixed(1)}

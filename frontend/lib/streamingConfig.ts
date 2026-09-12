@@ -49,10 +49,10 @@ export const FAST_START_TIMEOUT_MS = 4000;
 /**
  * The rung fast start opens on: the top one. Best mode only, never a measured profile.
  *
- * The measured profiles all start from the same fixed estimate so their runs are comparable, and
- * every one of them opens low: the shared panic rule sees the empty startup buffer and forces the
- * bottom rung, and hybrid then climbs only as fast as the buffer fills. That is the right choice for
- * a measurement and the wrong first impression for a viewer.
+ * The measured profiles all open on the fixed start rung from `pickStartLevel`, so their runs are
+ * comparable, and on a fast link that means a low first segment before the rules take over — and
+ * hybrid then climbs only as fast as the buffer fills. That is the right choice for a measurement
+ * and the wrong first impression for a viewer.
  *
  * Deliberately not the browser's downlink hint (Network Information API). It is coarse, capped at
  * 10 Mb/s in Chromium, and blind to local traffic: served from localhost it reported 1.25 Mb/s and
@@ -104,6 +104,9 @@ export function createHlsConfig(): Partial<Hls["config"]> {
     maxBufferLength: TARGET_BUFFER_SEC,
     abrEwmaDefaultEstimate: INITIAL_BANDWIDTH_BPS,
     capLevelToPlayerSize: false,
+    // With automatic selection on — which the rule-driven controller needs — hls.js would otherwise
+    // load the first fragment of the lowest rung as a bandwidth test before the chosen start rung.
+    testBandwidth: false,
   };
 
   return baseConfig;
@@ -111,6 +114,10 @@ export function createHlsConfig(): Partial<Hls["config"]> {
 
 export interface DashSettings {
   streaming?: {
+    cacheLoadThresholds?: {
+      video?: number;
+      audio?: number;
+    };
     abr?: {
       autoSwitchBitrate?: {
         video?: boolean;
@@ -119,6 +126,7 @@ export interface DashSettings {
     };
     buffer?: {
       fastSwitchEnabled?: boolean;
+      bufferTimeDefault?: number;
       bufferTimeAtTopQuality?: number;
       bufferToKeep?: number;
     };
@@ -128,6 +136,16 @@ export interface DashSettings {
 export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
   return {
     streaming: {
+      // dash.js treats a segment that arrives within 10 ms (5 ms for audio) as served from the
+      // browser cache and leaves it out of its throughput estimate; hls.js has no such rule. Served
+      // from nearby, most segments fell under it, the estimate sat at its opening default until one
+      // happened to be slower, and repeated throughput runs landed anywhere from a fifth to four
+      // fifths of the clip on the top rung. Benchmark runs cannot hit the cache — every request
+      // carries the run's token — so the rule only ever discarded real measurements.
+      cacheLoadThresholds: {
+        video: 0,
+        audio: 0,
+      },
       abr: {
         // Off for every profile, including the adaptive ones: dash.js's built-in rules are replaced
         // by the shared implementation so that the protocol, and not the algorithm, is what differs
@@ -138,10 +156,16 @@ export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
         },
       },
       buffer: {
-        // Lets an upward switch replace already-buffered segments instead of waiting for them to
-        // drain. With a 30 s buffer the previous setting delayed a recovery by up to 30 s, which is
-        // the very quantity the variable-network measurement is trying to observe.
-        fastSwitchEnabled: abrAlgorithm !== "baseline",
+        // Off on every profile. Replacing already-buffered segments on an upward switch has no
+        // counterpart on HLS, where a switch applies from the next segment, so leaving it on made
+        // the protocols differ in exactly the behaviour being compared — and each replacement
+        // emptied the video buffer ahead of the playhead, freezing the picture while it refilled.
+        fastSwitchEnabled: false,
+        // dash.js keeps two targets: 18 s by default below the top rung and 30 s at it, where
+        // hls.js fills the same maxBufferLength on every rung. Left at the default, the buffer rule
+        // — anchored to this same 30 s — could never see more than 18 s on DASH below the top rung,
+        // and read that as a buffer never full enough to climb.
+        bufferTimeDefault: TARGET_BUFFER_SEC,
         bufferTimeAtTopQuality: TARGET_BUFFER_SEC,
       },
     },

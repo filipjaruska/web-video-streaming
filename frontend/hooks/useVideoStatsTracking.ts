@@ -7,6 +7,7 @@ import type {
   VideoQuality,
 } from "@/types/streaming";
 import { formatQualityLabel } from "@/hooks/useVideoStats";
+import { dashAudioBandwidth } from "@/lib/abr/driver";
 
 interface UseVideoStatsTrackingProps {
   videoElement: HTMLVideoElement | null;
@@ -17,6 +18,17 @@ interface UseVideoStatsTrackingProps {
   /** Stall and lifecycle edges the 1 Hz sampler cannot see. See {@link PlaybackEvent}. */
   onPlaybackEvent?: (event: PlaybackEvent) => void;
 }
+
+/**
+ * Longest gap between presented frames that still counts as motion, milliseconds.
+ *
+ * Six frames at 24 fps — long enough to be seen as a standstill, well clear of compositor jitter.
+ * Frames repeated by animation "on twos" are still presented frames, so they do not register here.
+ */
+const FREEZE_THRESHOLD_MS = 250;
+
+/** How close to the end of the media a "waiting" counts as the end of playback, seconds — six frames. */
+const END_OF_MEDIA_TOLERANCE_SEC = 0.25;
 
 interface HttpRangeThroughputState {
   lastBytes: number;
@@ -99,20 +111,82 @@ export function useVideoStatsTracking({
     };
 
     const handleStall = () => {
-      if (hasStartedPlayingRef.current && stalledSinceRef.current === null) {
-        stalledSinceRef.current = performance.now();
-        emit("rebufferStart");
+      if (!hasStartedPlayingRef.current || stalledSinceRef.current !== null) {
+        return;
       }
+
+      // Waiting on the last frames is the end of the clip, not a stall. In roughly one DASH run in
+      // ten dash.js never signalled end of stream although the whole clip was buffered, so the
+      // element fired "waiting" at the end instead of "ended" — and the run was recorded as a
+      // minute-long stall until the runner's timeout. The cause inside dash.js was not found.
+      if (
+        Number.isFinite(videoElement.duration) &&
+        videoElement.duration - videoElement.currentTime <= END_OF_MEDIA_TOLERANCE_SEC
+      ) {
+        emit("ended");
+        return;
+      }
+
+      stalledSinceRef.current = performance.now();
+      emit("rebufferStart");
     };
 
     const handleEnded = () => emit("ended");
     const handleError = () => emit("error", videoElement.error?.message ?? "playback error");
 
+    // Frozen picture: frames stop arriving while the element keeps playing. When only the video
+    // decoder runs dry Chrome carries audio and the clock on for a few seconds before it admits to
+    // a stall, so neither "waiting" nor the 1 Hz sampler sees it. Timed from presented frames.
+    let lastFrameAtMs: number | null = null;
+    let frameHandle: number | null = null;
+
+    const reportFreeze = (untilMs: number) => {
+      if (lastFrameAtMs === null || !hasStartedPlayingRef.current) {
+        return;
+      }
+
+      const gapMs = untilMs - lastFrameAtMs;
+      if (gapMs >= FREEZE_THRESHOLD_MS) {
+        eventCallbackRef.current?.({ kind: "freeze", atMs: lastFrameAtMs, durationMs: gapMs });
+      }
+    };
+
+    const onFrame = (now: DOMHighResTimeStamp) => {
+      if (!videoElement.paused) {
+        reportFreeze(now);
+      }
+
+      lastFrameAtMs = now;
+      frameHandle = videoElement.requestVideoFrameCallback(onFrame);
+    };
+
+    // A gap spanning a pause or a seek is not a freeze. One ending in "waiting" is a freeze until
+    // that moment and a rebuffer after it, so the part before is reported before the stall takes over.
+    const forgetLastFrame = () => {
+      lastFrameAtMs = null;
+    };
+    const freezeThenStall = () => {
+      reportFreeze(performance.now());
+      lastFrameAtMs = null;
+    };
+
+    if (typeof videoElement.requestVideoFrameCallback === "function") {
+      frameHandle = videoElement.requestVideoFrameCallback(onFrame);
+    }
+
     videoElement.addEventListener("playing", handlePlaying);
+    // A frame presented before playback began — the preloaded first frame — is not the start of a
+    // freeze; the HTTP Range source showed one on every run.
+    videoElement.addEventListener("playing", forgetLastFrame);
+    videoElement.addEventListener("waiting", freezeThenStall);
     videoElement.addEventListener("waiting", handleStall);
     videoElement.addEventListener("stalled", handleStall);
+    videoElement.addEventListener("pause", forgetLastFrame);
+    videoElement.addEventListener("seeking", forgetLastFrame);
+    videoElement.addEventListener("emptied", forgetLastFrame);
     videoElement.addEventListener("ended", handleEnded);
     videoElement.addEventListener("error", handleError);
+    document.addEventListener("visibilitychange", forgetLastFrame);
 
     const interval = setInterval(() => {
       // Paused and stalled time is not playback. Sampling through it used to drag every average
@@ -132,10 +206,19 @@ export function useVideoStatsTracking({
 
     return () => {
       videoElement.removeEventListener("playing", handlePlaying);
+      videoElement.removeEventListener("playing", forgetLastFrame);
+      videoElement.removeEventListener("waiting", freezeThenStall);
       videoElement.removeEventListener("waiting", handleStall);
       videoElement.removeEventListener("stalled", handleStall);
+      videoElement.removeEventListener("pause", forgetLastFrame);
+      videoElement.removeEventListener("seeking", forgetLastFrame);
+      videoElement.removeEventListener("emptied", forgetLastFrame);
       videoElement.removeEventListener("ended", handleEnded);
       videoElement.removeEventListener("error", handleError);
+      document.removeEventListener("visibilitychange", forgetLastFrame);
+      if (frameHandle !== null) {
+        videoElement.cancelVideoFrameCallback(frameHandle);
+      }
       clearInterval(interval);
       hasStartedPlayingRef.current = false;
       stalledSinceRef.current = null;
@@ -159,7 +242,7 @@ function collectStats(
   if (streamingMethod === "hls" && hlsInstance) {
     collectHlsStats(hlsInstance, stats);
   } else if (streamingMethod === "dash" && dashInstance) {
-    collectDashStats(dashInstance, stats);
+    collectDashStats(dashInstance, video, stats);
   } else if (streamingMethod === "source") {
     collectHttpRangeStats(video, stats, throughputState, bitrateState);
   }
@@ -179,8 +262,8 @@ function collectHlsStats(hls: Hls, stats: Partial<CurrentStats>) {
   }
 }
 
-function collectDashStats(dash: any, stats: Partial<CurrentStats>) {
-  const quality = getDashQuality(dash);
+function collectDashStats(dash: any, video: HTMLVideoElement, stats: Partial<CurrentStats>) {
+  const quality = getDashQuality(dash, video);
   if (quality) stats.quality = quality;
 
   try {
@@ -429,15 +512,29 @@ function getHlsQuality(hls: Hls): VideoQuality | null {
   return null;
 }
 
-function getDashQuality(dash: any): VideoQuality | null {
+/**
+ * The DASH rung on screen.
+ *
+ * getCurrentRepresentationForType answers with the rung dash.js has scheduled for its next request,
+ * where hls.js's currentLevel is the level of the fragment at the playhead. Read that way, DASH was
+ * credited with a rung up to a whole buffer ahead of the picture: a run that played its first
+ * segment at 480p was recorded as 1080p throughout. The frame on screen settles it, since every
+ * ladder carries one rung per height. The bitrate includes the audio track, as an HLS BANDWIDTH does.
+ */
+function getDashQuality(dash: any, video: HTMLVideoElement): VideoQuality | null {
   try {
     if (dash.getCurrentRepresentationForType) {
-      const currentRep = dash.getCurrentRepresentationForType("video");
+      const representations: any[] = dash.getRepresentationsByType?.("video") ?? [];
+      const onScreen =
+        video.videoHeight > 0
+          ? representations.find((representation) => representation.height === video.videoHeight)
+          : undefined;
+      const currentRep = onScreen ?? dash.getCurrentRepresentationForType("video");
       if (currentRep && currentRep.width && currentRep.height) {
         return {
           width: currentRep.width,
           height: currentRep.height,
-          bitrate: currentRep.bandwidth || currentRep.bitrate || 0,
+          bitrate: (currentRep.bandwidth || currentRep.bitrate || 0) + dashAudioBandwidth(dash),
           label: formatQualityLabel(currentRep.width, currentRep.height),
           codec:
             currentRep.codecs ||

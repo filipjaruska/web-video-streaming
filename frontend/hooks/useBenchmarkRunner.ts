@@ -97,6 +97,11 @@ export function useBenchmarkRunner({
       return;
     }
 
+    if (event.kind === "freeze") {
+      eventsRef.current.push({ kind: "freeze", atMs, durationMs: event.durationMs ?? 0 });
+      return;
+    }
+
     eventsRef.current.push({ kind: event.kind, atMs });
   }, []);
 
@@ -225,6 +230,8 @@ export function useBenchmarkRunner({
                 resolutionShare: result.metrics.resolutionShare,
                 topRungShare: result.metrics.topRungShare,
                 timeWeightedVmaf: result.metrics.timeWeightedVmaf,
+                freezeCount: result.metrics.freezeCount,
+                freezeRatio: result.metrics.freezeRatio,
               } satisfies BenchmarkTraceSummary,
             },
           }),

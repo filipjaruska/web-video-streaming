@@ -92,6 +92,8 @@ export interface BenchmarkTraceSummary {
   resolutionShare: Record<number, number>;
   topRungShare: number | null;
   timeWeightedVmaf: number | null;
+  freezeCount: number;
+  freezeRatio: number;
 }
 
 export type BenchmarkEvent =
@@ -99,6 +101,8 @@ export type BenchmarkEvent =
   | { kind: "startup"; atMs: number }
   | { kind: "rebufferStart"; atMs: number }
   | { kind: "rebufferEnd"; atMs: number }
+  /** A frozen picture while the element kept playing; `atMs` is the last frame before it. */
+  | { kind: "freeze"; atMs: number; durationMs: number }
   | { kind: "networkTransition"; atMs: number; profile: NetworkProfile }
   | { kind: "ended"; atMs: number }
   | { kind: "error"; atMs: number; message: string };
@@ -118,6 +122,15 @@ export interface BenchmarkMetrics {
   rebufferMs: number;
   /** Stalled time as a fraction of time since the first frame. */
   bufferingRatio: number;
+  /**
+   * Frozen-picture episodes after the first frame: no new frame presented for at least the freeze
+   * threshold while the element reported itself playing. Kept apart from rebuffering, which counts
+   * only the stalls the element admits to with "waiting".
+   */
+  freezeCount: number;
+  freezeMs: number;
+  /** Frozen-picture time as a fraction of time since the first frame. */
+  freezeRatio: number;
   qualitySwitches: number;
   /** Direction reversals, not switches — a monotone climb oscillates zero times. */
   oscillations: number;
