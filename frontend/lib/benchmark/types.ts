@@ -8,11 +8,15 @@ import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
  */
 export type NetworkProfile = "standard" | "fourG" | "threeG" | "variable";
 
-/** Shown in the UI. The figures match what the operator sets in clumsy. */
+/**
+ * Shown in the UI, in megabits per second like every other rate in the app. clumsy takes its
+ * bandwidth limit in kilobytes per second, an eighth of the figure here: enter 250 for 3G's 2 Mb/s
+ * and 1000 for 4G's 8 Mb/s. Entering 2000 for 3G, read as kilobits, ran the profile at 16 Mb/s.
+ */
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
   standard: "Standard (unshaped)",
-  fourG: "4G — 8000 kb/s, 40 ms, 1 % loss",
-  threeG: "3G — 2000 kb/s, 100 ms, 5 % loss",
+  fourG: "4G — 8 Mb/s, 40 ms, 1 % loss",
+  threeG: "3G — 2 Mb/s, 100 ms, 5 % loss",
   variable: "Variable network",
 };
 
