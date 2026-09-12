@@ -80,35 +80,29 @@ function measureRebuffering(
   return { count, totalMs };
 }
 
+function mean(values: number[]): number {
+  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
 /**
- * Frozen-picture time after the first frame, and how many freezes made it up.
- *
- * Reported separately from rebuffering rather than added to it: rebuffering is what the element
- * admits to, a freeze is what it hides — the clock runs on while the picture stands still — and
- * which of the two a configuration produces is itself a finding.
+ * Mean forward buffer while playing, seconds. Samples are only taken during playback, so a stall
+ * does not pull it toward the empty buffer that caused it — that is what the buffering ratio is for.
  */
-function measureFreezes(
-  events: BenchmarkEvent[],
-  startupMs: number,
-  durationMs: number,
-): { count: number; totalMs: number } {
-  let count = 0;
-  let totalMs = 0;
+function averageBuffer(samples: BenchmarkSample[], startupMs: number): number {
+  return mean(samples.filter((sample) => sample.atMs >= startupMs).map((sample) => sample.bufferSec));
+}
 
-  for (const event of events) {
-    if (event.kind !== "freeze") {
-      continue;
-    }
-
-    const start = Math.max(event.atMs, startupMs);
-    const end = Math.min(event.atMs + event.durationMs, durationMs);
-    if (end > start) {
-      count++;
-      totalMs += end - start;
-    }
-  }
-
-  return { count, totalMs };
+/**
+ * Mean of the throughput estimate the player reports, bits per second, over the samples that had
+ * one. Each player estimates its own way — hls.js an exponentially weighted mean, dash.js a mean of
+ * recent segments, HTTP Range from resource timing — so it describes the link, not the algorithm.
+ */
+function averageThroughput(samples: BenchmarkSample[], startupMs: number): number {
+  return mean(
+    samples
+      .filter((sample) => sample.atMs >= startupMs && sample.bandwidthBps > 0)
+      .map((sample) => sample.bandwidthBps),
+  );
 }
 
 /** Rung indices in sample order, restricted to playback and to samples that reported a rung. */
@@ -270,15 +264,15 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
 
   const empty: BenchmarkMetrics = {
     startupMs,
+    sessionMs: durationMs,
     rebufferCount: 0,
     rebufferMs: 0,
     bufferingRatio: 0,
-    freezeCount: 0,
-    freezeMs: 0,
-    freezeRatio: 0,
+    avgBufferSec: 0,
     qualitySwitches: 0,
     oscillations: 0,
     timeWeightedBitrateBps: 0,
+    avgThroughputBps: 0,
     resolutionShare: {},
     topRungShare: null,
     timeWeightedVmaf: null,
@@ -293,7 +287,6 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
   }
 
   const rebuffering = measureRebuffering(events, startupMs, durationMs);
-  const freezes = measureFreezes(events, startupMs, durationMs);
   const playingWindowMs = Math.max(0, durationMs - startupMs);
   const rungs = rungSeries(samples, startupMs);
   const directions = switchDirections(rungs);
@@ -310,15 +303,15 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
 
   return {
     startupMs,
+    sessionMs: durationMs,
     rebufferCount: rebuffering.count,
     rebufferMs: rebuffering.totalMs,
     bufferingRatio: playingWindowMs > 0 ? rebuffering.totalMs / playingWindowMs : 0,
-    freezeCount: freezes.count,
-    freezeMs: freezes.totalMs,
-    freezeRatio: playingWindowMs > 0 ? freezes.totalMs / playingWindowMs : 0,
+    avgBufferSec: averageBuffer(samples, startupMs),
     qualitySwitches: directions.length,
     oscillations,
     timeWeightedBitrateBps: timeWeightedBitrate(samples, durationMs),
+    avgThroughputBps: averageThroughput(samples, startupMs),
     resolutionShare: share,
     topRungShare: ladder && Object.keys(share).length > 0 ? (share[ladder.topHeight] ?? 0) : null,
     timeWeightedVmaf: deliveredVmaf(share, ladder),

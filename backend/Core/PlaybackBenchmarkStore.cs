@@ -70,14 +70,17 @@ public sealed class BenchmarkAggregateDto {
     /// <summary>Mean share of played media time per rendition height, keyed by height.</summary>
     public Dictionary<string, double>? ResolutionShareMean { get; init; }
 
-    /// <summary>
-    /// Frozen-picture time as a fraction of time since the first frame: no new frame presented while
-    /// the element reported itself playing, which the buffering ratio cannot see. Null for runs
-    /// recorded before it was measured.
-    /// </summary>
-    public double? FreezeRatioMean { get; init; }
-    public double? FreezeRatioStdDev { get; init; }
-    public double? FreezeCountMean { get; init; }
+    public required double DroppedFrameRatioMean { get; init; }
+
+    /// <summary>Mean forward buffer while playing, seconds. Null for runs recorded before it was kept.</summary>
+    public double? AvgBufferSecMean { get; init; }
+
+    /// <summary>The player's own throughput estimate, averaged: what the link actually delivered.</summary>
+    public double? AvgThroughputBpsMean { get; init; }
+
+    /// <summary>Play request to the end of the clip, milliseconds — stalls and startup included.</summary>
+    public double? SessionMsMean { get; init; }
+    public double? SessionMsStdDev { get; init; }
 }
 
 public sealed class VideoBenchmarksResponse {
@@ -195,9 +198,10 @@ public sealed class PlaybackBenchmarkStore {
                 var vmafValues = summaries.Select(item => item.TimeWeightedVmaf).OfType<double>().ToList();
                 var vmaf = Summarize(vmafValues);
                 var topShares = summaries.Select(item => item.TopRungShare).OfType<double>().ToList();
-                var freezeRatios = summaries.Select(item => item.FreezeRatio).OfType<double>().ToList();
-                var freeze = Summarize(freezeRatios);
-                var freezeCounts = summaries.Select(item => item.FreezeCount).OfType<double>().ToList();
+                var buffers = summaries.Select(item => item.AvgBufferSec).OfType<double>().ToList();
+                var throughputs = summaries.Select(item => item.AvgThroughputBps).OfType<double>().ToList();
+                var sessionValues = summaries.Select(item => item.SessionMs).OfType<double>().ToList();
+                var session = Summarize(sessionValues);
 
                 return new BenchmarkAggregateDto {
                     NetworkProfile = group.Key.NetworkProfile.ToString(),
@@ -217,9 +221,11 @@ public sealed class PlaybackBenchmarkStore {
                     TimeWeightedVmafStdDev = vmafValues.Count > 0 ? vmaf.StdDev : null,
                     TopRungShareMean = topShares.Count > 0 ? topShares.Average() : null,
                     ResolutionShareMean = MeanShares(summaries),
-                    FreezeRatioMean = freezeRatios.Count > 0 ? freeze.Mean : null,
-                    FreezeRatioStdDev = freezeRatios.Count > 0 ? freeze.StdDev : null,
-                    FreezeCountMean = freezeCounts.Count > 0 ? freezeCounts.Average() : null
+                    DroppedFrameRatioMean = group.Average(row => row.DroppedFrameRatio),
+                    AvgBufferSecMean = buffers.Count > 0 ? buffers.Average() : null,
+                    AvgThroughputBpsMean = throughputs.Count > 0 ? throughputs.Average() : null,
+                    SessionMsMean = sessionValues.Count > 0 ? session.Mean : null,
+                    SessionMsStdDev = sessionValues.Count > 0 ? session.StdDev : null
                 };
             })
             .OrderBy(item => item.NetworkProfile)
@@ -233,8 +239,9 @@ public sealed class PlaybackBenchmarkStore {
         double? TopRungShare,
         double? TimeWeightedVmaf,
         Dictionary<string, double>? ResolutionShare,
-        double? FreezeRatio,
-        double? FreezeCount);
+        double? AvgBufferSec,
+        double? AvgThroughputBps,
+        double? SessionMs);
 
     /// <summary>
     /// Reads the <c>summary</c> the client puts in the trace, clamped like every other client value.
@@ -271,8 +278,9 @@ public sealed class PlaybackBenchmarkStore {
                 ReadNumber("topRungShare", 1),
                 ReadNumber("timeWeightedVmaf", 100),
                 shares,
-                ReadNumber("freezeRatio", 1),
-                ReadNumber("freezeCount", 10_000));
+                ReadNumber("avgBufferSec", 3_600),
+                ReadNumber("avgThroughputBps", 10_000_000_000),
+                ReadNumber("sessionMs", 3_600_000));
         } catch (JsonException) {
             return null;
         }

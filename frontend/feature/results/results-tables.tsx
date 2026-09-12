@@ -169,9 +169,6 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
           agg.startupMsStdDev,
           agg.bufferingRatioMean,
           agg.bufferingRatioStdDev,
-          agg.freezeRatioMean ?? "",
-          agg.freezeRatioStdDev ?? "",
-          agg.freezeCountMean ?? "",
           agg.qualitySwitchesMean,
           agg.oscillationsMean,
           agg.timeWeightedBitrateBpsMean,
@@ -179,6 +176,11 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
           agg.timeWeightedVmafMean ?? "",
           agg.timeWeightedVmafStdDev ?? "",
           encodeResolutionShare(agg.resolutionShareMean),
+          agg.sessionMsMean ?? "",
+          agg.sessionMsStdDev ?? "",
+          agg.avgBufferSecMean ?? "",
+          agg.avgThroughputBpsMean ?? "",
+          agg.droppedFrameRatioMean ?? "",
           agg.recoveryMsMean ?? "",
         ]),
       ),
@@ -452,9 +454,6 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "startup_ms_stddev",
                 "buffering_ratio_mean",
                 "buffering_ratio_stddev",
-                "freeze_ratio_mean",
-                "freeze_ratio_stddev",
-                "freeze_count_mean",
                 "quality_switches_mean",
                 "oscillations_mean",
                 "time_weighted_bitrate_bps_mean",
@@ -462,6 +461,11 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "time_weighted_vmaf_mean",
                 "time_weighted_vmaf_stddev",
                 "resolution_share_mean",
+                "session_ms_mean",
+                "session_ms_stddev",
+                "avg_buffer_sec_mean",
+                "avg_throughput_bps_mean",
+                "dropped_frame_ratio_mean",
                 "recovery_ms_mean",
               ]}
               rows={playbackRows}
@@ -483,11 +487,14 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "ABR",
                 "Runs",
                 "Startup (ms)",
+                "Session (s)",
                 "Buffering",
-                "Frozen video",
+                "Avg buffer (s)",
                 "Switches",
                 "Top rung",
                 "Delivered VMAF",
+                "Throughput",
+                "Dropped",
                 "Resolution mix",
               ]}
             >
@@ -507,14 +514,17 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                     <DataCell>
                       {agg.startupMsMean.toFixed(0)} ± {agg.startupMsStdDev.toFixed(0)}
                     </DataCell>
+                    <DataCell className="whitespace-nowrap">
+                      {agg.sessionMsMean != null
+                        ? `${(agg.sessionMsMean / 1000).toFixed(1)} ± ${((agg.sessionMsStdDev ?? 0) / 1000).toFixed(1)}`
+                        : "—"}
+                    </DataCell>
                     <DataCell>
                       {(agg.bufferingRatioMean * 100).toFixed(2)} % ±{" "}
                       {(agg.bufferingRatioStdDev * 100).toFixed(2)}
                     </DataCell>
-                    <DataCell className="whitespace-nowrap">
-                      {agg.freezeRatioMean != null
-                        ? `${(agg.freezeRatioMean * 100).toFixed(2)} % ± ${((agg.freezeRatioStdDev ?? 0) * 100).toFixed(2)}`
-                        : "—"}
+                    <DataCell>
+                      {agg.avgBufferSecMean != null ? agg.avgBufferSecMean.toFixed(1) : "—"}
                     </DataCell>
                     <DataCell>{agg.qualitySwitchesMean.toFixed(1)}</DataCell>
                     <DataCell>
@@ -525,6 +535,16 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                     <DataCell>
                       {agg.timeWeightedVmafMean != null
                         ? `${agg.timeWeightedVmafMean.toFixed(2)} ± ${(agg.timeWeightedVmafStdDev ?? 0).toFixed(2)}`
+                        : "—"}
+                    </DataCell>
+                    <DataCell className="whitespace-nowrap">
+                      {agg.avgThroughputBpsMean
+                        ? `${(agg.avgThroughputBpsMean / 1_000_000).toFixed(2)} Mb/s`
+                        : "—"}
+                    </DataCell>
+                    <DataCell>
+                      {agg.droppedFrameRatioMean != null
+                        ? `${(agg.droppedFrameRatioMean * 100).toFixed(2)} %`
                         : "—"}
                     </DataCell>
                     <DataCell last className="whitespace-nowrap">
