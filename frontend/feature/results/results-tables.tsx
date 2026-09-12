@@ -28,6 +28,7 @@ import {
 } from "@/lib/analysisFormat";
 import { NETWORK_PROFILE_LABELS } from "@/lib/benchmark/types";
 import { describeResolutionShare, encodeResolutionShare } from "@/lib/benchmark/metrics";
+import { algorithmLabel } from "@/lib/benchmark/matrix";
 import { profileOf } from "@/lib/videoBenchmarksApi";
 import type { ClipResult, ClipStatus } from "@/lib/resultsApi";
 
@@ -168,6 +169,9 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
           agg.startupMsStdDev,
           agg.bufferingRatioMean,
           agg.bufferingRatioStdDev,
+          agg.freezeRatioMean ?? "",
+          agg.freezeRatioStdDev ?? "",
+          agg.freezeCountMean ?? "",
           agg.qualitySwitchesMean,
           agg.oscillationsMean,
           agg.timeWeightedBitrateBpsMean,
@@ -448,6 +452,9 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "startup_ms_stddev",
                 "buffering_ratio_mean",
                 "buffering_ratio_stddev",
+                "freeze_ratio_mean",
+                "freeze_ratio_stddev",
+                "freeze_count_mean",
                 "quality_switches_mean",
                 "oscillations_mean",
                 "time_weighted_bitrate_bps_mean",
@@ -477,6 +484,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 "Runs",
                 "Startup (ms)",
                 "Buffering",
+                "Frozen video",
                 "Switches",
                 "Top rung",
                 "Delivered VMAF",
@@ -492,7 +500,9 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                     </DataCell>
                     <DataCell mono={false}>{ladderLabel(agg.ladderKind)}</DataCell>
                     <DataCell className="uppercase">{agg.protocol}</DataCell>
-                    <DataCell>{agg.abrAlgorithm}</DataCell>
+                    <DataCell>
+                      {agg.protocol === "source" ? "—" : algorithmLabel(agg.abrAlgorithm)}
+                    </DataCell>
                     <DataCell>{agg.runs}</DataCell>
                     <DataCell>
                       {agg.startupMsMean.toFixed(0)} ± {agg.startupMsStdDev.toFixed(0)}
@@ -500,6 +510,11 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                     <DataCell>
                       {(agg.bufferingRatioMean * 100).toFixed(2)} % ±{" "}
                       {(agg.bufferingRatioStdDev * 100).toFixed(2)}
+                    </DataCell>
+                    <DataCell className="whitespace-nowrap">
+                      {agg.freezeRatioMean != null
+                        ? `${(agg.freezeRatioMean * 100).toFixed(2)} % ± ${((agg.freezeRatioStdDev ?? 0) * 100).toFixed(2)}`
+                        : "—"}
                     </DataCell>
                     <DataCell>{agg.qualitySwitchesMean.toFixed(1)}</DataCell>
                     <DataCell>
