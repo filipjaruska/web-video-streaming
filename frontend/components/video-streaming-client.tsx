@@ -12,7 +12,7 @@ import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
 import { BenchmarkPanel } from "@/components/benchmark-panel";
 import { useBenchmarkRunner } from "@/hooks/useBenchmarkRunner";
 import { usePlaybackCapabilities } from "@/hooks/usePlaybackCapabilities";
-import type { BenchmarkCell, NetworkProfile } from "@/lib/benchmark/types";
+import type { BenchmarkLadder } from "@/lib/benchmark/types";
 import { VideoEncodingInfo } from "@/components/video-encoding-info";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -132,6 +132,25 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     },
     [handlePlaybackEvent, recordRebuffer],
   );
+
+  /** Every packaged ladder a sweep can choose from, in the order the thesis compares them. */
+  const benchmarkLadders = useMemo<BenchmarkLadder[]>(() => {
+    const order = ["static", "dynamic", "animation"];
+    const rank = (kind: string) => {
+      const position = order.indexOf(kind);
+      return position < 0 ? order.length : position;
+    };
+
+    return transcodes
+      .filter((item) => item.status === "succeeded" && (item.hasHls || item.hasDash))
+      .sort((a, b) => rank(a.ladderKind) - rank(b.ladderKind))
+      .map((item) => ({
+        transcodeId: item.id,
+        ladderKind: item.ladderKind,
+        hasHls: item.hasHls,
+        hasDash: item.hasDash,
+      }));
+  }, [transcodes]);
 
   const capabilities = usePlaybackCapabilities();
 
@@ -328,15 +347,12 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
       <BenchmarkPanel
         progress={benchmarkProgress}
         results={benchmarkResults}
-        onStart={(profile) => {
+        ladders={benchmarkLadders}
+        onStart={(profile, selection) => {
           // A sweep sets configurations directly, so Best mode has to be off or its sync effect
           // would put its own choice back on the next render.
           setBestMode(false);
-          void startBenchmark(
-            isSourceRun(effectivePackagingRunId) ? null : effectivePackagingRunId,
-            transcodes.find((item) => item.id === effectivePackagingRunId)?.ladderKind ?? "source",
-            profile,
-          );
+          void startBenchmark(selection, profile);
         }}
         onCancel={cancelBenchmark}
         onMarkTransition={markNetworkTransition}

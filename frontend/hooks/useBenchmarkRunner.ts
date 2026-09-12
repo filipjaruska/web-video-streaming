@@ -3,21 +3,25 @@
 import { useCallback, useRef, useState } from "react";
 import type { PlaybackEvent, StatsSnapshot } from "@/types/streaming";
 import type { VideoPlayerHandle } from "@/components/video-player";
+import { ladderLabel } from "@/lib/analysisFormat";
 import { computeMetrics } from "@/lib/benchmark/metrics";
-import { buildMatrix, describeCell, toSamples } from "@/lib/benchmark/matrix";
-import { loadLadderQuality } from "@/lib/benchmark/ladderQuality";
+import {
+  BENCHMARK_REPETITIONS,
+  buildMatrix,
+  describeCell,
+  toSamples,
+} from "@/lib/benchmark/matrix";
+import { loadLadderQualities } from "@/lib/benchmark/ladderQuality";
 import {
   toServerProfile,
   type BenchmarkCell,
   type BenchmarkEvent,
   type BenchmarkRunResult,
+  type BenchmarkSelection,
   type BenchmarkTraceSummary,
   type LadderQuality,
   type NetworkProfile,
 } from "@/lib/benchmark/types";
-
-/** Repetitions of each cell. Startup and rebuffering are noisy enough that one run proves nothing. */
-const REPETITIONS = 3;
 
 /** How long to keep retrying `play()` before declaring the cell unplayable. */
 const START_TIMEOUT_MS = 20_000;
@@ -51,8 +55,15 @@ const IDLE: BenchmarkProgress = {
   cellIndex: 0,
   cellCount: 0,
   repetition: 0,
-  repetitions: REPETITIONS,
+  repetitions: BENCHMARK_REPETITIONS,
 };
+
+/** Progress label with the ladder in it, now that one sweep can cover several. */
+function describeProgress(cell: BenchmarkCell): string {
+  return cell.protocol === "source"
+    ? describeCell(cell)
+    : `${ladderLabel(cell.ladderKind)} · ${describeCell(cell)}`;
+}
 
 export function useBenchmarkRunner({
   routeId,
@@ -77,8 +88,8 @@ export function useBenchmarkRunner({
   const runStartWallRef = useRef(0);
   const cancelRef = useRef(false);
   const nonceRef = useRef(0);
-  /** Rung heights and measured VMAF of the ladder under test, loaded once per sweep. */
-  const ladderRef = useRef<LadderQuality | null>(null);
+  /** Rung heights and measured VMAF of every ladder in the sweep, by transcode id. */
+  const laddersRef = useRef<Map<string, LadderQuality>>(new Map());
 
   /**
    * Feeds player lifecycle edges into the run currently being recorded.
@@ -94,11 +105,6 @@ export function useBenchmarkRunner({
     const atMs = event.atMs - runStartRef.current;
     if (event.kind === "error") {
       eventsRef.current.push({ kind: "error", atMs, message: event.message ?? "playback error" });
-      return;
-    }
-
-    if (event.kind === "freeze") {
-      eventsRef.current.push({ kind: "freeze", atMs, durationMs: event.durationMs ?? 0 });
       return;
     }
 
@@ -194,8 +200,11 @@ export function useBenchmarkRunner({
         cell,
         networkProfile: profile,
         repetition,
-        // The source cell plays the original file, not a rung of the ladder, so it has no ladder VMAF.
-        metrics: computeMetrics(trace, cell.transcodeId ? (ladderRef.current ?? undefined) : undefined),
+        // The source cell plays the original file, not a rung of a ladder, so it has no ladder VMAF.
+        metrics: computeMetrics(
+          trace,
+          cell.transcodeId ? laddersRef.current.get(cell.transcodeId) : undefined,
+        ),
         trace,
         failed: !!errored,
         errorMessage: errored && "message" in errored ? errored.message : undefined,
@@ -230,8 +239,9 @@ export function useBenchmarkRunner({
                 resolutionShare: result.metrics.resolutionShare,
                 topRungShare: result.metrics.topRungShare,
                 timeWeightedVmaf: result.metrics.timeWeightedVmaf,
-                freezeCount: result.metrics.freezeCount,
-                freezeRatio: result.metrics.freezeRatio,
+                avgBufferSec: result.metrics.avgBufferSec,
+                avgThroughputBps: result.metrics.avgThroughputBps,
+                sessionMs: result.metrics.sessionMs,
               } satisfies BenchmarkTraceSummary,
             },
           }),
@@ -245,21 +255,32 @@ export function useBenchmarkRunner({
   );
 
   const start = useCallback(
-    async (
-      transcodeId: string | null,
-      ladderKind: string,
-      profile: NetworkProfile,
-      cells?: BenchmarkCell[],
-    ) => {
+    async (selection: BenchmarkSelection, profile: NetworkProfile) => {
       cancelRef.current = false;
       setResults([]);
-      ladderRef.current = await loadLadderQuality(apiUrl, routeId, transcodeId);
 
-      const matrix = cells ?? buildMatrix(transcodeId, ladderKind);
+      const matrix = buildMatrix(selection);
       const collected: BenchmarkRunResult[] = [];
+      if (matrix.length === 0) {
+        return collected;
+      }
+
+      setProgress({
+        running: true,
+        cellLabel: "loading ladder scores…",
+        cellIndex: 0,
+        cellCount: matrix.length,
+        repetition: 0,
+        repetitions: BENCHMARK_REPETITIONS,
+      });
+      laddersRef.current = await loadLadderQualities(
+        apiUrl,
+        routeId,
+        selection.ladders.map((ladder) => ladder.transcodeId),
+      );
 
       for (let index = 0; index < matrix.length; index++) {
-        for (let repetition = 1; repetition <= REPETITIONS; repetition++) {
+        for (let repetition = 1; repetition <= BENCHMARK_REPETITIONS; repetition++) {
           if (cancelRef.current) {
             setProgress(IDLE);
             return collected;
@@ -267,11 +288,11 @@ export function useBenchmarkRunner({
 
           setProgress({
             running: true,
-            cellLabel: describeCell(matrix[index]),
+            cellLabel: describeProgress(matrix[index]),
             cellIndex: index + 1,
             cellCount: matrix.length,
             repetition,
-            repetitions: REPETITIONS,
+            repetitions: BENCHMARK_REPETITIONS,
           });
 
           const result = await runOne(matrix[index], profile, repetition);
@@ -301,7 +322,6 @@ export function useBenchmarkRunner({
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
 
 /** Resolves with the run length once playback ends, or null if it timed out or was cancelled. */
 async function waitForEnd(

@@ -60,6 +60,23 @@ export interface BenchmarkCell {
   algorithm: AbrAlgorithm;
 }
 
+/** A packaged ladder a sweep can play, and the protocols it was packaged for. */
+export interface BenchmarkLadder {
+  transcodeId: string;
+  ladderKind: string;
+  hasHls: boolean;
+  hasDash: boolean;
+}
+
+/** What one sweep measures; every combination of the chosen ladders, protocols and rules. */
+export interface BenchmarkSelection {
+  ladders: BenchmarkLadder[];
+  protocols: Array<"hls" | "dash">;
+  algorithms: AbrAlgorithm[];
+  /** Also play the original file over HTTP Range, the non-adaptive reference — once, not per ladder. */
+  includeSource: boolean;
+}
+
 /** One sample of the player's state, taken on a fixed cadence during a run. */
 export interface BenchmarkSample {
   /** Milliseconds since the run started. */
@@ -92,8 +109,9 @@ export interface BenchmarkTraceSummary {
   resolutionShare: Record<number, number>;
   topRungShare: number | null;
   timeWeightedVmaf: number | null;
-  freezeCount: number;
-  freezeRatio: number;
+  avgBufferSec: number;
+  avgThroughputBps: number;
+  sessionMs: number;
 }
 
 export type BenchmarkEvent =
@@ -101,8 +119,6 @@ export type BenchmarkEvent =
   | { kind: "startup"; atMs: number }
   | { kind: "rebufferStart"; atMs: number }
   | { kind: "rebufferEnd"; atMs: number }
-  /** A frozen picture while the element kept playing; `atMs` is the last frame before it. */
-  | { kind: "freeze"; atMs: number; durationMs: number }
   | { kind: "networkTransition"; atMs: number; profile: NetworkProfile }
   | { kind: "ended"; atMs: number }
   | { kind: "error"; atMs: number; message: string };
@@ -118,23 +134,24 @@ export interface BenchmarkTrace {
 export interface BenchmarkMetrics {
   /** Play() to first frame, milliseconds. Null when the run never started. */
   startupMs: number | null;
+  /** Play() to the end of the clip, milliseconds: how long it took to play all of it, stalls included. */
+  sessionMs: number;
   rebufferCount: number;
   rebufferMs: number;
   /** Stalled time as a fraction of time since the first frame. */
   bufferingRatio: number;
-  /**
-   * Frozen-picture episodes after the first frame: no new frame presented for at least the freeze
-   * threshold while the element reported itself playing. Kept apart from rebuffering, which counts
-   * only the stalls the element admits to with "waiting".
-   */
-  freezeCount: number;
-  freezeMs: number;
-  /** Frozen-picture time as a fraction of time since the first frame. */
-  freezeRatio: number;
+  /** Mean forward buffer over the samples taken while playing, seconds. */
+  avgBufferSec: number;
   qualitySwitches: number;
   /** Direction reversals, not switches — a monotone climb oscillates zero times. */
   oscillations: number;
   timeWeightedBitrateBps: number;
+  /**
+   * Mean of the player's own throughput estimate while playing, bits per second; 0 when it never
+   * reported one. A check on the conditions more than a result: it shows whether the link actually
+   * ran at the rate the network profile declares.
+   */
+  avgThroughputBps: number;
   /**
    * Share of the played media time spent at each rendition height, keyed by height. Weighted by
    * media time rather than wall time, so a stall adds nothing to the rung it happened on.

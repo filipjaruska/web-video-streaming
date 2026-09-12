@@ -1,32 +1,50 @@
-import type { AbrAlgorithm, StatsSnapshot, StreamingMethod } from "@/types/streaming";
-import type { BenchmarkCell, BenchmarkSample, NetworkProfile } from "./types";
+import type { AbrAlgorithm, StatsSnapshot } from "@/types/streaming";
+import type { BenchmarkCell, BenchmarkSample, BenchmarkSelection, NetworkProfile } from "./types";
 
-/** The adaptive rules under test, plus the fixed-quality control. */
-const ALGORITHMS: AbrAlgorithm[] = ["throughput", "buffer", "hybrid", "baseline"];
-const PROTOCOLS: StreamingMethod[] = ["hls", "dash"];
+/** The adaptive rules under test, plus the fixed-quality control, in the order they are run. */
+export const BENCHMARK_ALGORITHMS: AbrAlgorithm[] = ["throughput", "buffer", "hybrid", "baseline"];
+export const BENCHMARK_PROTOCOLS: Array<"hls" | "dash"> = ["hls", "dash"];
+
+/** Repetitions of each cell. Startup and rebuffering are noisy enough that one run proves nothing. */
+export const BENCHMARK_REPETITIONS = 3;
 
 /**
- * The cells one sweep measures.
- *
- * Eight adaptive combinations for the protocol/algorithm comparison, plus one progressive HTTP Range
- * cell as the non-adaptive reference the content-characterisation chapter measures against. The
- * source cell carries `baseline` only because the type requires an algorithm — nothing adapts there.
+ * The cells one sweep measures: every chosen protocol and rule against every chosen ladder, then the
+ * progressive HTTP Range cell once, as the non-adaptive reference — it plays the source file, which
+ * no ladder changes. The source cell carries `baseline` only because the type requires an
+ * algorithm; nothing adapts there. A protocol a ladder was not packaged for is skipped for it.
  */
-export function buildMatrix(transcodeId: string | null, ladderKind: string): BenchmarkCell[] {
+export function buildMatrix(selection: BenchmarkSelection): BenchmarkCell[] {
   const cells: BenchmarkCell[] = [];
 
-  for (const protocol of PROTOCOLS) {
-    for (const algorithm of ALGORITHMS) {
-      cells.push({ transcodeId, ladderKind, protocol, algorithm });
+  for (const ladder of selection.ladders) {
+    for (const protocol of BENCHMARK_PROTOCOLS) {
+      const packaged = protocol === "hls" ? ladder.hasHls : ladder.hasDash;
+      if (!selection.protocols.includes(protocol) || !packaged) {
+        continue;
+      }
+
+      for (const algorithm of BENCHMARK_ALGORITHMS) {
+        if (selection.algorithms.includes(algorithm)) {
+          cells.push({
+            transcodeId: ladder.transcodeId,
+            ladderKind: ladder.ladderKind,
+            protocol,
+            algorithm,
+          });
+        }
+      }
     }
   }
 
-  cells.push({
-    transcodeId: null,
-    ladderKind: "source",
-    protocol: "source",
-    algorithm: "baseline",
-  });
+  if (selection.includeSource) {
+    cells.push({
+      transcodeId: null,
+      ladderKind: "source",
+      protocol: "source",
+      algorithm: "baseline",
+    });
+  }
 
   return cells;
 }
