@@ -521,9 +521,9 @@ function getVideoElementQuality(
 function estimateBitrateFromResolution(width: number, height: number): number {
   const pixels = width * height;
   if (pixels >= 3840 * 2160) return 20_000_000;
-  if (pixels >= 1920 * 1080) return 5_000_000;
-  if (pixels >= 1280 * 720) return 2_500_000;
-  if (pixels >= 854 * 480) return 1_000_000;
-  if (pixels >= 640 * 360) return 800_000;
-  return 500_000;
+  if (pixels >= 1920 * 1080) return 7_800_000;
+  if (pixels >= 1280 * 720) return 4_500_000;
+  if (pixels >= 960 * 540) return 2_000_000;
+  if (pixels >= 640 * 360) return 365_000;
+  return 145_000;
 }

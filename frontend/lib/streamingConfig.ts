@@ -31,7 +31,7 @@ export const START_BANDWIDTH_FRACTION = 0.9;
  * switch counts and time-weighted quality would describe the ramp instead of the algorithm. It used
  * to be pinned by index — third rung from the bottom — which lands on a different bitrate on every
  * ladder once derived ladders drop a rung, so the ladders being compared did not start on equal
- * terms. On the static ladder both rules pick 480p.
+ * terms. On the static (Apple) ladder this lands around 432p, depending on the measured peaks.
  */
 export function pickStartLevel<T>(
   levels: readonly T[],

@@ -26,7 +26,12 @@ public sealed class EncodeGridResult {
 /// </remarks>
 public sealed class EncodeGrid {
     internal const int MaxSamplesPerResolution = 10;
-    internal const int MaxSamplesTotal = 45;
+
+    /// <summary>
+    /// Six coarse CRFs on each of the six resolutions, plus fifteen refinement samples — the fifteen
+    /// the grid had when the ladder had five resolutions and a budget of 45.
+    /// </summary>
+    internal const int MaxSamplesTotal = 51;
     internal const int LowestCrf = 12;
     internal const int HighestCrf = 51;
 

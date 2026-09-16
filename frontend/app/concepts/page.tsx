@@ -36,18 +36,20 @@ const ABR_ALGORITHMS: AbrAlgorithm[] = [
 ];
 
 /**
- * The fixed baseline ladder, mirroring `TranscodeProfile.Default` on the backend.
+ * The fixed baseline ladder, mirroring `TranscodeProfile.Default` on the backend: Apple's HLS
+ * authoring specification, one rung per resolution.
  *
  * Hardcoded rather than fetched: this is the one ladder that never varies by clip, and the page
  * needs to render it even with an empty catalogue. If the backend default ever changes, this is
  * the copy to update alongside it.
  */
 const STATIC_LADDER = [
-  { label: "1080p", resolution: "1920×1080", bitrate: "4500 kb/s" },
-  { label: "720p", resolution: "1280×720", bitrate: "2500 kb/s" },
-  { label: "480p", resolution: "854×480", bitrate: "1200 kb/s" },
-  { label: "360p", resolution: "640×360", bitrate: "800 kb/s" },
-  { label: "240p", resolution: "426×240", bitrate: "400 kb/s" },
+  { label: "1080p", resolution: "1920×1080", bitrate: "7.8 Mb/s" },
+  { label: "720p", resolution: "1280×720", bitrate: "4.5 Mb/s" },
+  { label: "540p", resolution: "960×540", bitrate: "2.0 Mb/s" },
+  { label: "432p", resolution: "768×432", bitrate: "1.1 Mb/s" },
+  { label: "360p", resolution: "640×360", bitrate: "0.365 Mb/s" },
+  { label: "234p", resolution: "416×234", bitrate: "0.145 Mb/s" },
 ];
 
 /** A concept, with somewhere in the app it can actually be seen on measured data. */
@@ -157,7 +159,9 @@ export default async function ConceptsPage() {
             badly — wrong.
           </p>
           <p>
-            This is the static baseline every measurement is compared against. It is the same five
+            This is the static baseline every measurement is compared against: the H.264 ladder
+            from Apple&apos;s HLS authoring specification, one rung per resolution. Apple offers it
+            as initial targets for typical content, to be adjusted to the content — the same six
             rungs for every clip, regardless of what the clip contains:
           </p>
           <DataTable headers={["Rung", "Resolution", "Bitrate"]}>

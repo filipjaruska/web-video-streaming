@@ -36,7 +36,9 @@ public sealed class NetworkShapingMiddleware {
 
     private static readonly IReadOnlyDictionary<string, NetworkShape> Profiles =
         new Dictionary<string, NetworkShape>(StringComparer.OrdinalIgnoreCase) {
-            ["fourG"] = new(8_000_000, 40),
+            // Carries the static top rung (7.8 Mb/s, peaks up to 1.5× that, plus audio) with margin.
+            ["fourG"] = new(20_000_000, 40),
+            // Below all but the three lowest rungs, so every adaptive rule has to adapt.
             ["threeG"] = new(2_000_000, 100),
         };
 

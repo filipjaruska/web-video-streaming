@@ -30,21 +30,28 @@ import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
 
 /** Highest → lowest — legend and series always follow this order. */
-const HEIGHT_KEYS = [1080, 720, 480, 360, 240] as const;
+/**
+ * Highest → lowest — legend and series always follow this order. The resolutions of the static
+ * ladder (Apple's HLS authoring spec) and, before it, of the ladder clips analysed earlier used.
+ */
+const HEIGHT_KEYS = [1080, 720, 540, 480, 432, 360, 240, 234] as const;
 
 type HeightKey = `h${(typeof HEIGHT_KEYS)[number]}`;
 
 const chartConfig = {
   h1080: { label: "1080p", color: "var(--chart-1)" },
   h720: { label: "720p", color: "var(--chart-2)" },
+  h540: { label: "540p", color: "var(--chart-3)" },
   h480: { label: "480p", color: "var(--chart-3)" },
-  h360: { label: "360p", color: "var(--chart-4)" },
-  h240: { label: "240p", color: "var(--chart-5)" },
+  h432: { label: "432p", color: "var(--chart-4)" },
+  h360: { label: "360p", color: "var(--chart-5)" },
+  h240: { label: "240p", color: "var(--chart-6)" },
+  h234: { label: "234p", color: "var(--chart-6)" },
 } satisfies ChartConfig;
 
 function heightKey(height: number): HeightKey {
   const match = HEIGHT_KEYS.find((h) => h === height);
-  return match ? (`h${match}` as HeightKey) : "h480";
+  return match ? (`h${match}` as HeightKey) : "h540";
 }
 
 function formatBitrateKbps(bps: number) {

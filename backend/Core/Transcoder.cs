@@ -68,14 +68,27 @@ public sealed class TranscodeProfile {
     /// <summary>Drop near-duplicate frames before encoding — animation shot "on twos".</summary>
     public bool Decimate { get; init; }
 
+    /// <summary>
+    /// The static ladder: Apple's HLS authoring specification (item 1.25, H.264/AVC, 16:9), one
+    /// rung per resolution — the higher rate where the table lists two.
+    /// </summary>
+    /// <remarks>
+    /// A published generic ladder, so the baseline the content-adaptive ladders are measured against
+    /// is an industry recommendation rather than a table of our own. Apple presents it as "initial
+    /// encoding targets for typical content" to be evaluated against the content and adjusted, which
+    /// is exactly what the derived ladders do. One rung per resolution because the derived ladders
+    /// allow no more, so the ladders compared differ in rates, not in shape. The derived ladders and
+    /// the encode grid take their resolutions from this list.
+    /// </remarks>
     public static TranscodeProfile Default { get; } = new() {
         Name = "default",
         Variants = [
-            new TranscodeVariant("1920:1080", "4500k", "1080p"),
-            new TranscodeVariant("1280:720", "2500k", "720p"),
-            new TranscodeVariant("854:480", "1200k", "480p"),
-            new TranscodeVariant("640:360", "800k", "360p"),
-            new TranscodeVariant("426:240", "400k", "240p")
+            new TranscodeVariant("1920:1080", "7800k", "1080p"),
+            new TranscodeVariant("1280:720", "4500k", "720p"),
+            new TranscodeVariant("960:540", "2000k", "540p"),
+            new TranscodeVariant("768:432", "1100k", "432p"),
+            new TranscodeVariant("640:360", "365k", "360p"),
+            new TranscodeVariant("416:234", "145k", "234p")
         ]
     };
 
@@ -187,10 +200,11 @@ public sealed class Transcoder {
     /// with each other, which ABR switching depends on.
     /// </para>
     /// <para>
-    /// No <c>setsar</c>: 854×480 and 426×240 are not exactly 16:9, and the scale filter keeps the
-    /// display aspect by writing SARs of 1280:1281 and 640:639. Forcing square pixels made every
-    /// rendition a different display shape, which the DASH muxer rightly refuses to put in one
-    /// adaptation set.
+    /// No <c>setsar</c>: a rung that is not exactly 16:9 — 854×480 and 426×240 were, on the ladder
+    /// used before — gets a non-square SAR from the scale filter that keeps its display aspect.
+    /// Forcing square pixels made every such rendition a different display shape, which the DASH
+    /// muxer rightly refuses to put in one adaptation set. Every rung of the current ladder is exactly
+    /// 16:9, so its SARs come out square anyway.
     /// </para>
     /// <para>
     /// <c>mpdecimate</c> drops frames outright, which leaves gaps in the timeline that only

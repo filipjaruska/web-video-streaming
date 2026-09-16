@@ -16,7 +16,7 @@ export type ShapedProfile = Exclude<NetworkProfile, "variable">;
  */
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
   standard: "Standard (unshaped)",
-  fourG: "4G — 8 Mb/s, 40 ms",
+  fourG: "4G — 20 Mb/s, 40 ms",
   threeG: "3G — 2 Mb/s, 100 ms",
   variable: "Variable — 4G → 3G → 4G",
 };
@@ -56,7 +56,7 @@ export function effectiveProfile(profile: NetworkProfile, elapsedMs: number): Sh
  */
 export const NETWORK_PROFILE_RATE_BPS: Record<NetworkProfile, number | null> = {
   standard: null,
-  fourG: 8_000_000,
+  fourG: 20_000_000,
   threeG: 2_000_000,
   variable: null,
 };
