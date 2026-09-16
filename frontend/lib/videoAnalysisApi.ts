@@ -4,8 +4,7 @@ export type AnalysisSectionStatus =
   | "pending"
   | "running"
   | "completed"
-  | "failed"
-  | "notImplemented";
+  | "failed";
 
 export interface AnalysisTreeNodeMeta {
   source?: string;
@@ -258,14 +257,9 @@ export interface AnalysisSeriesDocument {
   duplicateFrameShare?: number;
 }
 
-export type AnalysisTargetKind = "source" | "transcode" | "futureTest";
+export type AnalysisTargetKind = "source" | "transcode";
 
-export type AnalysisTargetStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "not_implemented";
+export type AnalysisTargetStatus = "pending" | "running" | "completed" | "failed";
 
 export interface AnalysisTarget {
   id: string;
@@ -278,18 +272,11 @@ export interface AnalysisTarget {
   series: AnalysisSeriesDocument;
 }
 
-export interface FutureTestDescriptor {
-  id: string;
-  label: string;
-  status: AnalysisTargetStatus;
-}
-
 export interface VideoAnalysisResponse {
   routeId: string;
   schemaVersion: number;
   updatedAtUtc: string | null;
   targets: AnalysisTarget[];
-  futureTests: FutureTestDescriptor[];
 }
 
 /**

@@ -20,11 +20,6 @@ public static class AnalysisTargetBuilder {
         _ => "static"
     };
 
-    public static List<FutureTestDescriptor> BuildFutureTests() => [
-        new FutureTestDescriptor { Id = "psnr", Label = "PSNR", Status = "not_implemented" },
-        new FutureTestDescriptor { Id = "ssim", Label = "SSIM", Status = "not_implemented" }
-    ];
-
     public static AnalysisTarget BuildSourceTarget(AnalysisTreeDocument tree, AnalysisSeriesDocument series) {
         return new AnalysisTarget {
             Id = "source",
@@ -123,10 +118,6 @@ public static class AnalysisTargetBuilder {
 
         if (statuses.Any(status => status == AnalysisSectionStatus.Completed)) {
             return "completed";
-        }
-
-        if (statuses.Any(status => status == AnalysisSectionStatus.NotImplemented)) {
-            return "not_implemented";
         }
 
         return "pending";

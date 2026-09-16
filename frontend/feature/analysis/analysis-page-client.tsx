@@ -71,7 +71,6 @@ export function AnalysisPageClient({
         <AnalysisTargetTabs
           routeId={routeId}
           targets={data.targets}
-          futureTests={data.futureTests}
           transcodeRuns={transcodes}
           activeTab={activeTab}
           onTabChange={onTabChange}

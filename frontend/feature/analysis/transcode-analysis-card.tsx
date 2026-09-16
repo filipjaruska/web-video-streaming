@@ -43,8 +43,6 @@ function sectionStatusBadge(status?: AnalysisSectionStatus) {
       return <Badge variant="outline">Pending</Badge>;
     case "completed":
       return <Badge variant="outline">Completed</Badge>;
-    case "notImplemented":
-      return <Badge variant="secondary">Not implemented</Badge>;
     default:
       return null;
   }

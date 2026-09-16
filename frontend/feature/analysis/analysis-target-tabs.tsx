@@ -1,10 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type {
-  AnalysisTarget,
-  FutureTestDescriptor,
-} from "@/lib/videoAnalysisApi";
+import type { AnalysisTarget } from "@/lib/videoAnalysisApi";
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
@@ -50,7 +47,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 interface AnalysisTargetTabsProps {
   routeId: string;
   targets: AnalysisTarget[];
-  futureTests: FutureTestDescriptor[];
   /** Packaging runs, used for the pipeline-cost view. */
   transcodeRuns?: VideoTranscodeListItem[];
   activeTab: AnalysisTab;
@@ -110,7 +106,6 @@ function RdSummaryTable({ entries }: { entries: VmafEntry[] }) {
 export function AnalysisTargetTabs({
   routeId,
   targets,
-  futureTests,
   transcodeRuns = [],
   activeTab,
   onTabChange,
@@ -374,9 +369,9 @@ export function AnalysisTargetTabs({
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No packaged VMAF yet. Re-upload — the pipeline packages a static
-                ladder (VMAF ~40%), then runs encode-grid (~45–76%) + crossover and a
-                second dynamic packaging when derivation succeeds.
+                No packaged VMAF yet. It is measured for each ladder as soon as that ladder
+                is packaged — the static one first, the two derived ladders after their
+                encode grids.
               </p>
             )}
           </CardContent>
@@ -425,30 +420,6 @@ export function AnalysisTargetTabs({
             />
           ))
         )}
-
-        {futureTests.map((test) => (
-          <Card key={test.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle className="text-base">{test.label}</CardTitle>
-                  <CardDescription>
-                    {test.label} quality metric comparing source to transcoded
-                    outputs.
-                  </CardDescription>
-                </div>
-                <Badge variant="secondary">
-                  {formatTargetStatus(test.status)}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Scaffolded for a future pipeline step.
-              </p>
-            </CardContent>
-          </Card>
-        ))}
       </TabsContent>
     </Tabs>
   );

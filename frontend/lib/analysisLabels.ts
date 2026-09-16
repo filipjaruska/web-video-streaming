@@ -2,8 +2,6 @@ import type { AnalysisTargetStatus } from "@/lib/videoAnalysisApi";
 
 export function formatTargetStatus(status: AnalysisTargetStatus): string {
   switch (status) {
-    case "not_implemented":
-      return "Not implemented";
     case "running":
       return "Running";
     case "completed":

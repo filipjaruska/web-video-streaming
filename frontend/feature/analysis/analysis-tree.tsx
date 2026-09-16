@@ -25,8 +25,6 @@ function statusBadge(status?: string) {
       return <Badge variant="destructive">Failed</Badge>;
     case "pending":
       return <Badge variant="outline">Pending</Badge>;
-    case "notImplemented":
-      return <Badge variant="secondary">Not implemented</Badge>;
     default:
       return null;
   }

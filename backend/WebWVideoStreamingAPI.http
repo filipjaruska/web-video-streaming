@@ -1,6 +1,30 @@
-@WebWVideoStreamingAPI_HostAddress = http://localhost:5180
+@api = http://localhost:5000
+@routeId = QajuQXSQ_-8
 
-GET {{WebWVideoStreamingAPI_HostAddress}}/weatherforecast/
+### Catalogue
+GET {{api}}/api/videos
 Accept: application/json
 
-###
+### Packaging runs of one clip
+GET {{api}}/api/videos/{{routeId}}/transcodes
+Accept: application/json
+
+### Analysis (large: per-frame scores)
+GET {{api}}/api/videos/{{routeId}}/analysis
+Accept: application/json
+
+### Stored playback benchmarks and their aggregates
+GET {{api}}/api/videos/{{routeId}}/benchmarks
+Accept: application/json
+
+### Active ladder, HLS master playlist
+GET {{api}}/api/hls/{{routeId}}/master.m3u8
+
+### Active ladder, DASH manifest
+GET {{api}}/api/dash/{{routeId}}/manifest.mpd
+
+### Source file: size and probed codec (X-Video-Codec)
+HEAD {{api}}/api/httprange/{{routeId}}
+
+### Same manifest shaped to the 3G profile (2 Mb/s, 100 ms) as a benchmark run requests it
+GET {{api}}/api/hls/{{routeId}}/master.m3u8?bench=manual&net=threeG

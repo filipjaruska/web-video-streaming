@@ -67,13 +67,14 @@ builder.Services.Configure<KestrelServerOptions>(options =>
     options.Limits.MaxRequestBodySize = UploadOptions.MaxBytes);
 
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
-    ?? ["http://localhost:5173", "http://localhost:3000"];
+    ?? ["http://localhost:3000"];
 
 builder.Services.AddCors(options => {
     options.AddPolicy("AllowReactApp", policy => policy
         .WithOrigins(allowedOrigins)
         .AllowAnyHeader()
-        .AllowAnyMethod());
+        .AllowAnyMethod()
+        .WithExposedHeaders(HttpRangeController.VideoCodecHeader));
 });
 
 builder.Services.AddControllers();

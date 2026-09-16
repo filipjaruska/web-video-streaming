@@ -169,8 +169,7 @@ public sealed class AnalysisStore {
             RouteId = routeId,
             SchemaVersion = AnalysisSchema.Version,
             UpdatedAtUtc = latestUpdate,
-            Targets = targets,
-            FutureTests = AnalysisTargetBuilder.BuildFutureTests()
+            Targets = targets
         };
     }
 

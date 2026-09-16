@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import type {
   VideoStats,
   CurrentStats,
@@ -10,9 +10,8 @@ import type {
 } from "@/types/streaming";
 
 /**
- * Custom hook for tracking video streaming statistics
- * Tracks both current values and running averages throughout playback
- * Designed to be extensible for future metrics and persistence
+ * The player page's live statistics: the latest sample, running averages over the session, and the
+ * raw per-sample series the benchmark runner derives its metrics from.
  */
 export function useVideoStats() {
   const [stats, setStats] = useState<VideoStats>({
@@ -38,8 +37,6 @@ export function useVideoStats() {
   });
 
   const snapshotsRef = useRef<StatsSnapshot[]>([]);
-  const startTimeRef = useRef<number>(Date.now());
-  const lastRebufferingRef = useRef<boolean>(false);
 
   /**
    * Update current statistics and recalculate averages
@@ -70,26 +67,6 @@ export function useVideoStats() {
         average: averages,
       };
     });
-  }, []);
-
-  /**
-   * Track rebuffering events (when video pauses to buffer)
-   */
-  const trackRebuffering = useCallback((isRebuffering: boolean) => {
-    if (isRebuffering && !lastRebufferingRef.current) {
-      setStats((prev) => ({
-        ...prev,
-        current: {
-          ...prev.current,
-          rebufferingEvents: prev.current.rebufferingEvents + 1,
-        },
-        average: {
-          ...prev.average,
-          totalRebufferingEvents: prev.average.totalRebufferingEvents + 1,
-        },
-      }));
-    }
-    lastRebufferingRef.current = isRebuffering;
   }, []);
 
   /**
@@ -124,8 +101,6 @@ export function useVideoStats() {
    */
   const resetStats = useCallback(() => {
     snapshotsRef.current = [];
-    startTimeRef.current = Date.now();
-    lastRebufferingRef.current = false;
     setStats({
       current: {
         quality: null,
@@ -149,27 +124,12 @@ export function useVideoStats() {
     });
   }, []);
 
-  /**
-   * Export statistics for persistence (future feature)
-   * Returns a serializable object that can be saved to database/file
-   */
-  const exportStats = useCallback(() => {
-    return {
-      ...stats,
-      sessionDuration: Date.now() - startTimeRef.current,
-      snapshotCount: snapshotsRef.current.length,
-      exportedAt: new Date().toISOString(),
-    };
-  }, [stats]);
-
   return {
     stats,
     updateStats,
-    trackRebuffering,
     recordRebuffer,
     getSnapshots,
     resetStats,
-    exportStats,
   };
 }
 

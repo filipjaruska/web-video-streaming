@@ -33,8 +33,18 @@ interface HttpRangeBitrateState {
   url: string | null;
   contentLength: number | null;
   bitrateBps: number | null;
+  /** The source's video codec as the server probed it (h264, hevc…); null until the HEAD answers. */
+  codec: string | null;
   fetchStarted: boolean;
 }
+
+const EMPTY_BITRATE_STATE: HttpRangeBitrateState = {
+  url: null,
+  contentLength: null,
+  bitrateBps: null,
+  codec: null,
+  fetchStarted: false,
+};
 
 export function useVideoStatsTracking({
   videoElement,
@@ -58,12 +68,7 @@ export function useVideoStatsTracking({
     lastTimestampMs: 0,
     lastBandwidthMbps: 0,
   });
-  const bitrateStateRef = useRef<HttpRangeBitrateState>({
-    url: null,
-    contentLength: null,
-    bitrateBps: null,
-    fetchStarted: false,
-  });
+  const bitrateStateRef = useRef<HttpRangeBitrateState>({ ...EMPTY_BITRATE_STATE });
 
   useEffect(() => {
     hasStartedPlayingRef.current = false;
@@ -73,12 +78,7 @@ export function useVideoStatsTracking({
       lastTimestampMs: 0,
       lastBandwidthMbps: 0,
     };
-    bitrateStateRef.current = {
-      url: null,
-      contentLength: null,
-      bitrateBps: null,
-      fetchStarted: false,
-    };
+    bitrateStateRef.current = { ...EMPTY_BITRATE_STATE };
   }, [streamingMethod, videoElement]);
 
   useEffect(() => {
@@ -127,13 +127,7 @@ export function useVideoStatsTracking({
     const handleEnded = () => emit("ended");
     const handleError = () => emit("error", videoElement.error?.message ?? "playback error");
 
-    videoElement.addEventListener("playing", handlePlaying);
-    videoElement.addEventListener("waiting", handleStall);
-    videoElement.addEventListener("stalled", handleStall);
-    videoElement.addEventListener("ended", handleEnded);
-    videoElement.addEventListener("error", handleError);
-
-    const interval = setInterval(() => {
+    const sample = () => {
       // Paused and stalled time is not playback. Sampling through it used to drag every average
       // toward whatever the player happened to be sitting at while nothing was being watched.
       if (!hasStartedPlayingRef.current || videoElement.paused) return;
@@ -147,10 +141,40 @@ export function useVideoStatsTracking({
         bitrateStateRef.current,
       );
       statsCallbackRef.current?.(stats);
-    }, 1000);
+    };
+
+    // The source's size and codec are fetched once metadata is in, so they are known by the first
+    // sample instead of being guessed from the resolution until the request came back.
+    const handleMetadata = () => {
+      if (streamingMethod === "source") {
+        ensureSourceBitrate(videoElement, bitrateStateRef.current);
+      }
+    };
+
+    // Sampled at once when playback starts and whenever the picture changes size — a rung switch —
+    // so the displayed quality follows the picture instead of lagging up to a second behind it.
+    // The metrics weight samples by the time between them, so the extra ones do not skew them.
+    const sampleOnChange = () => queueMicrotask(sample);
+
+    videoElement.addEventListener("playing", handlePlaying);
+    videoElement.addEventListener("playing", sampleOnChange);
+    videoElement.addEventListener("resize", sampleOnChange);
+    videoElement.addEventListener("loadedmetadata", handleMetadata);
+    videoElement.addEventListener("waiting", handleStall);
+    videoElement.addEventListener("stalled", handleStall);
+    videoElement.addEventListener("ended", handleEnded);
+    videoElement.addEventListener("error", handleError);
+    if (videoElement.readyState >= 1) {
+      handleMetadata();
+    }
+
+    const interval = setInterval(sample, 1000);
 
     return () => {
       videoElement.removeEventListener("playing", handlePlaying);
+      videoElement.removeEventListener("playing", sampleOnChange);
+      videoElement.removeEventListener("resize", sampleOnChange);
+      videoElement.removeEventListener("loadedmetadata", handleMetadata);
       videoElement.removeEventListener("waiting", handleStall);
       videoElement.removeEventListener("stalled", handleStall);
       videoElement.removeEventListener("ended", handleEnded);
@@ -259,7 +283,7 @@ function collectHttpRangeStats(
 ) {
   ensureSourceBitrate(video, bitrateState);
 
-  const quality = getVideoElementQuality(video, bitrateState.bitrateBps);
+  const quality = getVideoElementQuality(video, bitrateState.bitrateBps, bitrateState.codec);
   stats.quality = quality;
 
   const measured = measureHttpRangeThroughput(video, throughputState, bitrateState.bitrateBps);
@@ -328,10 +352,7 @@ function ensureSourceBitrate(
   if (!mediaUrl) return;
 
   if (state.url !== mediaUrl) {
-    state.url = mediaUrl;
-    state.contentLength = null;
-    state.bitrateBps = null;
-    state.fetchStarted = false;
+    Object.assign(state, EMPTY_BITRATE_STATE, { url: mediaUrl });
   }
 
   if (
@@ -359,6 +380,7 @@ function ensureSourceBitrate(
       // Ignore stale responses after the media URL changed.
       if (state.url !== mediaUrl) return;
 
+      state.codec = res.headers.get("x-video-codec");
       state.contentLength = length;
       if (Number.isFinite(video.duration) && video.duration > 0) {
         state.bitrateBps = Math.round((length * 8) / video.duration);
@@ -476,54 +498,25 @@ function getDashQuality(dash: any, video: HTMLVideoElement): VideoQuality | null
   return null;
 }
 
+/**
+ * The progressive source as played: its real dimensions, and the bitrate and codec the server
+ * reports for the file. Both stay unknown (0 and undefined) until that answer arrives — they used to
+ * be guessed from the resolution and printed as fact, so every 1080p source read "5 Mb/s, H.264".
+ */
 function getVideoElementQuality(
   video: HTMLVideoElement,
   sourceBitrateBps: number | null,
+  sourceCodec: string | null,
 ): VideoQuality | null {
-  try {
-    if (video.readyState < 1) {
-      return null;
-    }
-
-    if (video.videoWidth && video.videoHeight) {
-      const bitrate =
-        sourceBitrateBps != null && sourceBitrateBps > 0
-          ? sourceBitrateBps
-          : estimateBitrateFromResolution(video.videoWidth, video.videoHeight);
-
-      let codec: string | undefined;
-
-      const videoTracks = (video as any).videoTracks;
-      if (videoTracks && videoTracks.length > 0) {
-        codec = videoTracks[0].configuration?.codec;
-      }
-
-      if (!codec && video.currentSrc) {
-        if (video.currentSrc.includes(".mp4") || video.currentSrc.includes("/api/httprange/")) {
-          codec = "avc1.64001f";
-        }
-      }
-
-      return {
-        width: video.videoWidth,
-        height: video.videoHeight,
-        bitrate,
-        label: formatQualityLabel(video.videoWidth, video.videoHeight),
-        codec: codec || "H.264",
-      };
-    }
-  } catch (e) {
-    console.error("Error getting video element quality:", e);
+  if (video.readyState < 1 || !video.videoWidth || !video.videoHeight) {
+    return null;
   }
-  return null;
-}
 
-function estimateBitrateFromResolution(width: number, height: number): number {
-  const pixels = width * height;
-  if (pixels >= 3840 * 2160) return 20_000_000;
-  if (pixels >= 1920 * 1080) return 7_800_000;
-  if (pixels >= 1280 * 720) return 4_500_000;
-  if (pixels >= 960 * 540) return 2_000_000;
-  if (pixels >= 640 * 360) return 365_000;
-  return 145_000;
+  return {
+    width: video.videoWidth,
+    height: video.videoHeight,
+    bitrate: sourceBitrateBps ?? 0,
+    label: formatQualityLabel(video.videoWidth, video.videoHeight),
+    codec: sourceCodec ?? undefined,
+  };
 }

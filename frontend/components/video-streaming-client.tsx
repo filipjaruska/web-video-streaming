@@ -5,6 +5,7 @@ import type {
   StreamingMethod,
   AbrAlgorithm,
   PlaybackEvent,
+  VideoQuality,
 } from "@/types/streaming";
 import { SOURCE_RUN_ID, isSourceRun } from "@/types/streaming";
 import { StreamingControls } from "@/components/streaming-controls";
@@ -13,7 +14,6 @@ import { BenchmarkPanel } from "@/components/benchmark-panel";
 import { useBenchmarkRunner } from "@/hooks/useBenchmarkRunner";
 import { usePlaybackCapabilities } from "@/hooks/usePlaybackCapabilities";
 import type { BenchmarkLadder } from "@/lib/benchmark/types";
-import { VideoEncodingInfo } from "@/components/video-encoding-info";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
@@ -385,11 +385,6 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
         <div className="aspect-video w-full animate-pulse rounded-md bg-muted" />
       )}
 
-      <VideoEncodingInfo
-        quality={stats.current.quality}
-        streamingMethod={effectiveMethod}
-      />
-
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Playback statistics</CardTitle>
@@ -404,11 +399,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
                 emphasize
                 label="Quality"
                 value={stats.current.quality?.label || "—"}
-                detail={
-                  stats.current.quality
-                    ? `${stats.current.quality.width}×${stats.current.quality.height}`
-                    : undefined
-                }
+                detail={describeRendition(stats.current.quality)}
               />
               <StatTile
                 emphasize
@@ -418,9 +409,9 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
               />
               <StatTile
                 emphasize
-                label="Bandwidth"
+                label="Throughput"
                 value={`${stats.current.bandwidth.toFixed(2)}`}
-                detail="Mbps"
+                detail="Mb/s"
               />
               <StatTile
                 emphasize
@@ -437,22 +428,17 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
             </h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <StatTile
-                label="Quality"
+                label="Most played"
                 value={stats.average.avgQuality?.label || "—"}
-                detail={
-                  stats.average.avgQuality
-                    ? `${stats.average.avgQuality.width}×${stats.average.avgQuality.height}`
-                    : undefined
-                }
               />
               <StatTile
                 label="Buffer"
                 value={`${stats.average.avgBufferLevel.toFixed(1)}s`}
               />
               <StatTile
-                label="Bandwidth"
+                label="Throughput"
                 value={`${stats.average.avgBandwidth.toFixed(2)}`}
-                detail="Mbps"
+                detail="Mb/s"
               />
               <StatTile
                 label="Dropped"
@@ -473,6 +459,32 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
       </Card>
     </div>
   );
+}
+
+function formatCodec(codec?: string): string | null {
+  if (!codec) return null;
+  const lower = codec.toLowerCase();
+  if (lower.includes("avc") || lower.includes("h264")) return "H.264";
+  if (lower.includes("hev") || lower.includes("hvc") || lower.includes("h265")) return "H.265";
+  if (lower.includes("vp09") || lower.includes("vp9")) return "VP9";
+  if (lower.includes("av01") || lower.includes("av1")) return "AV1";
+  return codec;
+}
+
+/**
+ * "1920×1080 · H.264 · 7.80 Mb/s" — the rendition on screen, in one line. Parts not known yet are
+ * left out rather than guessed. The bitrate is the one the stream declares (HLS/DASH: the rung's
+ * peak including audio; source: the file's average).
+ */
+function describeRendition(quality: VideoQuality | null): string | undefined {
+  if (!quality) return undefined;
+  return [
+    `${quality.width}×${quality.height}`,
+    formatCodec(quality.codec),
+    quality.bitrate > 0 ? `${(quality.bitrate / 1_000_000).toFixed(2)} Mb/s` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function formatTime(seconds: number): string {

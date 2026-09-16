@@ -22,8 +22,7 @@ public enum AnalysisSectionStatus {
     Pending,
     Running,
     Completed,
-    Failed,
-    NotImplemented
+    Failed
 }
 
 /// <summary>
@@ -781,21 +780,9 @@ public sealed class AnalysisTarget {
     public AnalysisSeriesDocument Series { get; init; } = new();
 }
 
-public sealed class FutureTestDescriptor {
-    [JsonPropertyName("id")]
-    public required string Id { get; init; }
-
-    [JsonPropertyName("label")]
-    public required string Label { get; init; }
-
-    [JsonPropertyName("status")]
-    public required string Status { get; init; }
-}
-
 public sealed class VideoAnalysisResponse {
     public required string RouteId { get; init; }
     public int SchemaVersion { get; init; } = AnalysisSchema.Version;
     public DateTime? UpdatedAtUtc { get; init; }
     public List<AnalysisTarget> Targets { get; init; } = [];
-    public List<FutureTestDescriptor> FutureTests { get; init; } = [];
 }
