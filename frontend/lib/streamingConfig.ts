@@ -71,21 +71,43 @@ export function pickFastStartLevel<T>(
   );
 }
 
-/** Query parameter a benchmark run adds to every request, so the browser's HTTP cache cannot answer it. */
-export const CACHE_BUST_PARAM = "bench";
+/** Query parameters a benchmark run adds to every request. The server's NetworkShaping.cs reads both. */
+export const RUN_TOKEN_PARAM = "bench";
+export const NETWORK_PARAM = "net";
+
+/** What a benchmark run stamps on its requests. */
+export interface RunRequestTag {
+  /** Unique per run: no request can be answered from the browser's HTTP cache. */
+  token: string;
+  /** Profile the server shapes the response to, or null for the unshaped network. */
+  network: string | null;
+}
 
 /**
- * Adds the benchmark run's token to a URL, once.
+ * Stamps a request with its run's token and network profile, replacing any stamp it already has.
  *
- * Without it repeated runs were served from the browser's cache — the API sent no Cache-Control, so
- * Chrome kept segments for a tenth of their age — and never crossed the network being shaped.
+ * The token keeps repeated runs out of the browser's cache — the API once sent no Cache-Control, and
+ * Chrome kept segments for a tenth of their age. It also keys the link the server shares between a
+ * run's requests. The profile is replaced rather than kept because the variable-network run changes
+ * it mid-run.
  */
-export function withCacheBust(url: string, token: string | null): string {
-  if (!token || url.includes(`${CACHE_BUST_PARAM}=`)) {
+export function tagRunRequest(url: string, tag: RunRequestTag | null): string {
+  if (!tag) {
     return url;
   }
 
-  return `${url}${url.includes("?") ? "&" : "?"}${CACHE_BUST_PARAM}=${encodeURIComponent(token)}`;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set(RUN_TOKEN_PARAM, tag.token);
+    if (tag.network) {
+      parsed.searchParams.set(NETWORK_PARAM, tag.network);
+    } else {
+      parsed.searchParams.delete(NETWORK_PARAM);
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
 }
 
 /**

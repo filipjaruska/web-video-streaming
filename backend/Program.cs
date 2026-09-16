@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using WebWVideoStreamingAPI.Analysis;
+using WebWVideoStreamingAPI.Api.Streaming;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -91,6 +92,8 @@ app.UseSwaggerUI(options => {
 });
 
 app.UseCors("AllowReactApp");
+// After CORS, so a shaped response still carries its CORS headers; before the controllers it shapes.
+app.UseMiddleware<NetworkShapingMiddleware>();
 app.UseStaticFiles();
 
 if (app.Environment.IsProduction()) {

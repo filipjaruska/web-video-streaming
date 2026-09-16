@@ -95,7 +95,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     start: startBenchmark,
     cancel: cancelBenchmark,
     handlePlaybackEvent,
-    markNetworkTransition,
+    networkProfileNow,
   } = useBenchmarkRunner({
     routeId,
     apiUrl,
@@ -355,7 +355,6 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
           void startBenchmark(selection, profile);
         }}
         onCancel={cancelBenchmark}
-        onMarkTransition={markNetworkTransition}
         disabled={transcodesLoading}
       />
 
@@ -371,7 +370,8 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
           streamingMethod={effectiveMethod}
           abrAlgorithm={effectiveAbr}
           fastStart={bestMode && bestSettings !== null}
-          cacheBust={benchmarkProgress.running}
+          benchmarkRun={benchmarkProgress.running}
+          networkProfile={networkProfileNow}
           apiUrl={apiUrl}
           routeId={routeId}
           transcodeId={playerTranscodeId}

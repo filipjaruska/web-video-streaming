@@ -26,7 +26,11 @@ import {
   formatSigned,
   ladderLabel,
 } from "@/lib/analysisFormat";
-import { NETWORK_PROFILE_LABELS } from "@/lib/benchmark/types";
+import {
+  NETWORK_PROFILE_LABELS,
+  NETWORK_PROFILE_RATE_BPS,
+  exceedsProfileRate,
+} from "@/lib/benchmark/types";
 import { describeResolutionShare, encodeResolutionShare } from "@/lib/benchmark/metrics";
 import { algorithmLabel } from "@/lib/benchmark/matrix";
 import { profileOf } from "@/lib/videoBenchmarksApi";
@@ -188,6 +192,9 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
   );
 
   const hasPlayback = playbackRows.length > 0;
+  const mismatchedPlayback = clips
+    .flatMap((clip) => clip.benchmarks)
+    .filter((agg) => exceedsProfileRate(profileOf(agg), agg.avgThroughputBpsMean)).length;
 
   return (
     <div className="space-y-6">
@@ -440,6 +447,13 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 its share of played time; the resolution mix is that share per height. Network
                 profiles are declared labels — conditions are shaped externally, not by the page.
               </CardDescription>
+              {mismatchedPlayback > 0 && (
+                <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                  {mismatchedPlayback} configuration{mismatchedPlayback === 1 ? " was" : "s were"}{" "}
+                  measured well above the network profile{mismatchedPlayback === 1 ? " it is" : "s they are"}{" "}
+                  recorded under (highlighted throughput) — the link was not shaped as labelled.
+                </p>
+              )}
             </div>
             <ExportCsvButton
               filename={slugFilename(["results", "playback"])}
@@ -537,7 +551,18 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                         ? `${agg.timeWeightedVmafMean.toFixed(2)} ± ${(agg.timeWeightedVmafStdDev ?? 0).toFixed(2)}`
                         : "—"}
                     </DataCell>
-                    <DataCell className="whitespace-nowrap">
+                    <DataCell
+                      className={
+                        exceedsProfileRate(profileOf(agg), agg.avgThroughputBpsMean)
+                          ? "whitespace-nowrap font-semibold text-amber-600 dark:text-amber-400"
+                          : "whitespace-nowrap"
+                      }
+                      title={
+                        exceedsProfileRate(profileOf(agg), agg.avgThroughputBpsMean)
+                          ? `Above the declared ${((NETWORK_PROFILE_RATE_BPS[profileOf(agg)] ?? 0) / 1_000_000).toFixed(0)} Mb/s — the link was not shaped as labelled`
+                          : undefined
+                      }
+                    >
                       {agg.avgThroughputBpsMean
                         ? `${(agg.avgThroughputBpsMean / 1_000_000).toFixed(2)} Mb/s`
                         : "—"}

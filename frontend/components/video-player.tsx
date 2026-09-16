@@ -39,7 +39,8 @@ import {
   pickStartLevel,
   SEGMENT_SEC,
   TARGET_BUFFER_SEC,
-  withCacheBust,
+  tagRunRequest,
+  type RunRequestTag,
 } from "@/lib/streamingConfig";
 import {
   type AbrDriver,
@@ -88,10 +89,12 @@ interface VideoPlayerProps {
    */
   fastStart?: boolean;
   /**
-   * A benchmark run: every request this mount makes carries a per-run token, so none can be answered
-   * from the browser's HTTP cache. Without it, repeated runs never touched the shaped network.
+   * A benchmark run: every request this mount makes is stamped with a per-run token — so none can be
+   * answered from the browser's HTTP cache — and with the network profile the server shapes it to.
    */
-  cacheBust?: boolean;
+  benchmarkRun?: boolean;
+  /** The network profile a request made now travels under. Read per request: it can change mid-run. */
+  networkProfile?: () => string | null;
 }
 
 /**
@@ -122,7 +125,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     runNonce = 0,
     onFatalError,
     fastStart = false,
-    cacheBust = false,
+    benchmarkRun = false,
+    networkProfile,
   }: VideoPlayerProps,
   ref,
 ) {
@@ -135,20 +139,29 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   const [error, setError] = useState<string | null>(null);
 
   // One token per benchmark run: the player remounts on every runNonce, so no two runs share a URL.
-  const cacheBustToken = cacheBust ? `${PAGE_LOAD_TOKEN}.${runNonce}` : null;
+  const runToken = benchmarkRun ? `${PAGE_LOAD_TOKEN}.${runNonce}` : null;
+  // Read when each request is made, not when the player renders: the variable profile changes mid-run.
+  const networkProfileRef = useRef(networkProfile);
+  networkProfileRef.current = networkProfile;
+  const runTag = useCallback(
+    (): RunRequestTag | null =>
+      runToken ? { token: runToken, network: networkProfileRef.current?.() ?? null } : null,
+    [runToken],
+  );
 
+  // The source is one URL for the whole run, so it keeps the profile in force when playback starts.
   const src = useMemo(
     () =>
-      withCacheBust(
+      tagRunRequest(
         getVideoUrl(
           streamingMethod,
           apiUrl,
           routeId,
           streamingMethod === "source" ? null : transcodeId,
         ),
-        cacheBustToken,
+        runTag(),
       ),
-    [streamingMethod, apiUrl, routeId, transcodeId, cacheBustToken],
+    [streamingMethod, apiUrl, routeId, transcodeId, runTag],
   );
 
   // Deferred load for adaptive streams; progressive can idle-load when visible.
@@ -232,11 +245,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               }
             : {}),
           // Playlists and segments resolve relative to the manifest and lose its query string, so
-          // the token has to be added to every request hls.js makes, not only the first.
-          ...(cacheBustToken
+          // every request hls.js makes is stamped, with the profile in force at that moment.
+          ...(runToken
             ? {
                 xhrSetup: (xhr: XMLHttpRequest, url: string) =>
-                  xhr.open("GET", withCacheBust(url, cacheBustToken), true),
+                  xhr.open("GET", tagRunRequest(url, runTag()), true),
               }
             : {}),
         };
@@ -270,16 +283,17 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               legacy.setRepresentationForTypeByIndex?.(type, index, forceReplace);
           }
 
-          if (cacheBustToken) {
+          if (runToken) {
             // Segment URLs come from the MPD's template and carry no query, so every request is
-            // stamped on its way out. Registered before Vidstack attaches the source.
+            // stamped on its way out, with the profile in force at that moment. Registered before
+            // Vidstack attaches the source.
             const interceptable = dash as unknown as {
               addRequestInterceptor?: (
                 interceptor: (request: { url: string }) => Promise<{ url: string }>,
               ) => void;
             };
             interceptable.addRequestInterceptor?.((request) => {
-              request.url = withCacheBust(request.url, cacheBustToken);
+              request.url = tagRunRequest(request.url, runTag());
               return Promise.resolve(request);
             });
           }
@@ -323,7 +337,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         });
       }
     },
-    [abrAlgorithm, fastStart, cacheBustToken],
+    [abrAlgorithm, fastStart, runToken, runTag],
   );
 
   const onProviderSetup = useCallback(

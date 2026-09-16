@@ -38,6 +38,8 @@ import {
 import {
   NETWORK_PROFILE_CSV_IDS,
   NETWORK_PROFILE_LABELS,
+  NETWORK_PROFILE_RATE_BPS,
+  exceedsProfileRate,
   type BenchmarkLadder,
   type BenchmarkRunResult,
   type BenchmarkSelection,
@@ -53,7 +55,6 @@ interface BenchmarkPanelProps {
   ladders: BenchmarkLadder[];
   onStart: (profile: NetworkProfile, selection: BenchmarkSelection) => void;
   onCancel: () => void;
-  onMarkTransition: (profile: NetworkProfile) => void;
   disabled?: boolean;
 }
 
@@ -184,7 +185,6 @@ export function BenchmarkPanel({
   ladders,
   onStart,
   onCancel,
-  onMarkTransition,
   disabled,
 }: BenchmarkPanelProps) {
   const [profile, setProfile] = useState<NetworkProfile>("standard");
@@ -210,6 +210,8 @@ export function BenchmarkPanel({
   const cellCount = useMemo(() => buildMatrix(selection).length, [selection]);
 
   const { rows, failures } = useMemo(() => aggregate(results), [results]);
+  // Checked after every run, so a link that is not shaped as declared shows up on the first one.
+  const mismatched = rows.filter((row) => exceedsProfileRate(row.profile, row.throughput.mean));
 
   const exportRows = useMemo(
     () =>
@@ -252,10 +254,10 @@ export function BenchmarkPanel({
               times each, and records startup, session time, buffering, switching and which
               resolution was on screen for how much of the clip — weighted by each rung&apos;s
               measured VMAF into the quality actually delivered. Every run requests its files
-              under a fresh URL, so nothing is served from the browser cache. Set the network
-              in the external shaper first — the page cannot shape the link, so the profile below is
-              recorded as a label; the measured throughput column shows what the link really
-              delivered.
+              under a fresh URL, so nothing is served from the browser cache. The network
+              profile is applied by the server to every request of a run — bandwidth and
+              round-trip delay, no packet loss — and the variable one switches 4G → 3G → 4G
+              on its own. The throughput column shows what the link actually delivered.
             </CardDescription>
           </div>
           {results.length > 0 && (
@@ -343,7 +345,7 @@ export function BenchmarkPanel({
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-56 space-y-1.5">
-            <label className="text-xs text-muted-foreground">Network profile (set externally)</label>
+            <label className="text-xs text-muted-foreground">Network profile</label>
             <Select
               value={profile}
               onValueChange={(value) => setProfile(value as NetworkProfile)}
@@ -375,12 +377,6 @@ export function BenchmarkPanel({
             </Button>
           )}
 
-          {progress.running && (
-            <Button variant="outline" onClick={() => onMarkTransition(profile)}>
-              Mark network change
-            </Button>
-          )}
-
           {!progress.running && (
             <span className="pb-2 text-xs text-muted-foreground">
               {cellCount} configuration{cellCount === 1 ? "" : "s"} × {BENCHMARK_REPETITIONS}{" "}
@@ -403,6 +399,28 @@ export function BenchmarkPanel({
             <p className="text-xs text-muted-foreground">
               Leave this tab focused. Browsers throttle timers and media in background
               tabs, which would be recorded as rebuffering that never happened.
+            </p>
+          </div>
+        )}
+
+        {mismatched.length > 0 && (
+          <div className="space-y-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+            <p className="font-medium">
+              The link was faster than the network profile these runs are recorded under, so they
+              do not describe that network.
+            </p>
+            <ul className="space-y-0.5 pl-4 font-mono">
+              {mismatched.map((row) => (
+                <li key={row.key}>
+                  {NETWORK_PROFILE_LABELS[row.profile]} · {ladderLabel(row.ladderKind)} ·{" "}
+                  {row.label}: measured {mbps(row.throughput.mean)}, declared{" "}
+                  {mbps(NETWORK_PROFILE_RATE_BPS[row.profile] ?? 0)}
+                </li>
+              ))}
+            </ul>
+            <p className="text-muted-foreground">
+              The server applies the profile, so the shaping did not happen — check that the
+              backend these runs went to has been deployed with network shaping.
             </p>
           </div>
         )}
@@ -504,7 +522,18 @@ export function BenchmarkPanel({
                     <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
                       {mbps(row.bitrate.mean)}
                     </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
+                    <td
+                      className={
+                        exceedsProfileRate(row.profile, row.throughput.mean)
+                          ? "py-1.5 pr-3 font-mono text-xs whitespace-nowrap font-semibold text-amber-600 dark:text-amber-400"
+                          : "py-1.5 pr-3 font-mono text-xs whitespace-nowrap"
+                      }
+                      title={
+                        exceedsProfileRate(row.profile, row.throughput.mean)
+                          ? `Above the declared ${mbps(NETWORK_PROFILE_RATE_BPS[row.profile] ?? 0)} — network shaping did not apply`
+                          : undefined
+                      }
+                    >
                       {row.throughput.mean > 0 ? mbps(row.throughput.mean) : "—"}
                     </td>
                     <td className="py-1.5 pr-3 font-mono text-xs">

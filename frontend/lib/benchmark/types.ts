@@ -1,24 +1,83 @@
 import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
 
 /**
- * Network condition the operator has configured externally for a run.
- *
- * Page JavaScript cannot shape the link, so this is a declared label rather than something the app
- * enforces. It is recorded on every result because a measurement is meaningless without it.
+ * Network a run is played under. Applied by the server to every request of the run — see
+ * backend/Api/Streaming/NetworkShaping.cs, whose table has to match the rates and delays here — and
+ * recorded on every result, because a measurement is meaningless without it.
  */
 export type NetworkProfile = "standard" | "fourG" | "threeG" | "variable";
 
+/** A profile with one fixed shape; the variable one moves between these over time. */
+export type ShapedProfile = Exclude<NetworkProfile, "variable">;
+
 /**
- * Shown in the UI, in megabits per second like every other rate in the app. The external shaper takes its
- * bandwidth limit in kilobytes per second, an eighth of the figure here: enter 250 for 3G's 2 Mb/s
- * and 1000 for 4G's 8 Mb/s. Entering 2000 for 3G, read as kilobits, ran the profile at 16 Mb/s.
+ * Shown in the UI, in megabits per second like every other rate in the app. No packet loss: the
+ * server can slow data down and delay it, not drop packets.
  */
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
   standard: "Standard (unshaped)",
-  fourG: "4G — 8 Mb/s, 40 ms, 1 % loss",
-  threeG: "3G — 2 Mb/s, 100 ms, 5 % loss",
-  variable: "Variable network",
+  fourG: "4G — 8 Mb/s, 40 ms",
+  threeG: "3G — 2 Mb/s, 100 ms",
+  variable: "Variable — 4G → 3G → 4G",
 };
+
+/**
+ * The variable-network run's timeline, from the moment playback is requested.
+ *
+ * Every phase is shaped. Starting unshaped would let the player fetch the whole 30 s clip within a
+ * second, leaving the later phases nothing to act on. The drop to 3G lands mid-clip, and recovery is
+ * timed from it until the player regains its rung once 4G returns.
+ */
+export const VARIABLE_NETWORK_SCHEDULE: ReadonlyArray<{ fromMs: number; profile: ShapedProfile }> = [
+  { fromMs: 0, profile: "fourG" },
+  { fromMs: 5_000, profile: "threeG" },
+  { fromMs: 18_000, profile: "fourG" },
+];
+
+/** The fixed profile in force `elapsedMs` into a run. */
+export function effectiveProfile(profile: NetworkProfile, elapsedMs: number): ShapedProfile {
+  if (profile !== "variable") {
+    return profile;
+  }
+
+  let current = VARIABLE_NETWORK_SCHEDULE[0].profile;
+  for (const phase of VARIABLE_NETWORK_SCHEDULE) {
+    if (elapsedMs >= phase.fromMs) {
+      current = phase.profile;
+    }
+  }
+
+  return current;
+}
+
+/**
+ * The rate each profile declares, bits per second — what the server holds the link to. Null where
+ * there is no single cap: the unshaped network, and a variable run that moves between profiles.
+ */
+export const NETWORK_PROFILE_RATE_BPS: Record<NetworkProfile, number | null> = {
+  standard: null,
+  fourG: 8_000_000,
+  threeG: 2_000_000,
+  variable: null,
+};
+
+/**
+ * How far above its profile's declared rate a configuration's measured throughput may go before it
+ * is flagged. Player estimates are noisy, so a shaped link can read somewhat above its cap; well
+ * above it means the shaping did not happen — a backend deployed without it, say. It was built after
+ * the profiles were still set by hand in an external tool, whose limit is in kilobytes per second: a 2 Mb/s
+ * profile entered as 2000 ran at 16 Mb/s, eight times over, and was recorded as 3G.
+ */
+export const THROUGHPUT_MISMATCH_FACTOR = 1.5;
+
+/** True when a measured throughput is too far above the profile's declared rate to be that network. */
+export function exceedsProfileRate(
+  profile: NetworkProfile,
+  throughputBps: number | null | undefined,
+): boolean {
+  const rate = NETWORK_PROFILE_RATE_BPS[profile];
+  return rate !== null && !!throughputBps && throughputBps > rate * THROUGHPUT_MISMATCH_FACTOR;
+}
 
 /**
  * Written to CSV instead of the display label. Kept separate and stable so that rewording the UI

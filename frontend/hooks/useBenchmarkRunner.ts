@@ -13,6 +13,8 @@ import {
 } from "@/lib/benchmark/matrix";
 import { loadLadderQualities } from "@/lib/benchmark/ladderQuality";
 import {
+  VARIABLE_NETWORK_SCHEDULE,
+  effectiveProfile,
   toServerProfile,
   type BenchmarkCell,
   type BenchmarkEvent,
@@ -90,6 +92,8 @@ export function useBenchmarkRunner({
   const nonceRef = useRef(0);
   /** Rung heights and measured VMAF of every ladder in the sweep, by transcode id. */
   const laddersRef = useRef<Map<string, LadderQuality>>(new Map());
+  /** The profile the running sweep is played under; null when no sweep runs. */
+  const sweepProfileRef = useRef<NetworkProfile | null>(null);
 
   /**
    * Feeds player lifecycle edges into the run currently being recorded.
@@ -111,17 +115,20 @@ export function useBenchmarkRunner({
     eventsRef.current.push({ kind: event.kind, atMs });
   }, []);
 
-  /** Records that the operator switched the network to a different profile, for the variable-network run. */
-  const markNetworkTransition = useCallback((profile: NetworkProfile) => {
-    if (runStartRef.current === 0) {
-      return;
+  /**
+   * The network profile a request made now travels under, as the server should shape it — null
+   * outside a sweep and for the unshaped network. The variable profile follows its schedule from the
+   * start of the current run.
+   */
+  const networkProfileNow = useCallback((): string | null => {
+    const profile = sweepProfileRef.current;
+    if (!profile) {
+      return null;
     }
 
-    eventsRef.current.push({
-      kind: "networkTransition",
-      atMs: performance.now() - runStartRef.current,
-      profile,
-    });
+    const elapsedMs = runStartRef.current > 0 ? performance.now() - runStartRef.current : 0;
+    const shaped = effectiveProfile(profile, elapsedMs);
+    return shaped === "standard" ? null : shaped;
   }, []);
 
   const cancel = useCallback(() => {
@@ -146,6 +153,24 @@ export function useBenchmarkRunner({
       resetStats();
       runStartRef.current = performance.now();
       runStartWallRef.current = Date.now();
+
+      // The variable profile changes on its schedule, and each change is recorded as it happens, so
+      // recovery is timed from the moment the network actually changed.
+      const transitionTimers =
+        profile === "variable"
+          ? VARIABLE_NETWORK_SCHEDULE.slice(1).map((phase) =>
+              window.setTimeout(() => {
+                if (runStartRef.current !== 0) {
+                  eventsRef.current.push({
+                    kind: "networkTransition",
+                    atMs: performance.now() - runStartRef.current,
+                    profile: phase.profile,
+                  });
+                }
+              }, phase.fromMs),
+            )
+          : [];
+      const clearTransitions = () => transitionTimers.forEach((timer) => window.clearTimeout(timer));
 
       // Adaptive sources defer loading until playback is requested, and the handle may not be
       // attached the instant the nonce changes, so play() is retried until the first frame lands.
@@ -174,6 +199,7 @@ export function useBenchmarkRunner({
       });
 
       if (!started) {
+        clearTransitions();
         playerRef.current?.pause();
         runStartRef.current = 0;
         return failed("playback never started");
@@ -186,6 +212,7 @@ export function useBenchmarkRunner({
       );
 
       const endedAt = await waitForEnd(eventsRef, timeoutMs, cancelRef);
+      clearTransitions();
       playerRef.current?.pause();
 
       const durationMs = endedAt ?? performance.now() - runStartRef.current;
@@ -265,6 +292,12 @@ export function useBenchmarkRunner({
         return collected;
       }
 
+      sweepProfileRef.current = profile;
+      const endSweep = () => {
+        sweepProfileRef.current = null;
+        setProgress(IDLE);
+      };
+
       setProgress({
         running: true,
         cellLabel: "loading ladder scores…",
@@ -282,7 +315,7 @@ export function useBenchmarkRunner({
       for (let index = 0; index < matrix.length; index++) {
         for (let repetition = 1; repetition <= BENCHMARK_REPETITIONS; repetition++) {
           if (cancelRef.current) {
-            setProgress(IDLE);
+            endSweep();
             return collected;
           }
 
@@ -300,7 +333,7 @@ export function useBenchmarkRunner({
           // A run cut short by Cancel is neither a result nor a failure: it stopped partway through
           // the clip, so recording it would average a truncated run in with complete ones.
           if (cancelRef.current) {
-            setProgress(IDLE);
+            endSweep();
             return collected;
           }
 
@@ -310,13 +343,13 @@ export function useBenchmarkRunner({
         }
       }
 
-      setProgress(IDLE);
+      endSweep();
       return collected;
     },
     [apiUrl, routeId, runOne, submit],
   );
 
-  return { progress, results, start, cancel, handlePlaybackEvent, markNetworkTransition };
+  return { progress, results, start, cancel, handlePlaybackEvent, networkProfileNow };
 }
 
 function delay(ms: number) {
