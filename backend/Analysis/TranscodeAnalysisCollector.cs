@@ -13,8 +13,8 @@ namespace WebWVideoStreamingAPI.Analysis;
 /// <para>
 /// Every rung is encoded once and stream-copied into both HLS and DASH, so each rung is measured
 /// once — SI/TI and VMAF run on the encoded rendition file — and the one result is recorded under
-/// both formats. The first full run scored the two protocols separately because they were separate
-/// x264 runs, which doubled the analysis cost and reported encoder noise as a protocol difference.
+/// both formats. Scoring the two protocols separately would double the analysis cost for no new
+/// information.
 /// </para>
 /// <para>
 /// Recording one score for both is only honest if both packages really carry that file, so it is

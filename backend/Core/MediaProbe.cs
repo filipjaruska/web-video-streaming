@@ -41,9 +41,8 @@ public static class VideoRate {
     /// </summary>
     /// <remarks>
     /// Deliberately not the container's <c>bit_rate</c>: that includes every track and the box
-    /// overhead. The first full run measured HLS renditions — which muxed the 128k audio track —
-    /// at 139–156 kb/s above the same content in DASH, and compared them against a grid encoded
-    /// without audio, so predicted and packaged points sat on different bases.
+    /// overhead, so a rendition muxed with audio would read well above the same video packaged
+    /// without it, and the encode grid — which has no audio — would sit on a different basis.
     /// </remarks>
     public static VideoRateStats? Compute(IReadOnlyList<VideoPacket> packets, double segmentSeconds = 6) {
         if (packets.Count == 0) {

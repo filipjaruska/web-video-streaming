@@ -4,8 +4,8 @@ using Microsoft.EntityFrameworkCore;
 namespace WebWVideoStreamingAPI.Analysis;
 
 /// <summary>
-/// Reads and writes analysis documents for both sources and packaging runs. One class, because the
-/// two used to be copy-paste twins over identical rows.
+/// Reads and writes analysis documents for both sources and packaging runs. One class, because both
+/// kinds live in the same rows and share every operation.
 /// </summary>
 public sealed class AnalysisStore {
     private readonly AppDbContext _dbContext;

@@ -109,7 +109,7 @@ public sealed class TuningComparison {
         // BD-rate per resolution, so the tune is judged on rate-quality rather than on a per-sample
         // VMAF delta that ignores the bitrate it was bought at. Each resolution's CRF sweep is a
         // genuine rate-quality curve; the whole grid is not — its resolutions interleave in bitrate
-        // — and fitting one cubic through all of them, as this used to, measured nothing coherent.
+        // — so one cubic fitted through all of them would measure nothing coherent.
         var byResolution = new Dictionary<string, double>();
         foreach (var group in Usable(baseGrid).Where(AboveFloor).GroupBy(point => point.Height).OrderByDescending(group => group.Key)) {
             var tunedCurve = Usable(tunedGrid)

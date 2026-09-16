@@ -64,9 +64,8 @@ export const NETWORK_PROFILE_RATE_BPS: Record<NetworkProfile, number | null> = {
 /**
  * How far above its profile's declared rate a configuration's measured throughput may go before it
  * is flagged. Player estimates are noisy, so a shaped link can read somewhat above its cap; well
- * above it means the shaping did not happen — a backend deployed without it, say. It was built after
- * the profiles were still set by hand in an external tool, whose limit is in kilobytes per second: a 2 Mb/s
- * profile entered as 2000 ran at 16 Mb/s, eight times over, and was recorded as 3G.
+ * above it means the shaping did not happen — a backend deployed without it, say — and the runs do
+ * not describe the network they are recorded under.
  */
 export const THROUGHPUT_MISMATCH_FACTOR = 1.5;
 

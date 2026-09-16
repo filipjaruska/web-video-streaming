@@ -61,8 +61,8 @@ export function buildSeriesPoints(data: {
     times.length === count &&
     times.every((value) => Number.isFinite(value));
 
-  // ffprobe sometimes omits pts — frontend used to fall back to frame index,
-  // which makes a 10s clip look like minutes on the axis and breaks scrubbing.
+  // ffprobe sometimes omits pts; falling back to the frame index would make a 10 s clip look
+  // like minutes on the axis and break scrubbing.
   const looksLikeFrameIndex =
     hasAlignedTimes &&
     count > 2 &&

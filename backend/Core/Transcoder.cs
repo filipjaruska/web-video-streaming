@@ -26,11 +26,10 @@ public sealed record EncodeRecipe(string? Tune, bool Decimate, int[] CoarseCrfs)
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The range used to be shifted upward on the assumption that flat cel-shaded areas stay
-    /// watchable further up the CRF scale. The first full run disproved that: the tune cuts the
-    /// bitrate at a given CRF by roughly a fifth, so reaching the same bitrate takes a <em>lower</em>
-    /// CRF, and every animation rung — 1080p included — landed on the shifted range's lowest value
-    /// with the hull still steeper than λ there. Sharing the default range also gives the
+    /// Shifting the range upward, on the idea that flat cel-shaded areas stay watchable further up
+    /// the CRF scale, points the wrong way: the tune cuts the bitrate at a given CRF by roughly a
+    /// fifth, so reaching the same bitrate takes a <em>lower</em> CRF, and a shifted range leaves
+    /// every rung on its lowest value with the hull still steeper than λ. Sharing the default range also gives the
     /// tuned-versus-untuned comparison the most matched (resolution, CRF) pairs to join on, and the
     /// grid's boundary extension reaches below it wherever a tangent point needs it.
     /// </para>
@@ -38,9 +37,9 @@ public sealed record EncodeRecipe(string? Tune, bool Decimate, int[] CoarseCrfs)
     /// <see cref="Decimate"/> is deliberately <c>false</c> despite animation being the obvious
     /// candidate for it. Dropping duplicate frames only saves bits if the output stays
     /// variable-rate — re-inserting them as CFR just hands x264 skip frames it was already coding
-    /// for almost nothing — and variable-rate output was measured to shorten the stream (613 frames
-    /// / 28.6 s against the source's 720 / 30.0 s, because a static tail decimates away entirely)
-    /// and to scatter HLS segment durations across 5.6–7.2 s against a requested 6. Either effect
+    /// for almost nothing — and variable-rate output shortens the stream (a static tail decimates
+    /// away entirely; a 720-frame test clip came out at 613 frames) and scatters HLS segment
+    /// durations around the requested 6 s. Either effect
     /// alone would make this ladder non-comparable with the other two: unequal duration breaks the
     /// rate comparison, and unequal segmentation confounds the protocol and network tests that
     /// assume identical segmenting. The flag stays plumbed so the trade-off can be re-measured.
@@ -140,17 +139,16 @@ public sealed class AudioEncodeResult {
 /// </summary>
 /// <remarks>
 /// Each ladder rung is encoded exactly once and then stream-copied into both HLS and DASH, so the
-/// two protocols carry byte-identical video by construction. They used to be two independent
-/// x264 runs, which made the claim that the protocols differ only in packaging untrue — and
-/// neither run forced keyframes, so segments came out 5.1–7.0 s long and cut at different points
-/// on every rung and in each protocol.
+/// two protocols carry byte-identical video by construction and differ only in packaging. Two
+/// independent x264 runs would not, and without forced keyframes their segments would be cut at
+/// different points on every rung and in each protocol.
 /// </remarks>
 public sealed class Transcoder {
     /// <summary>
-    /// VBV headroom above each rung's target. Packaging used to cap maxrate at the target itself —
-    /// near-CBR — while the grid the ladder is predicted from is constant-quality; achieved VMAF then
-    /// landed 0.4–2.6 below prediction, worst on hard scenes the cap starved. The same factors apply
-    /// to every ladder, so rate control is not a difference between them.
+    /// VBV headroom above each rung's target. The grid the ladder is predicted from is
+    /// constant-quality; capping maxrate at the target itself (near-CBR) starves hard scenes and puts
+    /// achieved VMAF below the prediction. The same factors apply to every ladder, so rate control is
+    /// not a difference between them.
     /// </summary>
     internal const double MaxrateFactor = 1.5;
     internal const double BufsizeFactor = 3.0;
@@ -294,9 +292,9 @@ public sealed class Transcoder {
     /// Encodes the audio track once, shifted by the same start offset video is zeroed by.
     /// </summary>
     /// <remarks>
-    /// Video is re-timed with <c>setpts=PTS-STARTPTS</c>; audio used to be encoded straight, so any
-    /// difference between the two streams' start times — 17 ms on a Blu-ray remux — became an
-    /// A/V offset in every rendition. The track is shared by all three ladders, so it is encoded once.
+    /// Video is re-timed with <c>setpts=PTS-STARTPTS</c>; audio encoded straight would keep any
+    /// difference between the two streams' start times — tens of milliseconds on a typical Blu-ray
+    /// remux — as an A/V offset in every rendition. The track is shared by all three ladders, so it is encoded once.
     /// </remarks>
     public async Task<AudioEncodeResult> EncodeAudioAsync(
         string sourcePath,

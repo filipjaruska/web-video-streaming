@@ -22,8 +22,7 @@ public sealed record NetworkShape(long BitsPerSecond, int RoundTripMs);
 /// <para>
 /// Packet loss is not emulated. An application can slow data down and delay it but cannot drop
 /// packets, and real loss changes how TCP itself behaves. Without it the profiles are exact and
-/// repeatable: the declared rate is the rate. The profiles used to be set by hand in an external tool, whose
-/// limit is in kilobytes per second — a 2 Mb/s profile entered as 2000 ran at 16 Mb/s.
+/// repeatable: the declared rate is the rate, with no external tool to configure — or misconfigure.
 /// </para>
 /// <para>
 /// The table must match <c>NETWORK_PROFILE_RATE_BPS</c> and the labels in the frontend's

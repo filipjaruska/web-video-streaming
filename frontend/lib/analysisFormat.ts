@@ -1,9 +1,8 @@
 /**
  * Shared formatting for measurement values and ladder identity.
  *
- * Ladder kind in particular used to be inlined as two-branch ternaries in four places, which
- * silently mislabelled the animation-tuned ladder as "Static" once the pipeline grew a third
- * packaging run. Naming the vocabulary once means a fourth ladder cannot repeat that.
+ * Ladder kind in particular is named once here: inline two-branch ternaries would silently label
+ * any third kind of ladder as "Static".
  */
 
 /**

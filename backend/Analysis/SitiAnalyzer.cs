@@ -143,11 +143,10 @@ public sealed class SitiAnalyzer {
     /// </summary>
     /// <remarks>
     /// Not zero. TI is the standard deviation of the frame difference, and on a lossily compressed
-    /// master a held drawing still differs from the frame before it by coding noise. The first
-    /// test clip shows this plainly: 1 frame below TI 0.5, 2 between 0.5 and 1, then a sharp
-    /// cluster of 115 between 1 and 2 before the distribution drops to 15 between 2 and 3. That
-    /// cluster is the held frames — it matches the 14.9 % mpdecimate (which is noise-tolerant)
-    /// removed from an earlier cut of the same scene — and an exact-zero test reported 0 % for it.
+    /// master a held drawing still differs from the frame before it by coding noise. On animated
+    /// Blu-ray sources the TI histogram shows almost nothing below 1, then a sharp cluster between
+    /// 1 and 2 before it drops off. That cluster is the held frames — its size agrees with what
+    /// mpdecimate (which is noise-tolerant) removes — while an exact-zero test finds none of them.
     /// </remarks>
     internal const double DuplicateTiThreshold = 2.0;
 

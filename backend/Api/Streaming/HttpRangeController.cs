@@ -8,8 +8,8 @@ namespace WebWVideoStreamingAPI.Api.Streaming;
 public class HttpRangeController : ControllerBase {
     /// <summary>
     /// Codec of the source's video stream, on the HEAD response. The browser does not expose the codec
-    /// of a progressive file, so the player page used to print a guess — "H.264" for every source.
-    /// Must be listed among the CORS exposed headers for the page to read it.
+    /// of a progressive file, so without this the player page could only guess it. Must be listed
+    /// among the CORS exposed headers for the page to read it.
     /// </summary>
     public const string VideoCodecHeader = "X-Video-Codec";
 

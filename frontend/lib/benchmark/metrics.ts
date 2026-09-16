@@ -9,9 +9,9 @@ import type {
 /**
  * Derives every playback metric the benchmark reports from one trace.
  *
- * Pure and player-agnostic on purpose. These definitions end up in reported results and decide whether
- * a difference between two configurations is real, so they are fixed in one place and tested against
- * hand-computed traces rather than being spread across the collection code.
+ * Pure and player-agnostic on purpose. These definitions decide whether a difference between two
+ * configurations is real, so they are fixed in one place and tested against hand-computed traces
+ * rather than being spread across the collection code.
  */
 
 /**

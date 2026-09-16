@@ -59,8 +59,8 @@ export interface BestPlaybackSettings {
  * exists: Vidstack prefers it over the browser's own HLS (`preferNativeHLS` is false), and only
  * through hls.js do the rules in `lib/abr` choose the quality — native playback hands that choice to
  * the browser. Native HLS is the fallback for browsers without MSE, which on iOS before 17 is the
- * only path there is. This used to check native HLS first, and since Chrome started answering
- * `canPlayType` for HLS, every Chrome session was labelled "native" while playing through hls.js.
+ * only path there is. Native HLS cannot be checked first: recent Chrome answers `canPlayType` for
+ * HLS, so every Chrome session would be labelled "native" while playing through hls.js.
  * DASH comes last: it needs MSE too, so it only wins when the ladder has no HLS package.
  *
  * With no capability probe yet — server render, or the first frame before the effect runs — this

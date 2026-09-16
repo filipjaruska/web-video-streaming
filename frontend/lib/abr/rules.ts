@@ -140,7 +140,7 @@ export function bufferRule(state: AbrState): AbrDecision {
  * Hybrid rule: the more cautious of the two.
  *
  * Taking the minimum means a rung has to be justified by measured throughput *and* by buffer
- * occupancy before it is selected, which is the usual meaning of a hybrid ABR rule.
+ * occupancy before it is selected — the usual meaning of a hybrid ABR rule.
  */
 export function hybridRule(state: AbrState): AbrDecision {
   const byThroughput = throughputRule(state);

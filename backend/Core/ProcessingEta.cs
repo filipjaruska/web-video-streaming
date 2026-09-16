@@ -157,9 +157,9 @@ public static class ProcessingEta {
 /// <remarks>
 /// <para>
 /// The prior is the last completed run's measured stage timings, else <see cref="ProcessingEta"/>'s
-/// defaults, scaled by the source's frames × pixels. The old estimate converted percent into time at
-/// a fixed 4.5 s per weight unit and capped its correction at 3×; the first full run measured
-/// roughly three times that, so the estimate was pinned at a third of reality for the whole run.
+/// defaults, scaled by the source's frames × pixels. Converting progress percent into time at a
+/// fixed rate does not work here: step costs differ by orders of magnitude and depend on the machine,
+/// so an estimate has to be anchored in measured timings.
 /// </para>
 /// <para>
 /// In-run corrections, in order of preference: a step whose analog on an earlier ladder has

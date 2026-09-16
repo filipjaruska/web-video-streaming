@@ -275,7 +275,7 @@ export function useBenchmarkRunner({
         });
       } catch {
         // A failed upload must not abort the sweep — the result is still held in local state and
-        // can be exported to CSV, which is what the results are built from anyway.
+        // can be exported to CSV.
       }
     },
     [apiUrl, routeId],

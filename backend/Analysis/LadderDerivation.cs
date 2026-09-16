@@ -38,11 +38,10 @@ public sealed class LadderDerivationResult {
 /// </summary>
 /// <remarks>
 /// The window constraint is what makes this a convex-hull ladder rather than a set of independent
-/// per-resolution picks. The first full run selected each resolution at λ in isolation and only
-/// asked whether a <em>lower</em> resolution beat the result; nothing stopped a low resolution
-/// being placed above the bitrate where the next one up takes over. Four of five rungs ended up
-/// off the hull (480p at 1.9 Mb/s where 720p is several VMAF points better at the same rate) and
-/// the "content-adaptive" ladder measured worse than the fixed one.
+/// per-resolution picks. Selecting each resolution at λ in isolation, and only asking whether a
+/// <em>lower</em> resolution beats the result, does not stop a low resolution being placed above
+/// the bitrate where the next one up takes over — such a rung sits off the hull, where a higher
+/// resolution is several VMAF points better at the same rate, and the ladder loses to a fixed one.
 /// </remarks>
 public sealed class LadderDerivation {
     /// <summary>
@@ -72,12 +71,11 @@ public sealed class LadderDerivation {
     /// </summary>
     /// <remarks>
     /// VMAF is clipped at zero, so below roughly 20 the harmonic mean is driven by clipped frames
-    /// (240p at CRF 40 scored a mean of 0.64 and a harmonic mean of 0.10) and the curve's slope
-    /// measures clipping rather than rate. Such points also anchored the convex hull, producing
-    /// crossovers like "480p over 240p at 726 kb/s" that described nothing real. The floor stays
-    /// low on purpose: under the HD model 240p tops out near 45 and 360p wins only between roughly
-    /// 25 and 45, so a higher floor would delete a resolution by fiat instead of letting the
-    /// envelope decide.
+    /// (the lowest resolutions at high CRF score a harmonic mean well under 1) and the curve's slope
+    /// measures clipping rather than rate. Such points would also anchor the convex hull and produce
+    /// crossovers that describe nothing real. The floor stays low on purpose: under the HD model the
+    /// lowest resolutions top out in the 40s and win only between roughly 25 and 45, so a higher
+    /// floor would delete a resolution by fiat instead of letting the envelope decide.
     /// </remarks>
     internal const double QualityFloor = 20.0;
 
@@ -94,8 +92,8 @@ public sealed class LadderDerivation {
     private const long BitrateFloorBps = 100_000;
 
     /// <summary>
-    /// Rounding applied to the shipped bitrates. 50 kb/s used to be used, which at 373 kb/s is ±7 %
-    /// — about 2.6 VMAF on a curve climbing 26 points per doubling.
+    /// Rounding applied to the shipped bitrates. Kept fine: 50 kb/s steps would be ±7 % on a
+    /// 370 kb/s rung — about 2.6 VMAF on a curve climbing 26 points per doubling.
     /// </summary>
     private const int RoundToKbps = 10;
 

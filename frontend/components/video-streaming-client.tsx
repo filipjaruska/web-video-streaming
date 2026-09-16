@@ -133,7 +133,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     [handlePlaybackEvent, recordRebuffer],
   );
 
-  /** Every packaged ladder a sweep can choose from, static first, then the two derived ones. */
+  /** Every packaged ladder a sweep can choose from: static first, then the two derived ones. */
   const benchmarkLadders = useMemo<BenchmarkLadder[]>(() => {
     const order = ["static", "dynamic", "animation"];
     const rank = (kind: string) => {

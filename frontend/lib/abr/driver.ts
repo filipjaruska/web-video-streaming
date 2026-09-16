@@ -17,9 +17,8 @@ export type AbrRuleName = "throughput" | "buffer" | "hybrid";
  * Every segment's rung is decided from the state at its own request — on HLS by hls.js asking the
  * controller from {@link createRuleAbrController}, on DASH whenever a segment has been appended — so
  * the clock only keeps DASH's choice current while nothing is being fetched. Deciding on the clock
- * alone made the outcome depend on where its ticks fell: on a fast link hls.js fetched most of a
- * 30 s clip at the opening rung between two ticks, and three runs of one unshaped configuration
- * (HLS · hybrid) spread by ±10 points of delivered VMAF.
+ * alone would make the outcome depend on where its ticks fall: on a fast link hls.js can fetch most
+ * of a short clip at the opening rung between two ticks, and repeated runs would not agree.
  */
 const TICK_MS = 1000;
 
@@ -89,8 +88,8 @@ interface Decider {
  *
  * The opening rung is held until its first segment is buffered. Before that there is no measurement
  * to decide on — no throughput sample, and an empty buffer that is expected rather than an
- * emergency. Letting the rules run on it used to fire the panic rule on every start, so each
- * measured run opened on the bottom rung whatever start rung had been chosen.
+ * emergency. Letting the rules run on it would fire the panic rule on every start and open each
+ * run on the bottom rung, whatever start rung had been chosen.
  */
 function createDecider(
   reader: StateReader,
@@ -353,11 +352,11 @@ export function driveDash(
       return;
     }
 
-    // From the next segment, as on HLS. This used to force-replace the buffer on every decision:
-    // dash.js dropped the video buffered ahead of the playhead and fetched it again, and while the
-    // decoder ran dry Chrome let audio and the clock run on over a frozen picture — DASH looked
-    // stall-free in the numbers while visibly freezing. Forced only when fast start gives up on its
-    // opening segment, before there is anything worth keeping.
+    // From the next segment, as on HLS. Force-replacing the buffer on every decision would make
+    // dash.js drop the video buffered ahead of the playhead and fetch it again, and while the
+    // decoder runs dry Chrome lets audio and the clock run on over a frozen picture — a freeze no
+    // "waiting" event reports. Forced only when fast start gives up on its opening segment, before
+    // there is anything worth keeping.
     player.setRepresentationForTypeByIndex?.("video", decision.index, decision.immediate);
   };
 

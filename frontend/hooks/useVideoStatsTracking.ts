@@ -128,7 +128,7 @@ export function useVideoStatsTracking({
     const handleError = () => emit("error", videoElement.error?.message ?? "playback error");
 
     const sample = () => {
-      // Paused and stalled time is not playback. Sampling through it used to drag every average
+      // Paused and stalled time is not playback. Sampling through it would drag every average
       // toward whatever the player happened to be sitting at while nothing was being watched.
       if (!hasStartedPlayingRef.current || videoElement.paused) return;
 
@@ -300,9 +300,9 @@ function collectHttpRangeStats(
  * Download rate of the progressive source, Mb/s: how far the buffered range grew since the previous
  * sample, at the source's average bitrate.
  *
- * Not Resource Timing, which this used to read: the browser records a request there only once it has
- * finished, and a progressive download of the whole source over a slow link does not finish within a
- * run, so on 3G no byte was ever counted and the throughput read empty. The buffered range grows as
+ * Not Resource Timing: the browser records a request there only once it has finished, and a
+ * progressive download of the whole source over a slow link does not finish within a run, so no
+ * byte would be counted. The buffered range grows as
  * the data arrives. Averaging a VBR file's bitrate makes a single sample approximate; the mean over a
  * run is not. A seek, which moves the range backwards, is ignored.
  *
@@ -500,8 +500,8 @@ function getDashQuality(dash: any, video: HTMLVideoElement): VideoQuality | null
 
 /**
  * The progressive source as played: its real dimensions, and the bitrate and codec the server
- * reports for the file. Both stay unknown (0 and undefined) until that answer arrives — they used to
- * be guessed from the resolution and printed as fact, so every 1080p source read "5 Mb/s, H.264".
+ * reports for the file. Both stay unknown (0 and undefined) until that answer arrives rather than
+ * being guessed from the resolution and shown as fact.
  */
 function getVideoElementQuality(
   video: HTMLVideoElement,

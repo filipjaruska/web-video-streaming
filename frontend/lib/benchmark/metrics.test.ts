@@ -4,9 +4,9 @@ import { computeMetrics, summarize } from "./metrics";
 import type { BenchmarkEvent, BenchmarkSample, BenchmarkTrace } from "./types";
 
 /**
- * Traces here are hand-built so every expected value can be computed on paper. The definitions these
- * assert end up in reported results, and a wrong one produces numbers that look entirely plausible —
- * so the properties are pinned rather than the implementation.
+ * Traces here are hand-built so every expected value can be computed on paper. A wrong metric
+ * definition produces numbers that look entirely plausible, so the properties are pinned rather
+ * than the implementation.
  */
 function sample(atMs: number, rungIndex: number, bitrateBps = 1_000_000): BenchmarkSample {
   return {

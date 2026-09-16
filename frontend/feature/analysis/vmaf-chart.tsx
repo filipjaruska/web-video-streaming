@@ -74,9 +74,8 @@ function SummaryTable({ summary }: { summary: VmafSummary }) {
           ? `${summary.width}×${summary.height}`
           : "—",
     },
-    // Measured first, target second, and both labelled for what they are. This row used to read
-    // "Target bitrate" while showing the measured value — the one confusion this view cannot
-    // afford, since the gap between the two is the whole argument for a content-adaptive ladder.
+    // Measured first, target second, and both labelled for what they are: the gap between the two
+    // is what a content-adaptive ladder is about, so the two must never be confused.
     { label: "Measured bitrate", value: formatBitrate(summary.bitrateBps) },
     { label: "Target bitrate", value: formatBitrate(summary.targetBitrateBps) },
     { label: "CAMBI (banding)", value: formatScoreOrDash(summary.cambi) },

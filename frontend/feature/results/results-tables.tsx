@@ -80,8 +80,8 @@ function formatPerResolution(values: Record<string, number> | null | undefined):
 /**
  * The cross-clip view: every reported measurement per clip, in one place.
  *
- * Each table exports to CSV independently, because these four exports are what the results are built from —
- * the point is to download them rather than retype numbers off a screen.
+ * Each table exports to CSV independently, so the numbers can be taken into further analysis
+ * rather than retyped off a screen.
  */
 export function ResultsTables({ clips }: { clips: ClipResult[] }) {
   const router = useRouter();

@@ -4,9 +4,8 @@ namespace WebWVideoStreamingAPI.Data;
 /// Network condition a benchmark run was measured under.
 /// </summary>
 /// <remarks>
-/// Declared by the operator rather than enforced by the app. Page JavaScript cannot shape the link,
-/// so conditions are set externally and the label is recorded alongside the result — a
-/// playback measurement without the network it was taken on is not interpretable.
+/// Applied by <c>NetworkShapingMiddleware</c> to every request of the run and recorded alongside the
+/// result — a playback measurement without the network it was taken on is not interpretable.
 /// </remarks>
 public enum NetworkProfile {
     Standard = 0,
@@ -30,7 +29,7 @@ public enum BenchmarkMode {
 /// One playback of one configuration, measured at the client.
 /// </summary>
 /// <remarks>
-/// Headline metrics are normalised columns because they are what the results tables aggregate,
+/// Headline metrics are normalised columns because they are what the results views aggregate,
 /// sort and chart. The per-second series and the event log go into a single JSON blob, matching how
 /// <see cref="AnalysisReport"/> stores its documents — nothing in this codebase keeps a row per
 /// sample, and a benchmark sweep would add tens of thousands of them.

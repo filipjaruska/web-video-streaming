@@ -223,9 +223,8 @@ export function SitiChart({
       const chartMax =
         chartMaxTime != null && chartMaxTime > 0 ? chartMaxTime : undefined;
 
-      // Map chart X → media time. When SI/TI pts are missing the axis used to
-      // be frame indexes; after scaleSeriesToDuration they match duration.
-      // Proportional map still protects against residual mismatch.
+      // Map chart X → media time. When SI/TI pts are missing, scaleSeriesToDuration has already
+      // stretched frame indexes to the duration; the proportional map covers any residual mismatch.
       let seekTime = chartTimeSec;
       if (duration != null && chartMax != null) {
         const timelinesAgree =
