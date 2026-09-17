@@ -7,7 +7,13 @@ import {
   pickFastStartLevel,
   pickStartLevel,
 } from "@/lib/streamingConfig";
-import { type AbrLevel, type AbrState, decide } from "./rules";
+import {
+  type AbrLevel,
+  type AbrState,
+  type HybridMemory,
+  INITIAL_HYBRID_MEMORY,
+  decide,
+} from "./rules";
 
 export type AbrRuleName = "throughput" | "buffer" | "hybrid";
 
@@ -99,6 +105,8 @@ function createDecider(
 ): Decider {
   let startedAt: number | null = null;
   let opening = true;
+  /** Which rule the hybrid algorithm is using; each player instance starts on throughput. */
+  let hybridMemory: HybridMemory = INITIAL_HYBRID_MEMORY;
 
   return {
     opening() {
@@ -153,7 +161,9 @@ function createDecider(
         return hold;
       }
 
-      return { index: decide(algorithm, state).index, immediate: false };
+      const decision = decide(algorithm, state, hybridMemory);
+      hybridMemory = decision.hybrid ?? hybridMemory;
+      return { index: decision.index, immediate: false };
     },
   };
 }

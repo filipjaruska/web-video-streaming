@@ -34,7 +34,20 @@ export interface AbrState {
 export interface AbrDecision {
   index: number;
   reason: string;
+  /** The hybrid rule's memory after this decision; carried into the next one. */
+  hybrid?: HybridMemory;
 }
+
+/**
+ * What the hybrid rule remembers between decisions: which rule is in charge, and the virtual buffer
+ * BOLA was handed when it took over.
+ */
+export interface HybridMemory {
+  useBola: boolean;
+  placeholderSec: number;
+}
+
+export const INITIAL_HYBRID_MEMORY: HybridMemory = { useBola: false, placeholderSec: 0 };
 
 /**
  * Fraction of measured throughput a rung must fit inside to be selected. Below 1 so that an
@@ -53,6 +66,17 @@ const BOLA_GP = 5;
 
 /** Below this the buffer is treated as an emergency regardless of what the rule computes. */
 const PANIC_BUFFER_SEC = 4;
+
+/**
+ * Share of the target buffer at which the hybrid rule hands over to BOLA, and below which it takes
+ * control back. Two thresholds, so a buffer hovering at one of them does not flip the rule on every
+ * segment.
+ */
+const HYBRID_BOLA_ON_FRACTION = 0.5;
+const HYBRID_BOLA_OFF_FRACTION = 0.25;
+
+/** Step of the buffer scan that sizes the placeholder, seconds. */
+const PLACEHOLDER_SCAN_STEP_SEC = 0.25;
 
 function sorted(levels: AbrLevel[]): AbrLevel[] {
   return [...levels].sort((a, b) => a.bitrateBps - b.bitrateBps);
@@ -137,22 +161,66 @@ export function bufferRule(state: AbrState): AbrDecision {
 }
 
 /**
- * Hybrid rule: the more cautious of the two.
- *
- * Taking the minimum means a rung has to be justified by measured throughput *and* by buffer
- * occupancy before it is selected — the usual meaning of a hybrid ABR rule.
+ * The smallest buffer at which BOLA would choose at least the given rung, seconds.
  */
-export function hybridRule(state: AbrState): AbrDecision {
-  const byThroughput = throughputRule(state);
-  const byBuffer = bufferRule(state);
+function bufferForRung(state: AbrState, index: number): number {
   const levels = sorted(state.levels);
+  const rank = (candidate: number) => levels.findIndex((level) => level.index === candidate);
+  const wanted = rank(index);
+  const limit = Math.max(state.targetBufferSec, state.segmentSec * 2);
 
-  const rank = (index: number) => levels.findIndex((level) => level.index === index);
-  const chosen = rank(byThroughput.index) <= rank(byBuffer.index) ? byThroughput : byBuffer;
+  for (let sec = 0; sec <= limit; sec += PLACEHOLDER_SCAN_STEP_SEC) {
+    if (rank(bufferRule({ ...state, bufferSec: sec }).index) >= wanted) {
+      return sec;
+    }
+  }
 
+  return limit;
+}
+
+/**
+ * Hybrid rule: throughput while the buffer is short, BOLA once it is healthy — the arrangement of
+ * dash.js's DYNAMIC rule.
+ *
+ * Each rule is used where it is strong. With little buffer (startup, after a stall) there is
+ * nothing for BOLA to go on — it would open on the bottom rung — while a throughput estimate already
+ * says what the link carries. With a healthy buffer, BOLA's buffer-driven choice is steadier than
+ * an estimate that jitters from segment to segment.
+ *
+ * When BOLA takes over it is handed a placeholder buffer: the extra seconds it would need to choose
+ * the rung throughput had reached. Without it BOLA would read the half-full buffer as a reason to
+ * step down straight away. The placeholder is dropped when throughput takes control back, and the
+ * effective buffer never exceeds the target, so BOLA cannot be pushed past its own top.
+ */
+export function hybridRule(
+  state: AbrState,
+  memory: HybridMemory = INITIAL_HYBRID_MEMORY,
+): AbrDecision {
+  const byThroughput = throughputRule(state);
+  let { useBola, placeholderSec } = memory;
+
+  if (useBola && state.bufferSec < state.targetBufferSec * HYBRID_BOLA_OFF_FRACTION) {
+    useBola = false;
+    placeholderSec = 0;
+  } else if (!useBola && state.bufferSec >= state.targetBufferSec * HYBRID_BOLA_ON_FRACTION) {
+    useBola = true;
+    placeholderSec = Math.max(0, bufferForRung(state, byThroughput.index) - state.bufferSec);
+  }
+
+  if (!useBola) {
+    return {
+      index: byThroughput.index,
+      reason: `hybrid → ${byThroughput.reason}`,
+      hybrid: { useBola, placeholderSec },
+    };
+  }
+
+  const effectiveSec = Math.min(state.bufferSec + placeholderSec, state.targetBufferSec);
+  const byBuffer = bufferRule({ ...state, bufferSec: effectiveSec });
   return {
-    index: chosen.index,
-    reason: `hybrid → ${chosen.reason}`,
+    index: byBuffer.index,
+    reason: `hybrid → ${byBuffer.reason}`,
+    hybrid: { useBola, placeholderSec },
   };
 }
 
@@ -163,6 +231,7 @@ export function hybridRule(state: AbrState): AbrDecision {
 export function decide(
   algorithm: "throughput" | "buffer" | "hybrid",
   state: AbrState,
+  hybridMemory: HybridMemory = INITIAL_HYBRID_MEMORY,
 ): AbrDecision {
   const levels = sorted(state.levels);
   if (levels.length === 0) {
@@ -170,17 +239,23 @@ export function decide(
   }
 
   if (state.bufferSec < PANIC_BUFFER_SEC && state.currentIndex !== levels[0].index) {
-    return { index: levels[0].index, reason: `panic buffer ${state.bufferSec.toFixed(1)}s` };
+    // An emergency also hands the hybrid rule back to throughput: the buffer it relied on is gone.
+    return {
+      index: levels[0].index,
+      reason: `panic buffer ${state.bufferSec.toFixed(1)}s`,
+      hybrid: algorithm === "hybrid" ? INITIAL_HYBRID_MEMORY : undefined,
+    };
   }
-
-  const rule =
-    algorithm === "throughput"
-      ? throughputRule
-      : algorithm === "buffer"
-        ? bufferRule
-        : hybridRule;
 
   // Every rule returns the index carried by a real level, so no clamping is needed — and clamping
   // by array position would be wrong anyway, since a player's level indices need not be positions.
-  return rule(state);
+  if (algorithm === "throughput") {
+    return throughputRule(state);
+  }
+
+  if (algorithm === "buffer") {
+    return bufferRule(state);
+  }
+
+  return hybridRule(state, hybridMemory);
 }

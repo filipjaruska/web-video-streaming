@@ -77,19 +77,35 @@ describe("bufferRule", () => {
 });
 
 describe("hybridRule", () => {
-  it("never exceeds either component", () => {
-    for (let sec = 0; sec <= 30; sec += 2) {
-      for (const bandwidthBps of [300_000, 1_500_000, 3_000_000, 10_000_000]) {
-        const s = state({ bufferSec: sec, bandwidthBps });
-        expect(hybridRule(s).index).toBeLessThanOrEqual(throughputRule(s).index);
-        expect(hybridRule(s).index).toBeLessThanOrEqual(bufferRule(s).index);
-      }
-    }
+  it("follows throughput while the buffer is short", () => {
+    const s = state({ bufferSec: 2, bandwidthBps: 10_000_000, currentIndex: 0 });
+    expect(hybridRule(s).index).toBe(throughputRule(s).index);
+    expect(hybridRule(s).hybrid?.useBola).toBe(false);
   });
 
-  it("refuses a rung that only one component supports", () => {
-    expect(hybridRule(state({ bufferSec: 1, bandwidthBps: 50_000_000, currentIndex: 0 })).index).toBe(0);
-    expect(hybridRule(state({ bufferSec: 30, bandwidthBps: 200_000, currentIndex: 0 })).index).toBe(0);
+  it("hands over to BOLA at a healthy buffer without stepping down", () => {
+    // Throughput has reached the top rung; the placeholder makes BOLA continue from there instead
+    // of reading the half-full buffer as a reason to drop.
+    const s = state({ bufferSec: 15, bandwidthBps: 10_000_000, currentIndex: 4 });
+    const decision = hybridRule(s);
+    expect(decision.hybrid?.useBola).toBe(true);
+    expect(decision.index).toBe(4);
+    expect(bufferRule(s).index).toBeLessThan(4);
+  });
+
+  it("keeps BOLA through a buffer between the two thresholds", () => {
+    const memory = { useBola: true, placeholderSec: 0 };
+    const decision = hybridRule(state({ bufferSec: 10, bandwidthBps: 10_000_000 }), memory);
+    expect(decision.hybrid?.useBola).toBe(true);
+    expect(decision.index).toBe(bufferRule(state({ bufferSec: 10 })).index);
+  });
+
+  it("returns to throughput once the buffer runs low", () => {
+    const memory = { useBola: true, placeholderSec: 12 };
+    const s = state({ bufferSec: 5, bandwidthBps: 1_500_000, currentIndex: 4 });
+    const decision = hybridRule(s, memory);
+    expect(decision.hybrid).toEqual({ useBola: false, placeholderSec: 0 });
+    expect(decision.index).toBe(throughputRule(s).index);
   });
 });
 
