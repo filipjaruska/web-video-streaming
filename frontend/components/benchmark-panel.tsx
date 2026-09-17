@@ -476,7 +476,7 @@ export function BenchmarkPanel({
                   >
                     Delivered VMAF
                   </th>
-                  <th className="py-2 pr-3 font-medium" title="Time-weighted declared bitrate of the rungs played">
+                  <th className="py-2 pr-3 font-medium" title="Measured average video bitrate of the rungs played, weighted by time (source: the file's average bitrate)">
                     Avg bitrate
                   </th>
                   <th

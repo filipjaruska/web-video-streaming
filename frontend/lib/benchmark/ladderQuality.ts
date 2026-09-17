@@ -11,15 +11,26 @@ function ladderQualityOf(target: AnalysisTarget): LadderQuality | null {
   }
 
   const vmafByHeight: Record<number, number> = {};
+  const bitrateByHeight: Record<number, number> = {};
   for (const [label, series] of Object.entries(byRung)) {
     const height = series.summary.height ?? Number.parseInt(label, 10);
-    if (Number.isFinite(height) && height > 0 && series.summary.harmonicMean > 0) {
+    if (!Number.isFinite(height) || height <= 0) {
+      continue;
+    }
+
+    if (series.summary.harmonicMean > 0) {
       vmafByHeight[height] = series.summary.harmonicMean;
+    }
+
+    if ((series.summary.bitrateBps ?? 0) > 0) {
+      bitrateByHeight[height] = series.summary.bitrateBps as number;
     }
   }
 
   const heights = Object.keys(vmafByHeight).map(Number);
-  return heights.length > 0 ? { topHeight: Math.max(...heights), vmafByHeight } : null;
+  return heights.length > 0
+    ? { topHeight: Math.max(...heights), vmafByHeight, bitrateByHeight }
+    : null;
 }
 
 /**

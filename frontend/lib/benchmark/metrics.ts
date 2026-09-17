@@ -130,8 +130,16 @@ function switchDirections(rungs: number[]): number[] {
  *
  * An unweighted mean over samples would let a rung that lasted one second count as much as one that
  * lasted a minute, which is not what "the quality the viewer got" means.
+ *
+ * Each rung counts at its measured average video bitrate when the ladder's analysis provides it. The
+ * players only know the declared bandwidth — the peak segment rate plus audio — which overstates what
+ * a rung actually costs, by about 15 % on the ladders here.
  */
-function timeWeightedBitrate(samples: BenchmarkSample[], durationMs: number): number {
+function timeWeightedBitrate(
+  samples: BenchmarkSample[],
+  durationMs: number,
+  ladder?: LadderQuality,
+): number {
   let weighted = 0;
   let total = 0;
 
@@ -142,7 +150,8 @@ function timeWeightedBitrate(samples: BenchmarkSample[], durationMs: number): nu
       continue;
     }
 
-    weighted += samples[i].bitrateBps * dt;
+    const measured = samples[i].height ? ladder?.bitrateByHeight?.[samples[i].height as number] : undefined;
+    weighted += (measured ?? samples[i].bitrateBps) * dt;
     total += dt;
   }
 
@@ -310,7 +319,7 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
     avgBufferSec: averageBuffer(samples, startupMs),
     qualitySwitches: directions.length,
     oscillations,
-    timeWeightedBitrateBps: timeWeightedBitrate(samples, durationMs),
+    timeWeightedBitrateBps: timeWeightedBitrate(samples, durationMs, ladder),
     avgThroughputBps: averageThroughput(samples, startupMs),
     resolutionShare: share,
     topRungShare: ladder && Object.keys(share).length > 0 ? (share[ladder.topHeight] ?? 0) : null,

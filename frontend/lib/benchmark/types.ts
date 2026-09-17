@@ -157,10 +157,15 @@ export interface BenchmarkSample {
   totalFrames: number;
 }
 
-/** The ladder a run played: its top rung and each rung's measured harmonic VMAF, keyed by height. */
+/**
+ * The ladder a run played: its top rung and, keyed by height, each rung's measured harmonic VMAF and
+ * measured average video bitrate.
+ */
 export interface LadderQuality {
   topHeight: number;
   vmafByHeight: Record<number, number>;
+  /** Absent for ladders analysed before the measured bitrate was stored. */
+  bitrateByHeight?: Record<number, number>;
 }
 
 /**
@@ -207,6 +212,12 @@ export interface BenchmarkMetrics {
   qualitySwitches: number;
   /** Direction reversals, not switches — a monotone climb oscillates zero times. */
   oscillations: number;
+  /**
+   * Bitrate of the rungs played, weighted by how long each was held, bits per second. Each rung's
+   * measured average video bitrate where the ladder's analysis has it; otherwise the bitrate the
+   * player reports, which for HLS and DASH is the declared peak including audio. For the source file,
+   * the file's average bitrate.
+   */
   timeWeightedBitrateBps: number;
   /**
    * Mean of the player's own throughput estimate while playing, bits per second; 0 when it never
