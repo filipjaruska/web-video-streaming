@@ -470,6 +470,11 @@ public sealed class TranscodeAnalysisCollector {
     }
 
     /// <summary>SHA-256 over the first video stream's packets — equal only for an identical bitstream.</summary>
+    /// <remarks>
+    /// ffmpeg has two output formats for this. Up to 8.0 it prints <c>0,v,SHA256=&lt;hash&gt;</c>;
+    /// later builds print a commented header followed by <c>0, &lt;size&gt;, &lt;hash&gt;</c>, where the
+    /// header's <c>#extradata</c> line carries a hash of its own that must not be taken for the stream's.
+    /// </remarks>
     private async Task<string?> StreamHashAsync(string path, CancellationToken cancellationToken) {
         var run = await _runner.RunAsync(
             "ffmpeg",
@@ -481,8 +486,28 @@ public sealed class TranscodeAnalysisCollector {
             return null;
         }
 
-        var match = Regex.Match(run.StdOut, "SHA256=([0-9a-fA-F]+)");
-        return match.Success ? match.Groups[1].Value.ToLowerInvariant() : null;
+        return ParseStreamHash(run.StdOut);
+    }
+
+    internal static string? ParseStreamHash(string output) {
+        foreach (var raw in output.Split('\n')) {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#')) {
+                continue;
+            }
+
+            var legacy = Regex.Match(line, @"^0,\s*v,\s*SHA256=([0-9a-fA-F]{64})$");
+            if (legacy.Success) {
+                return legacy.Groups[1].Value.ToLowerInvariant();
+            }
+
+            var current = Regex.Match(line, @"^0,\s*\d+,\s*([0-9a-fA-F]{64})$");
+            if (current.Success) {
+                return current.Groups[1].Value.ToLowerInvariant();
+            }
+        }
+
+        return null;
     }
 
     private async Task<double?> FirstPtsAsync(string path, string streamSelector, CancellationToken cancellationToken) {

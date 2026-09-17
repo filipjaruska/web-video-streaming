@@ -12,11 +12,13 @@ RUN dotnet publish -c Release -o /app/publish
 
 # Static FFmpeg from BtbN (gpl build includes libvmaf). Kept out of the runtime
 # apt layer so Railway builds stay fast and VMAF works (distro ffmpeg often lacks it).
+# Pinned to the 8.1 release branch, which only receives fixes: the rolling master build
+# changes behaviour between deploys (it once changed the streamhash output format).
 # Local Windows: use a full build (gyan.dev / BtbN) with --enable-libvmaf on PATH.
 FROM debian:bookworm-slim AS ffmpeg
 ARG TARGETARCH
-ARG FFMPEG_URL_AMD64=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
-ARG FFMPEG_URL_ARM64=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz
+ARG FFMPEG_URL_AMD64=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz
+ARG FFMPEG_URL_ARM64=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
     && arch="${TARGETARCH:-amd64}" \
