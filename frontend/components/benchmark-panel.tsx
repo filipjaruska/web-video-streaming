@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { useActionAuth } from "@/components/action-auth-provider";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
 import {
@@ -209,6 +210,18 @@ export function BenchmarkPanel({
   );
   const cellCount = useMemo(() => buildMatrix(selection).length, [selection]);
 
+  // A sweep writes results to the server and occupies the player for minutes, so it is gated like
+  // the other mutating actions rather than left open to any visitor.
+  const { requireAuth } = useActionAuth();
+
+  async function handleStart() {
+    if (!(await requireAuth())) {
+      return;
+    }
+
+    onStart(profile, selection);
+  }
+
   const { rows, failures } = useMemo(() => aggregate(results), [results]);
   // Checked after every run, so a link that is not shaped as declared shows up on the first one.
   const mismatched = rows.filter((row) => exceedsProfileRate(row.profile, row.throughput.mean));
@@ -369,10 +382,7 @@ export function BenchmarkPanel({
               Cancel
             </Button>
           ) : (
-            <Button
-              onClick={() => onStart(profile, selection)}
-              disabled={disabled || cellCount === 0}
-            >
+            <Button onClick={handleStart} disabled={disabled || cellCount === 0}>
               Run benchmark
             </Button>
           )}
