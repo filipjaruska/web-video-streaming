@@ -11,13 +11,14 @@ export type NetworkProfile = "standard" | "fourG" | "threeG" | "variable";
 export type ShapedProfile = Exclude<NetworkProfile, "variable">;
 
 /**
- * Shown in the UI, in megabits per second like every other rate in the app. No packet loss: the
- * server can slow data down and delay it, not drop packets.
+ * Shown in the UI, in megabits per second like every other rate in the app. Loss is emulated by its
+ * cost — a lost packet crosses the link twice and the transfer waits one round trip — since a server
+ * cannot drop a TCP segment.
  */
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
   standard: "Standard (unshaped)",
-  fourG: "4G — 20 Mb/s, 40 ms",
-  threeG: "3G — 2 Mb/s, 100 ms",
+  fourG: "4G — 20 Mb/s, 40 ms, 1 % loss",
+  threeG: "3G — 2 Mb/s, 100 ms, 5 % loss",
   variable: "Variable — 4G → 3G → 4G",
 };
 
