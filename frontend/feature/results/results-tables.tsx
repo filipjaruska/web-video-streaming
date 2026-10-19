@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Database } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -18,8 +19,10 @@ import {
   MetricTileGrid,
   toneForSaving,
 } from "@/components/metric-tiles";
+import { useActionAuth } from "@/components/action-auth-provider";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
+import { getPublicApiUrl } from "@/lib/env";
 import {
   formatNumber,
   formatPercent,
@@ -85,6 +88,18 @@ function formatPerResolution(values: Record<string, number> | null | undefined):
  */
 export function ResultsTables({ clips }: { clips: ClipResult[] }) {
   const router = useRouter();
+  const { requireAuth } = useActionAuth();
+
+  // The whole database leaves the server, so it is gated like the mutating actions. The backend
+  // snapshots it through SQLite's backup API and answers with an attachment, so navigating to it
+  // downloads without leaving the page.
+  async function downloadDatabase() {
+    if (!(await requireAuth())) {
+      return;
+    }
+
+    window.location.href = `${getPublicApiUrl()}/api/database/export`;
+  }
 
   const dynamicBdRates = clips
     .flatMap((clip) => clip.ladders)
@@ -221,9 +236,15 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
           />
           <MetricTile value={benchmarkRuns} label="Playback runs recorded" />
         </MetricTileGrid>
-        <Button variant="outline" size="sm" onClick={() => router.refresh()}>
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={downloadDatabase}>
+            <Database />
+            Download DB
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => router.refresh()}>
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <Card>
