@@ -29,19 +29,26 @@ public sealed class BdRateResult {
 /// </summary>
 /// <remarks>
 /// Comparing two ladders at a single operating point says almost nothing, because the two ladders
-/// rarely have a rung at the same quality. BD-rate instead fits each curve, integrates the gap
-/// between them across the overlapping quality range, and reports the mean — one number that
-/// answers "same quality, how many fewer bits". Rate enters as log₁₀, which is the domain where
-/// rate-quality curves are close to polynomial and where equal ratios count equally.
+/// rarely have a rung at the same quality. BD-rate instead interpolates each curve, integrates the
+/// gap between them across the overlapping quality range, and reports the mean — one number that
+/// answers "same quality, how many fewer bits". Rate enters as log₁₀, where equal ratios count
+/// equally.
+/// <para>
+/// Curves are interpolated with Akima's piecewise cubic, as recommended by Herglotz et al. (ICIP
+/// 2022), not Bjøntegaard's original least-squares cubic. The single cubic does not pass through
+/// the measured points and lets every rung bend the curve everywhere, so on ladders whose rungs are
+/// unevenly spaced it can overshoot between them; Akima's curve passes through every point and
+/// each piece depends only on its neighbours.
+/// </para>
 /// </remarks>
 public static class BdRate {
-    /// <summary>A cubic fit needs four points; a ladder rung count below that cannot be compared.</summary>
+    /// <summary>Fewer rungs than this give too little curve to integrate meaningfully.</summary>
     private const int MinPoints = 4;
 
     /// <param name="minQuality">
-    /// Optional lower bound on the integration range. Both curves are still fitted on every point;
-    /// only the range the gap is averaged over is narrowed, so the lowest rungs — where a viewer
-    /// would rarely be served — cannot dominate the result.
+    /// Optional lower bound on the integration range. Both curves are still interpolated through
+    /// every point; only the range the gap is averaged over is narrowed, so the lowest rungs — where
+    /// a viewer would rarely be served — cannot dominate the result.
     /// </param>
     public static BdRateResult Compute(
         IReadOnlyList<RateQualityPoint> reference,
@@ -65,15 +72,15 @@ public static class BdRate {
             return Fail("The two ladders share no overlapping quality range");
         }
 
-        // log₁₀(rate) as a cubic in quality, per Bjøntegaard's original formulation.
-        var refFit = PolyFit3(refPoints.Select(p => p.Quality), refPoints.Select(p => Math.Log10(p.BitrateBps)));
-        var testFit = PolyFit3(testPoints.Select(p => p.Quality), testPoints.Select(p => Math.Log10(p.BitrateBps)));
+        // log₁₀(rate) as a function of quality.
+        var refCurve = AkimaCurve.Fit(refPoints.Select(p => p.Quality), refPoints.Select(p => Math.Log10(p.BitrateBps)));
+        var testCurve = AkimaCurve.Fit(testPoints.Select(p => p.Quality), testPoints.Select(p => Math.Log10(p.BitrateBps)));
 
-        if (refFit == null || testFit == null) {
-            return Fail("Rate-quality curve fit failed (degenerate points)");
+        if (refCurve == null || testCurve == null) {
+            return Fail("Rate-quality curve interpolation failed (degenerate points)");
         }
 
-        var meanDiff = (Integrate(testFit, low, high) - Integrate(refFit, low, high)) / (high - low);
+        var meanDiff = (testCurve.Integrate(low, high) - refCurve.Integrate(low, high)) / (high - low);
         var midQuality = (low + high) / 2;
 
         return new BdRateResult {
@@ -82,17 +89,21 @@ public static class BdRate {
             OverlapLowQuality = low,
             OverlapHighQuality = high,
             BitrateSavingPercent =
-                (Math.Pow(10, Evaluate(testFit, midQuality) - Evaluate(refFit, midQuality)) - 1) * 100,
-            QualityGainAtEqualBitrate = QualityGain(refPoints, testPoints)
+                (Math.Pow(10, testCurve.Evaluate(midQuality) - refCurve.Evaluate(midQuality)) - 1) * 100,
+            QualityGainAtEqualBitrate = QualityGain(reference, test)
         };
     }
 
-    /// <summary>Quality difference at equal bitrate, fitting quality as a cubic in log₁₀(rate).</summary>
+    /// <summary>Quality difference at equal bitrate, interpolating quality over log₁₀(rate).</summary>
     private static double? QualityGain(
         IReadOnlyList<RateQualityPoint> reference,
         IReadOnlyList<RateQualityPoint> test) {
-        var refByRate = reference.OrderBy(point => point.BitrateBps).ToList();
-        var testByRate = test.OrderBy(point => point.BitrateBps).ToList();
+        var refByRate = CleanByRate(reference);
+        var testByRate = CleanByRate(test);
+
+        if (refByRate.Count < MinPoints || testByRate.Count < MinPoints) {
+            return null;
+        }
 
         var low = Math.Max(Math.Log10(refByRate[0].BitrateBps), Math.Log10(testByRate[0].BitrateBps));
         var high = Math.Min(Math.Log10(refByRate[^1].BitrateBps), Math.Log10(testByRate[^1].BitrateBps));
@@ -101,112 +112,149 @@ public static class BdRate {
             return null;
         }
 
-        var refFit = PolyFit3(refByRate.Select(p => Math.Log10(p.BitrateBps)), refByRate.Select(p => p.Quality));
-        var testFit = PolyFit3(testByRate.Select(p => Math.Log10(p.BitrateBps)), testByRate.Select(p => p.Quality));
+        var refCurve = AkimaCurve.Fit(refByRate.Select(p => Math.Log10(p.BitrateBps)), refByRate.Select(p => p.Quality));
+        var testCurve = AkimaCurve.Fit(testByRate.Select(p => Math.Log10(p.BitrateBps)), testByRate.Select(p => p.Quality));
 
-        if (refFit == null || testFit == null) {
+        if (refCurve == null || testCurve == null) {
             return null;
         }
 
         var mid = (low + high) / 2;
-        return Evaluate(testFit, mid) - Evaluate(refFit, mid);
+        return testCurve.Evaluate(mid) - refCurve.Evaluate(mid);
     }
 
     /// <summary>
-    /// Drops unusable points and collapses duplicate x values, which would make the fit singular.
+    /// Drops unusable points and collapses duplicate qualities, which an interpolant through every
+    /// point cannot pass through twice.
     /// </summary>
     private static List<RateQualityPoint> Clean(IReadOnlyList<RateQualityPoint> points) {
         return points
             .Where(point => point.BitrateBps > 0 && point.Quality > 0)
             .GroupBy(point => Math.Round(point.Quality, 6))
-            .Select(group => new RateQualityPoint(group.Average(point => point.BitrateBps), group.Key))
+            .Select(group => new RateQualityPoint(group.Average(point => point.BitrateBps), group.Average(point => point.Quality)))
             .OrderBy(point => point.Quality)
             .ToList();
     }
 
-    /// <summary>Least-squares cubic y = c₀ + c₁x + c₂x² + c₃x³, solved through the normal equations.</summary>
-    private static double[]? PolyFit3(IEnumerable<double> xs, IEnumerable<double> ys) {
-        var x = xs.ToArray();
-        var y = ys.ToArray();
-        const int terms = 4;
-
-        // Normal equations: (AᵀA)c = Aᵀy, where A's columns are 1, x, x², x³.
-        var matrix = new double[terms, terms + 1];
-
-        for (var row = 0; row < terms; row++) {
-            for (var col = 0; col < terms; col++) {
-                double sum = 0;
-                for (var i = 0; i < x.Length; i++) {
-                    sum += Math.Pow(x[i], row + col);
-                }
-
-                matrix[row, col] = sum;
-            }
-
-            double rhs = 0;
-            for (var i = 0; i < x.Length; i++) {
-                rhs += y[i] * Math.Pow(x[i], row);
-            }
-
-            matrix[row, terms] = rhs;
-        }
-
-        return SolveGaussian(matrix, terms);
-    }
-
-    private static double[]? SolveGaussian(double[,] matrix, int size) {
-        for (var pivot = 0; pivot < size; pivot++) {
-            var best = pivot;
-            for (var row = pivot + 1; row < size; row++) {
-                if (Math.Abs(matrix[row, pivot]) > Math.Abs(matrix[best, pivot])) {
-                    best = row;
-                }
-            }
-
-            if (Math.Abs(matrix[best, pivot]) < 1e-12) {
-                return null;
-            }
-
-            if (best != pivot) {
-                for (var col = 0; col <= size; col++) {
-                    (matrix[pivot, col], matrix[best, col]) = (matrix[best, col], matrix[pivot, col]);
-                }
-            }
-
-            for (var row = 0; row < size; row++) {
-                if (row == pivot) {
-                    continue;
-                }
-
-                var factor = matrix[row, pivot] / matrix[pivot, pivot];
-                for (var col = pivot; col <= size; col++) {
-                    matrix[row, col] -= factor * matrix[pivot, col];
-                }
-            }
-        }
-
-        var solution = new double[size];
-        for (var i = 0; i < size; i++) {
-            solution[i] = matrix[i, size] / matrix[i, i];
-        }
-
-        return solution;
-    }
-
-    private static double Evaluate(double[] coefficients, double x) =>
-        coefficients[0] + coefficients[1] * x + coefficients[2] * x * x + coefficients[3] * x * x * x;
-
-    /// <summary>Definite integral of the cubic between two bounds, evaluated analytically.</summary>
-    private static double Integrate(double[] c, double low, double high) {
-        return Antiderivative(high) - Antiderivative(low);
-
-        double Antiderivative(double x) =>
-            c[0] * x +
-            c[1] * x * x / 2 +
-            c[2] * x * x * x / 3 +
-            c[3] * x * x * x * x / 4;
+    /// <summary>As <see cref="Clean"/>, but keyed on bitrate for curves interpolated over rate.</summary>
+    private static List<RateQualityPoint> CleanByRate(IReadOnlyList<RateQualityPoint> points) {
+        return points
+            .Where(point => point.BitrateBps > 0 && point.Quality > 0)
+            .GroupBy(point => Math.Round(point.BitrateBps, 3))
+            .Select(group => new RateQualityPoint(group.Average(point => point.BitrateBps), group.Average(point => point.Quality)))
+            .OrderBy(point => point.BitrateBps)
+            .ToList();
     }
 
     private static BdRateResult Fail(string message) =>
         new() { Success = false, ErrorMessage = message };
+
+    /// <summary>
+    /// Akima (1970) interpolation: a cubic Hermite piece per interval, with the slope at each point
+    /// a weighted mean of the neighbouring secants. The end handling and the degenerate-weight
+    /// fallback follow SciPy's <c>Akima1DInterpolator</c>, which the Herglotz et al. reference
+    /// implementation uses, so results match it.
+    /// </summary>
+    private sealed class AkimaCurve {
+        private readonly double[] _x;
+        private readonly double[] _y;
+        private readonly double[] _slope;
+        private readonly double[] _c2;
+        private readonly double[] _c3;
+
+        private AkimaCurve(double[] x, double[] y, double[] slope, double[] c2, double[] c3) {
+            _x = x;
+            _y = y;
+            _slope = slope;
+            _c2 = c2;
+            _c3 = c3;
+        }
+
+        /// <summary>Interpolates through (x, y) with x strictly increasing; null when it is not.</summary>
+        public static AkimaCurve? Fit(IEnumerable<double> xs, IEnumerable<double> ys) {
+            var x = xs.ToArray();
+            var y = ys.ToArray();
+            var n = x.Length;
+            if (n < 3 || y.Length != n) {
+                return null;
+            }
+
+            // Secants m[2..n], padded with two linearly extrapolated secants at each end.
+            var m = new double[n + 3];
+            for (var i = 0; i < n - 1; i++) {
+                var h = x[i + 1] - x[i];
+                if (h <= 0) {
+                    return null;
+                }
+
+                m[i + 2] = (y[i + 1] - y[i]) / h;
+            }
+
+            m[1] = 2 * m[2] - m[3];
+            m[0] = 2 * m[1] - m[2];
+            m[n + 1] = 2 * m[n] - m[n - 1];
+            m[n + 2] = 2 * m[n + 1] - m[n];
+
+            // Each point's slope leans towards the side where the secants change least.
+            var right = new double[n];
+            var left = new double[n];
+            var maxWeight = 0.0;
+            for (var i = 0; i < n; i++) {
+                right[i] = Math.Abs(m[i + 3] - m[i + 2]);
+                left[i] = Math.Abs(m[i + 1] - m[i]);
+                maxWeight = Math.Max(maxWeight, right[i] + left[i]);
+            }
+
+            var slope = new double[n];
+            for (var i = 0; i < n; i++) {
+                var weight = right[i] + left[i];
+                slope[i] = weight > 1e-9 * maxWeight
+                    ? (right[i] * m[i + 1] + left[i] * m[i + 2]) / weight
+                    : (m[i + 3] + m[i]) / 2;
+            }
+
+            var c2 = new double[n - 1];
+            var c3 = new double[n - 1];
+            for (var i = 0; i < n - 1; i++) {
+                var h = x[i + 1] - x[i];
+                var secant = m[i + 2];
+                c2[i] = (3 * secant - 2 * slope[i] - slope[i + 1]) / h;
+                c3[i] = (slope[i] + slope[i + 1] - 2 * secant) / (h * h);
+            }
+
+            return new AkimaCurve(x, y, slope, c2, c3);
+        }
+
+        public double Evaluate(double x) {
+            var i = Interval(x);
+            var u = x - _x[i];
+            return _y[i] + u * (_slope[i] + u * (_c2[i] + u * _c3[i]));
+        }
+
+        /// <summary>Exact integral of the piecewise cubic between two bounds inside the sampled range.</summary>
+        public double Integrate(double low, double high) {
+            double sum = 0;
+            for (var i = 0; i < _x.Length - 1; i++) {
+                var from = Math.Max(low, _x[i]);
+                var to = Math.Min(high, _x[i + 1]);
+                if (to > from) {
+                    sum += Antiderivative(i, to - _x[i]) - Antiderivative(i, from - _x[i]);
+                }
+            }
+
+            return sum;
+        }
+
+        private double Antiderivative(int i, double u) =>
+            u * (_y[i] + u * (_slope[i] / 2 + u * (_c2[i] / 3 + u * _c3[i] / 4)));
+
+        private int Interval(double x) {
+            var i = Array.BinarySearch(_x, x);
+            if (i < 0) {
+                i = ~i - 1;
+            }
+
+            return Math.Clamp(i, 0, _x.Length - 2);
+        }
+    }
 }
