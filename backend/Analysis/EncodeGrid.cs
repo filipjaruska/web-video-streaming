@@ -41,6 +41,9 @@ public sealed class EncodeGrid {
     /// <summary>A capped rung is sampled this far under its crossover, so the sample lands inside the window.</summary>
     private const double CapTargetFraction = 0.97;
 
+    /// <summary>A rung raised to the bitrate floor is sampled this far above it, so the sample clears the floor.</summary>
+    private const double FloorTargetFactor = 1.03;
+
     private readonly Transcoder _transcoder;
     private readonly VmafAnalyzer _vmaf;
     private readonly MediaProbe _probe;
@@ -180,7 +183,8 @@ public sealed class EncodeGrid {
     /// <remarks>
     /// Priority 1 — a rung at the grid's lowest CRF with the hull still steeper than λ: extend below.
     /// Priority 2 — a rung capped by a crossover, or a resolution with no sample inside its window:
-    /// sample just under the cap (that sample usually becomes the rung).
+    /// sample just under the cap (that sample usually becomes the rung). Likewise a rung raised to
+    /// the bitrate floor: sample just above the floor.
     /// Priority 3 — each crossover: sample the resolution taking over, and extend the lower one
     /// when the crossover lies past its last sample.
     /// Priority 4 — a quality gap next to a selected rung.
@@ -236,6 +240,14 @@ public sealed class EncodeGrid {
 
             if (rung.Capped && rung.CapBps is { } cap) {
                 Add(height, CrfForRate(samples, cap * CapTargetFraction), 2, "just under the crossover that caps this rung");
+            }
+
+            if (rung.RaisedToFloor) {
+                Add(
+                    height,
+                    CrfForRate(samples, LadderDerivation.BitrateFloorBps * FloorTargetFactor),
+                    2,
+                    "just above the bitrate floor this rung was raised to");
             }
 
             var index = samples.FindIndex(point => ReferenceEquals(point, rung.Point));

@@ -110,6 +110,8 @@ export interface DerivedLadderVariant {
   capBps?: number;
   /** On the grid's lowest CRF with the hull still steeper than λ — the tangent lies past the grid. */
   atGridBoundary?: boolean;
+  /** The shared-slope point lay under the bitrate floor; moved up to the cheapest sample that clears it. */
+  raisedToFloor?: boolean;
   /** No usable grid sample at this resolution; the static rung was kept. */
   fallback?: boolean;
 }
@@ -119,6 +121,14 @@ export interface DerivedLadderDocument {
   variants: DerivedLadderVariant[];
   /** Lagrange multiplier every rung was selected at. */
   lambda?: number;
+  /** How λ was reached from the base slope — which top-rung bound, if any, moved it. */
+  lambdaRule?: "base" | "ceiling" | "floor" | "reachable";
+  lambdaBase?: number;
+  /** Harmonic VMAF range the top rung is kept inside. */
+  topRungFloor?: number;
+  topRungCeiling?: number;
+  /** Lowest bitrate a rung may ship at. */
+  bitrateFloorBps?: number;
   /** Bitrate where the hull hands over between resolutions, keyed "1080p>720p". */
   crossoverBps?: Record<string, number>;
   /** The same crossovers, ordered, with whether each was extrapolated past the lower curve. */

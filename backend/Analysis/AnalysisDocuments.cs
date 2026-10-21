@@ -318,6 +318,14 @@ public sealed class DerivedLadderVariant {
     [JsonPropertyName("atGridBoundary")]
     public bool? AtGridBoundary { get; set; }
 
+    /// <summary>
+    /// True when the shared-slope operating point lay under the bitrate floor, so the rung was
+    /// moved up to the cheapest measured sample that clears it rather than shipped at a rate it
+    /// was never measured at.
+    /// </summary>
+    [JsonPropertyName("raisedToFloor")]
+    public bool? RaisedToFloor { get; set; }
+
     /// <summary>A default-ladder rung added only because its resolution produced no measurement at all.</summary>
     [JsonPropertyName("fallback")]
     public bool? Fallback { get; set; }
@@ -350,6 +358,31 @@ public sealed class DerivedLadderDocument {
     /// <summary>Lagrange multiplier all rungs were selected at, so they share an equal hull slope.</summary>
     [JsonPropertyName("lambda")]
     public double? Lambda { get; set; }
+
+    /// <summary>
+    /// How λ was reached: "base" (the base slope kept the top rung inside its quality range),
+    /// "ceiling" (raised until the top rung no longer exceeds the ceiling), "floor" (lowered until
+    /// it clears the floor) or "reachable" (lowered to the top resolution's best sample, which
+    /// never reaches the floor).
+    /// </summary>
+    [JsonPropertyName("lambdaRule")]
+    public string? LambdaRule { get; set; }
+
+    /// <summary>The slope λ starts from before the top-rung range is applied.</summary>
+    [JsonPropertyName("lambdaBase")]
+    public double? LambdaBase { get; set; }
+
+    /// <summary>Lower bound of the top rung's decision-quality range.</summary>
+    [JsonPropertyName("topRungFloor")]
+    public double? TopRungFloor { get; set; }
+
+    /// <summary>Upper bound of the top rung's decision-quality range.</summary>
+    [JsonPropertyName("topRungCeiling")]
+    public double? TopRungCeiling { get; set; }
+
+    /// <summary>Lowest bitrate a rung was allowed to ship at.</summary>
+    [JsonPropertyName("bitrateFloorBps")]
+    public long? BitrateFloorBps { get; set; }
 
     /// <summary>Bitrates at which the envelope hands over from one resolution to the next, keyed "1080p&gt;720p".</summary>
     [JsonPropertyName("crossoverBps")]

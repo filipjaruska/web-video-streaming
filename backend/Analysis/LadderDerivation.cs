@@ -89,13 +89,34 @@ public sealed class LadderDerivation {
     private const double GapRatioWarning = 2.5;
     private const double GapQualityWarning = 20.0;
 
-    private const long BitrateFloorBps = 100_000;
+    /// <summary>
+    /// Lowest bitrate a rung is shipped at. Enforced during selection, not by raising the shipped
+    /// number afterwards: a rung measured at 60 kb/s but packaged at the floor gets more bits than
+    /// its sample had and lands well above its predicted quality, and several rungs raised to the
+    /// same floor collapse into identical bitrates.
+    /// </summary>
+    internal const long BitrateFloorBps = 100_000;
 
     /// <summary>
     /// Rounding applied to the shipped bitrates. Kept fine: 50 kb/s steps would be ±7 % on a
     /// 370 kb/s rung — about 2.6 VMAF on a curve climbing 26 points per doubling.
     /// </summary>
     private const int RoundToKbps = 10;
+
+    /// <summary>How <see cref="ChooseLambda"/> arrived at λ, stored so the value can be traced back to its rule.</summary>
+    internal static class LambdaRules {
+        /// <summary>The base slope already put the top rung inside its quality range.</summary>
+        public const string Base = "base";
+
+        /// <summary>At the base slope the top rung exceeded the ceiling; λ was raised until it no longer does.</summary>
+        public const string Ceiling = "ceiling";
+
+        /// <summary>At the base slope the top rung fell under the floor; λ was lowered until it clears it.</summary>
+        public const string Floor = "floor";
+
+        /// <summary>As <see cref="Floor"/>, but the top resolution never reaches the floor, so λ was lowered to its best sample.</summary>
+        public const string Reachable = "reachable";
+    }
 
     /// <summary>How finely the log-rate axis is scanned to find where each resolution wins.</summary>
     private const int EnvelopeSamples = 4000;
@@ -213,7 +234,7 @@ public sealed class LadderDerivation {
         }
 
         var pooledHull = UpperHull(hulls.SelectMany(hull => hull.Points).OrderBy(LogRate).ToList());
-        var lambda = ChooseLambda(top);
+        var (lambda, lambdaRule) = ChooseLambda(top);
         var dropped = new Dictionary<string, string>();
         var emptyWindows = new List<EnvelopeWindow>();
         var warnings = new List<string>();
@@ -260,9 +281,38 @@ public sealed class LadderDerivation {
                 continue;
             }
 
+            // A sample under the floor would be shipped at the floor, i.e. at a rate it was never
+            // measured at. Take the cheapest measured vertex that clears the floor instead, still
+            // inside the window and under the cap — the closest operating point that can be
+            // shipped as measured.
+            var raisedToFloor = false;
+            if (BelowBitrateFloor(point.BitrateBps)) {
+                var floored = hull.Points
+                    .Where(candidate =>
+                        !BelowBitrateFloor(candidate.BitrateBps) &&
+                        !FallsShort(candidate.BitrateBps, window.LowBps) &&
+                        (cap is not { } ceiling || !Exceeds(candidate.BitrateBps, ceiling)))
+                    .MinBy(candidate => candidate.BitrateBps);
+
+                if (floored == null) {
+                    if (window.HighBps > BitrateFloorBps) {
+                        dropped[hull.Label] = $"no measured sample between the {FloorLabel} bitrate floor and the top of the window where it is the best resolution";
+                        emptyWindows.Add(window with { LowBps = Math.Max(window.LowBps, BitrateFloorBps) });
+                    } else {
+                        dropped[hull.Label] = $"the best resolution only below the {FloorLabel} bitrate floor";
+                    }
+
+                    continue;
+                }
+
+                point = floored;
+                raisedToFloor = true;
+            }
+
             var slope = LocalSlope(hull, point);
             var atBoundary =
                 !capped &&
+                !raisedToFloor &&
                 ReferenceEquals(point, hull.Points[^1]) &&
                 lowestCrf.TryGetValue(hull.Height, out var minCrf) &&
                 point.Crf == minCrf &&
@@ -275,6 +325,7 @@ public sealed class LadderDerivation {
                 slope,
                 capped,
                 atBoundary,
+                raisedToFloor,
                 cap is { } c && !double.IsInfinity(c) ? c : null,
                 window,
                 HullDeficit(pooledHull, point)));
@@ -287,8 +338,17 @@ public sealed class LadderDerivation {
 
         warnings.AddRange(GapWarnings(spaced));
 
-        return new LadderPlan(null, lambda, hulls, spaced, envelope, pooledHull, dropped, emptyWindows, warnings);
+        return new LadderPlan(null, lambda, lambdaRule, hulls, spaced, envelope, pooledHull, dropped, emptyWindows, warnings);
     }
+
+    /// <summary>The bitrate a sample ships at once rounded to <see cref="RoundToKbps"/>.</summary>
+    private static long ShippedKbps(long bps) =>
+        (long)Math.Round(bps / 1000.0 / RoundToKbps) * RoundToKbps;
+
+    private static bool BelowBitrateFloor(long bps) => ShippedKbps(bps) < BitrateFloorBps / 1000;
+
+    private static string FloorLabel =>
+        string.Create(CultureInfo.InvariantCulture, $"{BitrateFloorBps / 1_000_000.0:0.##} Mb/s");
 
     private static bool IsUsable(EncodeGridPoint point, double qualityFloor) =>
         string.IsNullOrEmpty(point.Error) &&
@@ -527,7 +587,8 @@ public sealed class LadderDerivation {
 
     /// <summary>
     /// Picks the Lagrange multiplier λ: the base slope, pulled back only far enough to keep the top
-    /// rung inside its quality range.
+    /// rung inside its quality range. Returns which of those cases applied, so a λ other than the
+    /// base can be traced to the bound that moved it.
     /// </summary>
     /// <remarks>
     /// For a given λ, maximizing Q − λ·log₂(R) on a concave hull lands on the vertex where the
@@ -536,18 +597,22 @@ public sealed class LadderDerivation {
     /// behind convex-hull ladder design: picking each rung at a fixed target score instead spends
     /// bits unevenly, over-paying wherever that resolution's curve happens to be flat.
     /// </remarks>
-    internal static double ChooseLambda(ResolutionHull top) {
+    internal static (double Lambda, string Rule) ChooseLambda(ResolutionHull top) {
         var reachable = top.Points.Max(point => point.DecisionQuality);
         var lambda = LambdaBaseSlope;
 
         // Larger λ prices bits higher, so it selects a cheaper, lower-quality vertex.
         if (Optimal(top, lambda).DecisionQuality > TopRungCeiling) {
-            lambda = Search(top, TopRungCeiling, lambda, lambda * 64);
-        } else if (Optimal(top, lambda).DecisionQuality < Math.Min(TopRungFloor, reachable)) {
-            lambda = Search(top, Math.Min(TopRungFloor, reachable), lambda / 64, lambda);
+            return (Search(top, TopRungCeiling, lambda, lambda * 64), LambdaRules.Ceiling);
         }
 
-        return lambda;
+        if (Optimal(top, lambda).DecisionQuality < Math.Min(TopRungFloor, reachable)) {
+            return reachable < TopRungFloor
+                ? (Search(top, reachable, lambda / 64, lambda), LambdaRules.Reachable)
+                : (Search(top, TopRungFloor, lambda / 64, lambda), LambdaRules.Floor);
+        }
+
+        return (lambda, LambdaRules.Base);
 
         // Bisects for the largest λ — the cheapest ladder — whose top rung still clears `target`.
         static double Search(ResolutionHull top, double target, double low, double high) {
@@ -603,7 +668,7 @@ public sealed class LadderDerivation {
             var cheaper = rung.Hull.Points
                 .Where(point =>
                     point.BitrateBps <= ceiling &&
-                    point.BitrateBps >= BitrateFloorBps &&
+                    !BelowBitrateFloor(point.BitrateBps) &&
                     !FallsShort(point.BitrateBps, rung.Window.LowBps))
                 .MaxBy(point => point.BitrateBps);
 
@@ -621,6 +686,7 @@ public sealed class LadderDerivation {
                 Slope = LocalSlope(rung.Hull, cheaper),
                 Capped = true,
                 AtGridBoundary = false,
+                RaisedToFloor = false,
                 CapBps = ceiling,
                 HullDeficit = HullDeficit(pooledHull, cheaper)
             });
@@ -667,9 +733,8 @@ public sealed class LadderDerivation {
         var derived = new List<DerivedLadderVariant>();
 
         foreach (var rung in plan.Rungs.OrderByDescending(item => item.Hull.Height)) {
-            var kbps = Math.Max(
-                BitrateFloorBps / 1000,
-                (long)Math.Round(rung.Point.BitrateBps / 1000.0 / RoundToKbps) * RoundToKbps);
+            // Selection already keeps every rung at or above the floor, so this is the measured rate.
+            var kbps = ShippedKbps(rung.Point.BitrateBps);
 
             var bitrate = $"{kbps}k";
             var resolution = $"{rung.Hull.Width}:{rung.Hull.Height}";
@@ -689,7 +754,8 @@ public sealed class LadderDerivation {
                 HullDeficit = Math.Round(rung.HullDeficit, 3),
                 Capped = rung.Capped,
                 CapBps = rung.CapBps is { } cap ? (long)Math.Round(cap) : null,
-                AtGridBoundary = rung.AtGridBoundary
+                AtGridBoundary = rung.AtGridBoundary,
+                RaisedToFloor = rung.RaisedToFloor ? true : null
             });
         }
 
@@ -740,6 +806,11 @@ public sealed class LadderDerivation {
             Name = name,
             Variants = variants,
             Lambda = plan.Lambda,
+            LambdaRule = plan.LambdaRule,
+            LambdaBase = LambdaBaseSlope,
+            TopRungFloor = TopRungFloor,
+            TopRungCeiling = TopRungCeiling,
+            BitrateFloorBps = BitrateFloorBps,
             CrossoverBps = crossovers.Count > 0
                 ? crossovers.GroupBy(item => item.Key).ToDictionary(group => group.Key, group => group.Last().BitrateBps)
                 : null,
@@ -796,17 +867,19 @@ public sealed class LadderDerivation {
                 variant.PredictedVmafHarmonic != null
                     ? $"{variant.Bitrate} (CRF {variant.Crf}, pred. harm. VMAF {Format(variant.PredictedVmafHarmonic)})" +
                       (variant.Capped == true ? ", capped at crossover" : "") +
-                      (variant.AtGridBoundary == true ? ", at grid edge" : "")
+                      (variant.AtGridBoundary == true ? ", at grid edge" : "") +
+                      (variant.RaisedToFloor == true ? ", raised to bitrate floor" : "")
                     : variant.Fallback == true
                         ? $"{variant.Bitrate} (default — no measurement)"
                         : variant.Bitrate))
             .ToList();
 
         children.Insert(0, Leaf($"{key}.lambda", "Hull slope (λ)", Format(document.Lambda)));
-        children.Insert(1, Leaf($"{key}.floor", "Quality floor (harm. VMAF)", Format(document.QualityFloor)));
+        children.Insert(1, Leaf($"{key}.lambdaRule", "λ rule", DescribeLambdaRule(document)));
+        children.Insert(2, Leaf($"{key}.floor", "Quality floor (harm. VMAF)", Format(document.QualityFloor)));
 
         if (options.CambiPenaltyWeight > 0) {
-            children.Insert(2, Leaf(
+            children.Insert(3, Leaf(
                 $"{key}.cambiPenalty",
                 "CAMBI penalty",
                 $"{Format(options.CambiPenaltyWeight)} VMAF per CAMBI unit"));
@@ -843,6 +916,20 @@ public sealed class LadderDerivation {
             value?.ToString("0.##", CultureInfo.InvariantCulture) ?? "—";
     }
 
+    private static string DescribeLambdaRule(DerivedLadderDocument document) {
+        var range = string.Create(
+            CultureInfo.InvariantCulture,
+            $"harm. VMAF {document.TopRungFloor:0.##}–{document.TopRungCeiling:0.##}");
+        var start = string.Create(CultureInfo.InvariantCulture, $"base slope {document.LambdaBase:0.##}");
+
+        return document.LambdaRule switch {
+            LambdaRules.Ceiling => $"raised from the {start}: the top rung there exceeded {range}",
+            LambdaRules.Floor => $"lowered from the {start}: the top rung there fell short of {range}",
+            LambdaRules.Reachable => $"lowered from the {start} to the top resolution's best sample, which stays under {range}",
+            _ => $"{start}: the top rung already lies inside {range}"
+        };
+    }
+
     private static LadderDerivationResult Fail(string message) =>
         new() { Success = false, ErrorMessage = message };
 
@@ -866,6 +953,7 @@ public sealed class LadderDerivation {
         double? Slope,
         bool Capped,
         bool AtGridBoundary,
+        bool RaisedToFloor,
         double? CapBps,
         EnvelopeWindow Window,
         double HullDeficit);
@@ -873,6 +961,7 @@ public sealed class LadderDerivation {
     internal sealed record LadderPlan(
         string? Error,
         double Lambda,
+        string LambdaRule,
         List<ResolutionHull> Hulls,
         List<PlannedRung> Rungs,
         Envelope Envelope,
@@ -881,7 +970,7 @@ public sealed class LadderDerivation {
         List<EnvelopeWindow> EmptyWindows,
         List<string> Warnings) {
         internal static LadderPlan Failed(string error) =>
-            new(error, 0, [], [], new Envelope(new Dictionary<int, EnvelopeWindow>(), []), [], new Dictionary<string, string>(), [], []);
+            new(error, 0, LambdaRules.Base, [], [], new Envelope(new Dictionary<int, EnvelopeWindow>(), []), [], new Dictionary<string, string>(), [], []);
     }
 
     private sealed class Run {

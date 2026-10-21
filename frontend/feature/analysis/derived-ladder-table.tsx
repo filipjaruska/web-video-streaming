@@ -59,6 +59,15 @@ function rungFlags(variant: DerivedLadderVariant): RungFlag[] {
     });
   }
 
+  if (variant.raisedToFloor) {
+    flags.push({
+      label: "floor",
+      title:
+        "The shared-slope point lay under the bitrate floor, so the rung was moved up to the cheapest measured sample that clears it — it ships at the rate it was measured at.",
+      variant: "secondary",
+    });
+  }
+
   if (variant.fallback) {
     flags.push({
       label: "fallback",
@@ -76,6 +85,27 @@ function rungFlags(variant: DerivedLadderVariant): RungFlag[] {
   }
 
   return flags;
+}
+
+/** Which top-rung bound, if any, moved λ off its base slope. */
+function describeLambdaRule(ladder: DerivedLadderDocument): string | null {
+  if (!ladder.lambdaRule || ladder.lambdaBase == null) {
+    return null;
+  }
+
+  const base = formatNumber(ladder.lambdaBase);
+  const range = `harmonic VMAF ${formatNumber(ladder.topRungFloor)}–${formatNumber(ladder.topRungCeiling)}`;
+
+  switch (ladder.lambdaRule) {
+    case "ceiling":
+      return `λ starts at ${base}; there the top rung exceeded ${range}, so λ was raised until it no longer does.`;
+    case "floor":
+      return `λ starts at ${base}; there the top rung fell short of ${range}, so λ was lowered until it clears the floor.`;
+    case "reachable":
+      return `λ starts at ${base}; the top resolution never reaches ${range}, so λ was lowered to its best sample.`;
+    default:
+      return `λ is the base slope ${base}: the top rung already lies inside ${range}.`;
+  }
 }
 
 /**
@@ -113,6 +143,7 @@ export function DerivedLadderTable({
         variant.capped ?? "",
         variant.capBps ?? "",
         variant.atGridBoundary ?? "",
+        variant.raisedToFloor ?? "",
         variant.fallback ?? "",
       ]),
     [ladder],
@@ -142,6 +173,10 @@ export function DerivedLadderTable({
     notes.push(
       `Shared hull slope λ = ${ladder.lambda.toFixed(2)} VMAF per bitrate doubling — every rung is taken at this same trade-off, which is what makes the ladder content-adaptive rather than a fixed target.`,
     );
+    const rule = describeLambdaRule(ladder);
+    if (rule) {
+      notes.push(rule);
+    }
   }
   if (ladder.qualityFloor != null) {
     notes.push(
@@ -184,6 +219,7 @@ export function DerivedLadderTable({
               "capped",
               "cap_bps",
               "at_grid_boundary",
+              "raised_to_floor",
               "fallback",
             ]}
             rows={exportRows}
