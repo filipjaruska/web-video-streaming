@@ -283,9 +283,16 @@ public sealed class DerivedLadderVariant {
     [JsonPropertyName("predictedVmafMin")]
     public double? PredictedVmafMin { get; set; }
 
-    /// <summary>CRF of the grid point this rung was taken from.</summary>
+    /// <summary>CRF of the grid sample the rung sits on; null when its rate falls between two samples.</summary>
     [JsonPropertyName("crf")]
     public int? Crf { get; set; }
+
+    /// <summary>
+    /// When the rung's rate falls between two grid samples: their CRFs, lower bitrate first. The
+    /// predicted scores are read off the hull between them.
+    /// </summary>
+    [JsonPropertyName("interpolatedBetweenCrf")]
+    public List<int>? InterpolatedBetweenCrf { get; set; }
 
     /// <summary>Local hull slope ΔVMAF/Δlog₂(bitrate) at the operating point.</summary>
     [JsonPropertyName("hullSlope")]
@@ -300,15 +307,25 @@ public sealed class DerivedLadderVariant {
     public double? HullDeficit { get; set; }
 
     /// <summary>
-    /// True when the shared-slope operating point lay above the bitrate at which the next
-    /// resolution up takes over, so the rung was pulled down to stay on the envelope.
+    /// The rule that put the rung at its bitrate: "lambda" (its λ point lies inside its admissible
+    /// interval), or the bound it was clamped to — "window" (bottom of the window where its
+    /// resolution is best), "cap" (the crossover above), "spacing" (×1.5 below the rung above) or
+    /// "floor" (the bitrate floor).
     /// </summary>
-    [JsonPropertyName("capped")]
-    public bool? Capped { get; set; }
+    [JsonPropertyName("placement")]
+    public string? Placement { get; set; }
 
-    /// <summary>The bitrate the rung was capped at — its resolution's upper crossover.</summary>
-    [JsonPropertyName("capBps")]
-    public long? CapBps { get; set; }
+    /// <summary>Bitrate of its resolution's λ point, where it would sit unclamped.</summary>
+    [JsonPropertyName("lambdaPointBps")]
+    public long? LambdaPointBps { get; set; }
+
+    /// <summary>Lower end of its admissible interval.</summary>
+    [JsonPropertyName("intervalLowBps")]
+    public long? IntervalLowBps { get; set; }
+
+    /// <summary>Upper end of its admissible interval; absent for the top rung, which has none.</summary>
+    [JsonPropertyName("intervalHighBps")]
+    public long? IntervalHighBps { get; set; }
 
     /// <summary>
     /// True when the rung is the lowest-CRF sample of its resolution and the hull is still steeper
@@ -317,14 +334,6 @@ public sealed class DerivedLadderVariant {
     /// </summary>
     [JsonPropertyName("atGridBoundary")]
     public bool? AtGridBoundary { get; set; }
-
-    /// <summary>
-    /// True when the shared-slope operating point lay under the bitrate floor, so the rung was
-    /// moved up to the cheapest measured sample that clears it rather than shipped at a rate it
-    /// was never measured at.
-    /// </summary>
-    [JsonPropertyName("raisedToFloor")]
-    public bool? RaisedToFloor { get; set; }
 
     /// <summary>A default-ladder rung added only because its resolution produced no measurement at all.</summary>
     [JsonPropertyName("fallback")]

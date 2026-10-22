@@ -38,11 +38,6 @@ public sealed class EncodeGrid {
     /// <summary>Quality gap next to a selected rung wide enough to justify another encode.</summary>
     private const double MaxQualityGap = 2.5;
 
-    /// <summary>A capped rung is sampled this far under its crossover, so the sample lands inside the window.</summary>
-    private const double CapTargetFraction = 0.97;
-
-    /// <summary>A rung raised to the bitrate floor is sampled this far above it, so the sample clears the floor.</summary>
-    private const double FloorTargetFactor = 1.03;
 
     private readonly Transcoder _transcoder;
     private readonly VmafAnalyzer _vmaf;
@@ -182,9 +177,9 @@ public sealed class EncodeGrid {
     /// </summary>
     /// <remarks>
     /// Priority 1 — a rung at the grid's lowest CRF with the hull still steeper than λ: extend below.
-    /// Priority 2 — a rung capped by a crossover, or a resolution with no sample inside its window:
-    /// sample just under the cap (that sample usually becomes the rung). Likewise a rung raised to
-    /// the bitrate floor: sample just above the floor.
+    /// Priority 2 — a rung clamped to a bound of its admissible interval: sample at the rung's own
+    /// rate, so its predicted quality rests on a nearby sample. Also a resolution whose interval
+    /// lies past its highest sample: sample inside that interval.
     /// Priority 3 — each crossover: sample the resolution taking over, and extend the lower one
     /// when the crossover lies past its last sample.
     /// Priority 4 — a quality gap next to a selected rung.
@@ -238,19 +233,18 @@ public sealed class EncodeGrid {
                 Add(height, extended, 1, "tangent point lies past the grid's lowest CRF");
             }
 
-            if (rung.Capped && rung.CapBps is { } cap) {
-                Add(height, CrfForRate(samples, cap * CapTargetFraction), 2, "just under the crossover that caps this rung");
-            }
-
-            if (rung.RaisedToFloor) {
+            // A clamped rung's quality is read off the hull between two samples; one at its own rate
+            // makes that reading a measurement.
+            if (rung.Placement != LadderDerivation.Placements.Lambda && !rung.Prediction.OnVertex) {
                 Add(
                     height,
-                    CrfForRate(samples, LadderDerivation.BitrateFloorBps * FloorTargetFactor),
+                    CrfForRate(samples, rung.BitrateBps),
                     2,
-                    "just above the bitrate floor this rung was raised to");
+                    $"at the {rung.Placement} bound this rung is clamped to");
             }
 
-            var index = samples.FindIndex(point => ReferenceEquals(point, rung.Point));
+            var anchor = rung.Anchor;
+            var index = samples.FindIndex(point => ReferenceEquals(point, anchor));
             if (index < 0) {
                 continue;
             }
@@ -261,12 +255,12 @@ public sealed class EncodeGrid {
                 }
 
                 var neighbour = samples[neighbourIndex];
-                if (Math.Abs(neighbour.Crf - rung.Point.Crf) < 2 ||
-                    Math.Abs(neighbour.RawQuality - rung.Point.RawQuality) <= MaxQualityGap) {
+                if (Math.Abs(neighbour.Crf - anchor.Crf) < 2 ||
+                    Math.Abs(neighbour.RawQuality - anchor.RawQuality) <= MaxQualityGap) {
                     continue;
                 }
 
-                Add(height, (neighbour.Crf + rung.Point.Crf) / 2, 4, "quality gap next to the selected rung");
+                Add(height, (neighbour.Crf + anchor.Crf) / 2, 4, "quality gap next to the selected rung");
             }
         }
 

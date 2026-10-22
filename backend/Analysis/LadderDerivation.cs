@@ -90,10 +90,10 @@ public sealed class LadderDerivation {
     private const double GapQualityWarning = 20.0;
 
     /// <summary>
-    /// Lowest bitrate a rung is shipped at. Enforced during selection, not by raising the shipped
-    /// number afterwards: a rung measured at 60 kb/s but packaged at the floor gets more bits than
-    /// its sample had and lands well above its predicted quality, and several rungs raised to the
-    /// same floor collapse into identical bitrates.
+    /// Lowest bitrate a rung is shipped at — the lower bound of every admissible interval. Enforced
+    /// during selection, with the rung's quality predicted at the rate it ships at: raising the
+    /// shipped number afterwards left the prediction at the lower rate, and several rungs raised to
+    /// the same floor collapsed into identical bitrates.
     /// </summary>
     internal const long BitrateFloorBps = 100_000;
 
@@ -110,7 +110,8 @@ public sealed class LadderDerivation {
 
         /// <summary>
         /// At the base slope the top rung exceeded the ceiling; λ was raised as far as it goes while the
-        /// top rung still reaches it — onto the cheapest measured sample at or above the ceiling.
+        /// top rung still reaches it — onto the cheapest measured sample at or above the ceiling — or,
+        /// when even the bottom of its window lies above the ceiling, just far enough to pin it there.
         /// </summary>
         public const string Ceiling = "ceiling";
 
@@ -119,6 +120,28 @@ public sealed class LadderDerivation {
 
         /// <summary>As <see cref="Floor"/>, but the top resolution never reaches the floor, so λ was lowered to its best sample.</summary>
         public const string Reachable = "reachable";
+    }
+
+    /// <summary>
+    /// Which rule put a rung at its bitrate. Every rung is taken at its resolution's λ point; when
+    /// that point lies outside the rung's admissible interval, the rung goes to the nearest end of
+    /// the interval instead, named by the bound that set that end.
+    /// </summary>
+    internal static class Placements {
+        /// <summary>The λ point lies inside the interval.</summary>
+        public const string Lambda = "lambda";
+
+        /// <summary>Raised to the bitrate where its resolution starts to be the best one.</summary>
+        public const string Window = "window";
+
+        /// <summary>Lowered to the crossover above which the next resolution up is the better one.</summary>
+        public const string Cap = "cap";
+
+        /// <summary>Lowered to ×<see cref="MinRungSpacing"/> below the rung above.</summary>
+        public const string Spacing = "spacing";
+
+        /// <summary>Raised to <see cref="BitrateFloorBps"/>.</summary>
+        public const string Floor = "floor";
     }
 
     /// <summary>How finely the log-rate axis is scanned to find where each resolution wins.</summary>
@@ -155,6 +178,19 @@ public sealed class LadderDerivation {
             }
 
             MarkGlobalHull(plan.PooledHull, points);
+
+            foreach (var rung in plan.Rungs) {
+                _logger.LogInformation(
+                    "{Name} {Label}: {Bitrate} kb/s by {Placement} rule — λ point {LambdaPoint} kb/s, interval [{Low}, {High}] kb/s, predicted harm. VMAF {Predicted:0.##}",
+                    options.ProfileName,
+                    rung.Hull.Label,
+                    rung.BitrateBps / 1000,
+                    rung.Placement,
+                    rung.LambdaPoint.BitrateBps / 1000,
+                    Math.Round(rung.IntervalLowBps / 1000),
+                    rung.IntervalHighBps is { } high ? Math.Round(high / 1000).ToString(CultureInfo.InvariantCulture) : "∞",
+                    rung.Prediction.VmafHarmonicMean);
+            }
 
             var (variants, derivedVariants) = BuildVariants(plan, points);
 
@@ -237,7 +273,7 @@ public sealed class LadderDerivation {
         }
 
         var pooledHull = UpperHull(hulls.SelectMany(hull => hull.Points).OrderBy(LogRate).ToList());
-        var (lambda, lambdaRule) = ChooseLambda(top);
+        var (lambda, lambdaRule) = ChooseLambda(top, envelope.Windows[top.Height]);
         var dropped = new Dictionary<string, string>();
         var emptyWindows = new List<EnvelopeWindow>();
         var warnings = new List<string>();
@@ -247,6 +283,10 @@ public sealed class LadderDerivation {
             .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0)
             .GroupBy(point => point.Height)
             .ToDictionary(group => group.Key, group => group.Min(point => point.Crf));
+
+        // Top rung first, so each rung's spacing bound comes from the final rung above it.
+        long? above = null;
+        string? aboveLabel = null;
 
         foreach (var hull in hulls) {
             if (!envelope.Windows.TryGetValue(hull.Height, out var window)) {
@@ -258,100 +298,107 @@ public sealed class LadderDerivation {
                 warnings.Add($"{hull.Label} wins in more than one disjoint bitrate range; the highest one is used.");
             }
 
-            var isTop = ReferenceEquals(hull, top);
-            var point = Optimal(hull, lambda);
+            var (low, high) = AdmissibleInterval(window, above, aboveLabel);
+            var measuredTop = hull.Points[^1].BitrateBps;
 
-            // Above its window a lower resolution is simply the wrong choice: the next one up is
-            // better at that bitrate. Only the top resolution has no ceiling.
-            double? cap = isTop ? null : window.HighBps;
-            var capped = cap is { } limit && !double.IsInfinity(limit) && Exceeds(point.BitrateBps, limit);
+            if (FallsShort(Math.Min(high.Bps, measuredTop), low.Bps)) {
+                dropped[hull.Label] = low.Bps > measuredTop && high.Bps > measuredTop
+                    ? $"its interval starts at {Mbps(low.Bps)} ({low.Describe}), above its highest grid sample at {Mbps(measuredTop)}"
+                    : $"its admissible interval is empty: {low.Describe} at {Mbps(low.Bps)} lies above {high.Describe} at {Mbps(high.Bps)}";
 
-            if (capped) {
-                point = hull.Points
-                    .Where(candidate => !Exceeds(candidate.BitrateBps, cap!.Value))
-                    .MaxBy(candidate => candidate.BitrateBps);
-            }
+                // The resolution would have room if its curve were sampled that far up.
+                if (low.Bps > measuredTop && high.Bps > measuredTop) {
+                    emptyWindows.Add(window with { LowBps = low.Bps });
+                }
 
-            if (isTop && point != null && FallsShort(point.BitrateBps, window.LowBps)) {
-                point = hull.Points
-                    .Where(candidate => !FallsShort(candidate.BitrateBps, window.LowBps))
-                    .MinBy(candidate => candidate.BitrateBps);
-            }
-
-            if (point == null || FallsShort(point.BitrateBps, window.LowBps)) {
-                dropped[hull.Label] = "no measured sample inside the bitrate window where it is the best resolution";
-                emptyWindows.Add(window);
                 continue;
             }
 
-            // A sample under the floor would be shipped at the floor, i.e. at a rate it was never
-            // measured at. Take the cheapest measured vertex that clears the floor instead, still
-            // inside the window and under the cap — the closest operating point that can be
-            // shipped as measured.
-            var raisedToFloor = false;
-            if (BelowBitrateFloor(point.BitrateBps)) {
-                var floored = hull.Points
-                    .Where(candidate =>
-                        !BelowBitrateFloor(candidate.BitrateBps) &&
-                        !FallsShort(candidate.BitrateBps, window.LowBps) &&
-                        (cap is not { } ceiling || !Exceeds(candidate.BitrateBps, ceiling)))
-                    .MinBy(candidate => candidate.BitrateBps);
+            var lambdaPoint = Optimal(hull, lambda);
+            var (target, placement) =
+                FallsShort(lambdaPoint.BitrateBps, low.Bps) ? (low.Bps, low.Rule)
+                : Exceeds(lambdaPoint.BitrateBps, high.Bps) ? (high.Bps, high.Rule)
+                : (lambdaPoint.BitrateBps, Placements.Lambda);
 
-                if (floored == null) {
-                    if (window.HighBps > BitrateFloorBps) {
-                        dropped[hull.Label] = $"no measured sample between the {FloorLabel} bitrate floor and the top of the window where it is the best resolution";
-                        emptyWindows.Add(window with { LowBps = Math.Max(window.LowBps, BitrateFloorBps) });
-                    } else {
-                        dropped[hull.Label] = $"the best resolution only below the {FloorLabel} bitrate floor";
-                    }
+            var bitrate = ShipBps(target, low.Bps, high.Bps);
+            var prediction = PredictAt(hull, bitrate);
+            var slope = prediction.OnVertex ? LocalSlope(hull, prediction.Vertex) : prediction.SegmentSlope;
 
-                    continue;
-                }
-
-                point = floored;
-                raisedToFloor = true;
-            }
-
-            var slope = LocalSlope(hull, point);
             var atBoundary =
-                !capped &&
-                !raisedToFloor &&
-                ReferenceEquals(point, hull.Points[^1]) &&
+                placement == Placements.Lambda &&
+                ReferenceEquals(lambdaPoint, hull.Points[^1]) &&
                 lowestCrf.TryGetValue(hull.Height, out var minCrf) &&
-                point.Crf == minCrf &&
+                lambdaPoint.Crf == minCrf &&
                 (slope == null || slope > lambda) &&
-                !(isTop && point.DecisionQuality >= TopRungCeiling);
+                !(ReferenceEquals(hull, top) && lambdaPoint.DecisionQuality >= TopRungCeiling);
 
             rungs.Add(new PlannedRung(
                 hull,
-                point,
+                bitrate,
+                placement,
+                prediction,
+                lambdaPoint,
                 slope,
-                capped,
                 atBoundary,
-                raisedToFloor,
-                cap is { } c && !double.IsInfinity(c) ? c : null,
+                low.Bps,
+                double.IsInfinity(high.Bps) ? null : high.Bps,
                 window,
-                HullDeficit(pooledHull, point)));
+                HullDeficit(pooledHull, bitrate, prediction.DecisionQuality)));
+
+            above = bitrate;
+            aboveLabel = hull.Label;
         }
 
-        var spaced = Space(rungs, pooledHull, dropped);
-        if (spaced.Count == 0) {
+        if (rungs.Count == 0) {
             return LadderPlan.Failed("No operating point survived selection");
         }
 
-        warnings.AddRange(GapWarnings(spaced));
+        warnings.AddRange(GapWarnings(rungs));
 
-        return new LadderPlan(null, lambda, lambdaRule, hulls, spaced, envelope, pooledHull, dropped, emptyWindows, warnings);
+        return new LadderPlan(null, lambda, lambdaRule, hulls, rungs, envelope, pooledHull, dropped, emptyWindows, warnings);
     }
 
-    /// <summary>The bitrate a sample ships at once rounded to <see cref="RoundToKbps"/>.</summary>
-    private static long ShippedKbps(long bps) =>
-        (long)Math.Round(bps / 1000.0 / RoundToKbps) * RoundToKbps;
+    /// <summary>One end of a rung's admissible interval and the rule that set it.</summary>
+    private readonly record struct Bound(double Bps, string Rule, string Describe);
 
-    private static bool BelowBitrateFloor(long bps) => ShippedKbps(bps) < BitrateFloorBps / 1000;
+    /// <summary>
+    /// The bitrates a rung may take: no lower than where its resolution starts to win or the floor,
+    /// no higher than where the next resolution up takes over or ×<see cref="MinRungSpacing"/>
+    /// below the rung above, whichever bound is tighter on each side.
+    /// </summary>
+    private static (Bound Low, Bound High) AdmissibleInterval(EnvelopeWindow window, long? above, string? aboveLabel) {
+        var low = window.LowBps >= BitrateFloorBps
+            ? new Bound(window.LowBps, Placements.Window, $"the bottom of its {window.Label} window")
+            : new Bound(BitrateFloorBps, Placements.Floor, "the bitrate floor");
 
-    private static string FloorLabel =>
-        string.Create(CultureInfo.InvariantCulture, $"{BitrateFloorBps / 1_000_000.0:0.##} Mb/s");
+        var high = new Bound(window.HighBps, Placements.Cap, "the crossover above it");
+        if (above is { } upper && upper / MinRungSpacing < high.Bps) {
+            high = new Bound(upper / MinRungSpacing, Placements.Spacing, $"×{MinRungSpacing} below {aboveLabel}");
+        }
+
+        return (low, high);
+    }
+
+    /// <summary>
+    /// <paramref name="bps"/> rounded to <see cref="RoundToKbps"/>, kept inside the interval where a
+    /// multiple of the step fits in it.
+    /// </summary>
+    private static long ShipBps(double bps, double low, double high) {
+        const double step = RoundToKbps * 1000.0;
+        var shipped = Math.Round(bps / step) * step;
+        if (Exceeds((long)shipped, high)) {
+            shipped = Math.Floor(high / step) * step;
+        }
+
+        if (FallsShort((long)shipped, low)) {
+            shipped = Math.Ceiling(low / step) * step;
+        }
+
+        return (long)shipped;
+    }
+
+    private static string Mbps(double bps) =>
+        string.Create(CultureInfo.InvariantCulture, $"{bps / 1_000_000.0:0.###} Mb/s");
 
     private static bool IsUsable(EncodeGridPoint point, double qualityFloor) =>
         string.IsNullOrEmpty(point.Error) &&
@@ -359,9 +406,9 @@ public sealed class LadderDerivation {
         point.RawQuality >= qualityFloor &&
         point.DecisionQuality > 0;
 
-    private static bool Exceeds(long bps, double bound) => bps > bound * (1 + RateTolerance);
+    private static bool Exceeds(double bps, double bound) => bps > bound * (1 + RateTolerance);
 
-    private static bool FallsShort(long bps, double bound) => bps < bound * (1 - RateTolerance);
+    private static bool FallsShort(double bps, double bound) => bps < bound * (1 - RateTolerance);
 
     // ---- Hull construction -------------------------------------------------------------------
 
@@ -581,9 +628,33 @@ public sealed class LadderDerivation {
     }
 
     /// <summary>How far a rung sits below the pooled convex hull at its own bitrate — zero on the hull.</summary>
-    private static double HullDeficit(List<EncodeGridPoint> pooledHull, EncodeGridPoint point) {
-        var hullQuality = QualityAt(pooledHull, LogRate(point));
-        return double.IsNegativeInfinity(hullQuality) ? 0 : Math.Max(0, hullQuality - point.DecisionQuality);
+    private static double HullDeficit(List<EncodeGridPoint> pooledHull, double bitrateBps, double decisionQuality) {
+        var hullQuality = QualityAt(pooledHull, Math.Log2(bitrateBps));
+        return double.IsNegativeInfinity(hullQuality) ? 0 : Math.Max(0, hullQuality - decisionQuality);
+    }
+
+    /// <summary>
+    /// What a resolution is predicted to deliver at a bitrate: read off its hull, linearly in
+    /// log-rate between the two grid samples either side — the same curve the λ point and the
+    /// envelope are taken from. Clamped to the sampled range, which the admissible interval keeps
+    /// every rung inside.
+    /// </summary>
+    internal static RungPrediction PredictAt(ResolutionHull hull, double bitrateBps) {
+        var points = hull.Points;
+        if (bitrateBps <= points[0].BitrateBps) {
+            return new RungPrediction(points[0], points[0], 0);
+        }
+
+        for (var i = 0; i < points.Count - 1; i++) {
+            if (bitrateBps > points[i + 1].BitrateBps) {
+                continue;
+            }
+
+            var t = (Math.Log2(bitrateBps) - LogRate(points[i])) / (LogRate(points[i + 1]) - LogRate(points[i]));
+            return new RungPrediction(points[i], points[i + 1], t);
+        }
+
+        return new RungPrediction(points[^1], points[^1], 0);
     }
 
     // ---- Lagrangian selection ----------------------------------------------------------------
@@ -600,28 +671,41 @@ public sealed class LadderDerivation {
     /// behind convex-hull ladder design: picking each rung at a fixed target score instead spends
     /// bits unevenly, over-paying wherever that resolution's curve happens to be flat.
     /// </remarks>
-    internal static (double Lambda, string Rule) ChooseLambda(ResolutionHull top) {
+    /// <param name="window">The top resolution's window. The top rung that ships is its λ point
+    /// raised to the bottom of that window (or the floor) when it falls below, so λ is judged on
+    /// that rung — judging it on the unclamped point would let the two disagree.</param>
+    internal static (double Lambda, string Rule) ChooseLambda(ResolutionHull top, EnvelopeWindow window) {
+        var low = Math.Max(window.LowBps, BitrateFloorBps);
         var reachable = top.Points.Max(point => point.DecisionQuality);
         var lambda = LambdaBaseSlope;
 
-        // Larger λ prices bits higher, so it selects a cheaper, lower-quality vertex.
-        if (Optimal(top, lambda).DecisionQuality > TopRungCeiling) {
-            return (Search(top, TopRungCeiling, lambda, lambda * 64), LambdaRules.Ceiling);
+        // Larger λ prices bits higher, so it selects a cheaper, lower-quality rung.
+        if (TopQuality(lambda) > TopRungCeiling) {
+            // Pinned to the bottom of its window, the top rung may stay above the ceiling at any λ.
+            // λ is then raised only as far as it takes to pin it there: beyond that it would squeeze
+            // the lower rungs without moving the top one.
+            var pinned = TopQuality(lambda * 64);
+            return pinned >= TopRungCeiling
+                ? (Smallest(candidate => TopQuality(candidate) <= pinned + 1e-9, lambda, lambda * 64), LambdaRules.Ceiling)
+                : (Largest(candidate => TopQuality(candidate) >= TopRungCeiling, lambda, lambda * 64), LambdaRules.Ceiling);
         }
 
-        if (Optimal(top, lambda).DecisionQuality < Math.Min(TopRungFloor, reachable)) {
+        if (TopQuality(lambda) < Math.Min(TopRungFloor, reachable)) {
             return reachable < TopRungFloor
-                ? (Search(top, reachable, lambda / 64, lambda), LambdaRules.Reachable)
-                : (Search(top, TopRungFloor, lambda / 64, lambda), LambdaRules.Floor);
+                ? (Largest(candidate => TopQuality(candidate) >= reachable, lambda / 64, lambda), LambdaRules.Reachable)
+                : (Largest(candidate => TopQuality(candidate) >= TopRungFloor, lambda / 64, lambda), LambdaRules.Floor);
         }
 
         return (lambda, LambdaRules.Base);
 
-        // Bisects for the largest λ — the cheapest ladder — whose top rung still clears `target`.
-        static double Search(ResolutionHull top, double target, double low, double high) {
+        double TopQuality(double candidate) =>
+            PredictAt(top, Math.Max(Optimal(top, candidate).BitrateBps, low)).DecisionQuality;
+
+        // The top rung's quality falls as λ rises, so both predicates flip once over the range.
+        static double Largest(Func<double, bool> holds, double low, double high) {
             for (var i = 0; i < 60; i++) {
                 var mid = (low + high) / 2;
-                if (Optimal(top, mid).DecisionQuality >= target) {
+                if (holds(mid)) {
                     low = mid;
                 } else {
                     high = mid;
@@ -629,6 +713,19 @@ public sealed class LadderDerivation {
             }
 
             return low;
+        }
+
+        static double Smallest(Func<double, bool> holds, double low, double high) {
+            for (var i = 0; i < 60; i++) {
+                var mid = (low + high) / 2;
+                if (holds(mid)) {
+                    high = mid;
+                } else {
+                    low = mid;
+                }
+            }
+
+            return high;
         }
     }
 
@@ -638,72 +735,12 @@ public sealed class LadderDerivation {
         .ThenBy(point => point.BitrateBps)
         .First();
 
-    /// <summary>
-    /// Forces bitrate to fall with resolution and adjacent rungs to stay a real distance apart,
-    /// dropping rungs that collapse into their neighbour.
-    /// </summary>
-    /// <remarks>
-    /// A rung too close to the one above is re-selected onto a cheaper vertex of its own hull
-    /// rather than simply having its bitrate written down. Rewriting the number would leave the
-    /// rung's reported CRF and predicted quality describing an operating point that is not the one
-    /// being shipped — the ladder would be audited against a measurement it no longer corresponds
-    /// to. Re-selecting keeps every published rung backed by a real grid sample, and it may never
-    /// leave the resolution's envelope window.
-    /// </remarks>
-    private static List<PlannedRung> Space(
-        List<PlannedRung> rungs,
-        List<EncodeGridPoint> pooledHull,
-        Dictionary<string, string> dropped) {
-        var spaced = new List<PlannedRung>();
-
-        foreach (var rung in rungs.OrderByDescending(item => item.Hull.Height)) {
-            if (spaced.Count == 0) {
-                spaced.Add(rung);
-                continue;
-            }
-
-            var ceiling = spaced[^1].Point.BitrateBps / MinRungSpacing;
-            if (rung.Point.BitrateBps <= ceiling) {
-                spaced.Add(rung);
-                continue;
-            }
-
-            var cheaper = rung.Hull.Points
-                .Where(point =>
-                    point.BitrateBps <= ceiling &&
-                    !BelowBitrateFloor(point.BitrateBps) &&
-                    !FallsShort(point.BitrateBps, rung.Window.LowBps))
-                .MaxBy(point => point.BitrateBps);
-
-            // Nothing on this resolution's hull is cheap enough to sit clear of the rung above
-            // while staying where the resolution wins, so it would offer an ABR algorithm no
-            // meaningful alternative.
-            if (cheaper == null) {
-                dropped[rung.Hull.Label] =
-                    $"no sample inside its window at least ×{MinRungSpacing} below {spaced[^1].Hull.Label}";
-                continue;
-            }
-
-            spaced.Add(rung with {
-                Point = cheaper,
-                Slope = LocalSlope(rung.Hull, cheaper),
-                Capped = true,
-                AtGridBoundary = false,
-                RaisedToFloor = false,
-                CapBps = ceiling,
-                HullDeficit = HullDeficit(pooledHull, cheaper)
-            });
-        }
-
-        return spaced;
-    }
-
     private static IEnumerable<string> GapWarnings(List<PlannedRung> rungs) {
         for (var i = 1; i < rungs.Count; i++) {
-            var upper = rungs[i - 1].Point;
-            var lower = rungs[i].Point;
+            var upper = rungs[i - 1];
+            var lower = rungs[i];
             var ratio = (double)upper.BitrateBps / lower.BitrateBps;
-            var qualityGap = upper.RawQuality - lower.RawQuality;
+            var qualityGap = upper.Prediction.RawQuality - lower.Prediction.RawQuality;
 
             if (ratio > GapRatioWarning || qualityGap > GapQualityWarning) {
                 yield return string.Create(
@@ -736,31 +773,33 @@ public sealed class LadderDerivation {
         var derived = new List<DerivedLadderVariant>();
 
         foreach (var rung in plan.Rungs.OrderByDescending(item => item.Hull.Height)) {
-            // Selection already keeps every rung at or above the floor, so this is the measured rate.
-            var kbps = ShippedKbps(rung.Point.BitrateBps);
-
-            var bitrate = $"{kbps}k";
+            var bitrate = $"{rung.BitrateBps / 1000}k";
             var resolution = $"{rung.Hull.Width}:{rung.Hull.Height}";
+            var prediction = rung.Prediction;
 
             variants.Add(new TranscodeVariant(resolution, bitrate, rung.Hull.Label));
             derived.Add(new DerivedLadderVariant {
                 Label = rung.Hull.Label,
                 Resolution = resolution,
                 Bitrate = bitrate,
-                BitrateBps = kbps * 1000L,
-                PredictedVmaf = rung.Point.VmafMean,
-                PredictedVmafHarmonic = rung.Point.VmafHarmonicMean,
-                PredictedVmafMin = rung.Point.VmafMin,
-                Crf = rung.Point.Crf,
+                BitrateBps = rung.BitrateBps,
+                PredictedVmaf = Round(prediction.VmafMean),
+                PredictedVmafHarmonic = Round(prediction.VmafHarmonicMean),
+                PredictedVmafMin = Round(prediction.VmafMin),
+                Crf = prediction.OnVertex ? prediction.Vertex.Crf : null,
+                InterpolatedBetweenCrf = prediction.OnVertex ? null : [prediction.Lower.Crf, prediction.Upper.Crf],
                 HullSlope = rung.Slope,
                 OnEnvelope = true,
                 HullDeficit = Math.Round(rung.HullDeficit, 3),
-                Capped = rung.Capped,
-                CapBps = rung.CapBps is { } cap ? (long)Math.Round(cap) : null,
-                AtGridBoundary = rung.AtGridBoundary,
-                RaisedToFloor = rung.RaisedToFloor ? true : null
+                Placement = rung.Placement,
+                LambdaPointBps = rung.LambdaPoint.BitrateBps,
+                IntervalLowBps = (long)Math.Round(rung.IntervalLowBps),
+                IntervalHighBps = rung.IntervalHighBps is { } high ? (long)Math.Round(high) : null,
+                AtGridBoundary = rung.AtGridBoundary
             });
         }
+
+        static double? Round(double? value) => value is { } v ? Math.Round(v, 3) : null;
 
         // A default rung is re-added only for a resolution that produced no measurement at all.
         // A resolution that was measured and dropped is left out on purpose — re-adding it would
@@ -868,10 +907,10 @@ public sealed class LadderDerivation {
                 $"{key}.{variant.Label}",
                 variant.Label,
                 variant.PredictedVmafHarmonic != null
-                    ? $"{variant.Bitrate} (CRF {variant.Crf}, pred. harm. VMAF {Format(variant.PredictedVmafHarmonic)})" +
-                      (variant.Capped == true ? ", capped at crossover" : "") +
-                      (variant.AtGridBoundary == true ? ", at grid edge" : "") +
-                      (variant.RaisedToFloor == true ? ", raised to bitrate floor" : "")
+                    ? $"{variant.Bitrate} — {DescribePlacement(variant.Placement)} " +
+                      $"({(variant.Crf is { } crf ? $"CRF {crf}" : $"between CRF {variant.InterpolatedBetweenCrf?[0]} and {variant.InterpolatedBetweenCrf?[1]}")}, " +
+                      $"pred. harm. VMAF {Format(variant.PredictedVmafHarmonic)})" +
+                      (variant.AtGridBoundary == true ? ", at grid edge" : "")
                     : variant.Fallback == true
                         ? $"{variant.Bitrate} (default — no measurement)"
                         : variant.Bitrate))
@@ -919,6 +958,14 @@ public sealed class LadderDerivation {
             value?.ToString("0.##", CultureInfo.InvariantCulture) ?? "—";
     }
 
+    internal static string DescribePlacement(string? placement) => placement switch {
+        Placements.Window => "raised to the bottom of its window",
+        Placements.Cap => "lowered to the crossover above",
+        Placements.Spacing => $"lowered to ×{MinRungSpacing} below the rung above",
+        Placements.Floor => "raised to the bitrate floor",
+        _ => "at the λ point"
+    };
+
     private static string DescribeLambdaRule(DerivedLadderDocument document) {
         var range = string.Create(
             CultureInfo.InvariantCulture,
@@ -947,25 +994,69 @@ public sealed class LadderDerivation {
     internal sealed record Envelope(Dictionary<int, EnvelopeWindow> Windows, List<Crossover> Crossovers);
 
     /// <summary>
-    /// A chosen rung. The grid point is referenced, never written to, so the measured RD data stays
+    /// A chosen rung. Grid points are referenced, never written to, so the measured RD data stays
     /// exactly as it was measured.
     /// </summary>
+    /// <param name="BitrateBps">The rate it ships at, rounded to <see cref="RoundToKbps"/>.</param>
+    /// <param name="Placement">The rule that put it there — see <see cref="Placements"/>.</param>
+    /// <param name="Prediction">Its quality read off the hull at <paramref name="BitrateBps"/>.</param>
+    /// <param name="LambdaPoint">Its resolution's λ point, where it sits unless clamped.</param>
+    /// <param name="IntervalHighBps">Upper end of its admissible interval; null for the top rung.</param>
     internal sealed record PlannedRung(
         ResolutionHull Hull,
-        EncodeGridPoint Point,
+        long BitrateBps,
+        string Placement,
+        RungPrediction Prediction,
+        EncodeGridPoint LambdaPoint,
         double? Slope,
-        bool Capped,
         bool AtGridBoundary,
-        bool RaisedToFloor,
-        double? CapBps,
+        double IntervalLowBps,
+        double? IntervalHighBps,
         EnvelopeWindow Window,
-        double HullDeficit);
+        double HullDeficit) {
+        /// <summary>The grid sample nearest the shipped rate.</summary>
+        public EncodeGridPoint Anchor => Prediction.Vertex;
+    }
+
+    /// <summary>
+    /// Quality at a bitrate between two neighbouring hull vertices, <paramref name="T"/> of the way
+    /// from <paramref name="Lower"/> to <paramref name="Upper"/> in log-rate.
+    /// </summary>
+    internal sealed record RungPrediction(EncodeGridPoint Lower, EncodeGridPoint Upper, double T) {
+        private const double VertexTolerance = 1e-6;
+
+        /// <summary>True when the rate is a grid sample's own, so no interpolation was needed.</summary>
+        public bool OnVertex => ReferenceEquals(Lower, Upper) || T < VertexTolerance || T > 1 - VertexTolerance;
+
+        /// <summary>The nearer of the two samples — the rung's own sample when <see cref="OnVertex"/>.</summary>
+        public EncodeGridPoint Vertex => T < 0.5 ? Lower : Upper;
+
+        public double DecisionQuality => Mix(Lower.DecisionQuality, Upper.DecisionQuality);
+        public double RawQuality => Mix(Lower.RawQuality, Upper.RawQuality);
+        public double VmafMean => Mix(Lower.VmafMean, Upper.VmafMean);
+
+        public double? VmafHarmonicMean =>
+            Lower.VmafHarmonicMean is { } a && Upper.VmafHarmonicMean is { } b ? Mix(a, b) : null;
+
+        public double? VmafMin => Lower.VmafMin is { } a && Upper.VmafMin is { } b ? Mix(a, b) : null;
+
+        /// <summary>Slope of the hull segment the rate falls on, in decision quality per doubling.</summary>
+        public double? SegmentSlope {
+            get {
+                var run = LogRate(Upper) - LogRate(Lower);
+                return run > 1e-9 ? (Upper.DecisionQuality - Lower.DecisionQuality) / run : null;
+            }
+        }
+
+        private double Mix(double a, double b) => OnVertex ? (T < 0.5 ? a : b) : a + (b - a) * T;
+    }
 
     internal sealed record LadderPlan(
         string? Error,
         double Lambda,
         string LambdaRule,
         List<ResolutionHull> Hulls,
+        // Ordered top rung first.
         List<PlannedRung> Rungs,
         Envelope Envelope,
         List<EncodeGridPoint> PooledHull,

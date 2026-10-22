@@ -105,13 +105,20 @@ export interface DerivedLadderVariant {
   onEnvelope?: boolean;
   /** VMAF the best resolution would add at this bitrate; 0 on the envelope. */
   hullDeficit?: number;
-  /** Held below the crossover above which the next resolution up wins. */
-  capped?: boolean;
-  capBps?: number;
+  /**
+   * The rule that placed the rung: at its λ point, or clamped to the bound of its admissible
+   * interval named here.
+   */
+  placement?: "lambda" | "window" | "cap" | "spacing" | "floor";
+  /** Where its resolution's λ point lies — the rung's rate unless clamped. */
+  lambdaPointBps?: number;
+  intervalLowBps?: number;
+  /** Absent for the top rung. */
+  intervalHighBps?: number;
+  /** Set when the rate falls between two grid samples: their CRFs, lower bitrate first. */
+  interpolatedBetweenCrf?: number[];
   /** On the grid's lowest CRF with the hull still steeper than λ — the tangent lies past the grid. */
   atGridBoundary?: boolean;
-  /** The shared-slope point lay under the bitrate floor; moved up to the cheapest sample that clears it. */
-  raisedToFloor?: boolean;
   /** No usable grid sample at this resolution; the static rung was kept. */
   fallback?: boolean;
 }

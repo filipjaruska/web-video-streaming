@@ -38,16 +38,49 @@ type RungFlag = {
   variant: "outline" | "secondary" | "destructive";
 };
 
+/**
+ * The bound a rung was clamped to, when its λ point fell outside its admissible interval. A rung at
+ * its λ point gets no tag.
+ */
+function placementFlag(variant: DerivedLadderVariant): RungFlag | null {
+  const lambdaPoint = formatBitrate(variant.lambdaPointBps);
+  switch (variant.placement) {
+    case "window":
+      return {
+        label: "window",
+        title: `λ point at ${lambdaPoint} lies below ${formatBitrate(variant.intervalLowBps)}, where this resolution starts to be the best one — raised to that bound.`,
+        variant: "outline",
+      };
+    case "cap":
+      return {
+        label: "cap",
+        title: `λ point at ${lambdaPoint} lies above the crossover at ${formatBitrate(variant.intervalHighBps)}, past which the next resolution up is better — lowered to it.`,
+        variant: "outline",
+      };
+    case "spacing":
+      return {
+        label: "spacing",
+        title: `λ point at ${lambdaPoint} lies within ×1.5 of the rung above — lowered to ${formatBitrate(variant.intervalHighBps)}.`,
+        variant: "outline",
+      };
+    case "floor":
+      return {
+        label: "floor",
+        title: `λ point at ${lambdaPoint} lies below the bitrate floor — raised to ${formatBitrate(variant.intervalLowBps)}.`,
+        variant: "secondary",
+      };
+    default:
+      return null;
+  }
+}
+
 /** Why a rung sits where it does, as short tags. */
 function rungFlags(variant: DerivedLadderVariant): RungFlag[] {
   const flags: RungFlag[] = [];
 
-  if (variant.capped) {
-    flags.push({
-      label: "capped",
-      title: `Held below the crossover at ${formatBitrate(variant.capBps)}: above it the next resolution up reaches more quality for the same bits.`,
-      variant: "outline",
-    });
+  const placement = placementFlag(variant);
+  if (placement) {
+    flags.push(placement);
   }
 
   if (variant.atGridBoundary) {
@@ -59,12 +92,12 @@ function rungFlags(variant: DerivedLadderVariant): RungFlag[] {
     });
   }
 
-  if (variant.raisedToFloor) {
+  if (variant.interpolatedBetweenCrf) {
+    const [lower, upper] = variant.interpolatedBetweenCrf;
     flags.push({
-      label: "floor",
-      title:
-        "The shared-slope point lay under the bitrate floor, so the rung was moved up to the cheapest measured sample that clears it — it ships at the rate it was measured at.",
-      variant: "secondary",
+      label: "interpolated",
+      title: `No grid sample at this rate: the predicted scores are read off the hull between CRF ${lower} and CRF ${upper}.`,
+      variant: "outline",
     });
   }
 
@@ -111,8 +144,8 @@ function describeLambdaRule(ladder: DerivedLadderDocument): string | null {
 /**
  * One derived ladder's operating points. Renders nothing when that ladder was not produced.
  *
- * Alongside each rung: the hull slope, why the rung sits where it does (capped by a crossover, on
- * the grid's edge, a fallback), the resolution crossovers, and what the derivation dropped or
+ * Alongside each rung: the hull slope, why the rung sits where it does (the bound of its interval it
+ * was clamped to, the grid's edge, a fallback), the resolution crossovers, and what the derivation dropped or
  * flagged. All of it is computed by the pipeline; the crossover is the whole reason a rung sits
  * where it does, and the flags are what separate a content-driven rung from a grid artefact.
  */
@@ -134,16 +167,18 @@ export function DerivedLadderTable({
         variant.bitrate,
         variant.bitrateBps,
         variant.crf ?? "",
+        variant.interpolatedBetweenCrf?.join("-") ?? "",
         variant.predictedVmaf ?? "",
         variant.predictedVmafHarmonic ?? "",
         variant.predictedVmafMin ?? "",
         variant.hullSlope ?? "",
         variant.onEnvelope ?? "",
         variant.hullDeficit ?? "",
-        variant.capped ?? "",
-        variant.capBps ?? "",
+        variant.placement ?? "",
+        variant.lambdaPointBps ?? "",
+        variant.intervalLowBps ?? "",
+        variant.intervalHighBps ?? "",
         variant.atGridBoundary ?? "",
-        variant.raisedToFloor ?? "",
         variant.fallback ?? "",
       ]),
     [ladder],
@@ -210,16 +245,18 @@ export function DerivedLadderTable({
               "bitrate",
               "bitrate_bps",
               "crf",
+              "interpolated_between_crf",
               "predicted_vmaf",
               "predicted_vmaf_harmonic",
               "predicted_vmaf_min",
               "hull_slope",
               "on_envelope",
               "hull_deficit",
-              "capped",
-              "cap_bps",
+              "placement",
+              "lambda_point_bps",
+              "interval_low_bps",
+              "interval_high_bps",
               "at_grid_boundary",
-              "raised_to_floor",
               "fallback",
             ]}
             rows={exportRows}
@@ -246,7 +283,12 @@ export function DerivedLadderTable({
                 <DataCell>{variant.label}</DataCell>
                 <DataCell>{formatResolution(variant.resolution)}</DataCell>
                 <DataCell>{variant.bitrate}</DataCell>
-                <DataCell>{variant.crf ?? "—"}</DataCell>
+                <DataCell>
+                  {variant.crf ??
+                    (variant.interpolatedBetweenCrf
+                      ? variant.interpolatedBetweenCrf.join("–")
+                      : "—")}
+                </DataCell>
                 <DataCell>{formatNumber(variant.predictedVmaf)}</DataCell>
                 <DataCell>{formatNumber(variant.predictedVmafHarmonic)}</DataCell>
                 <DataCell title="Local slope of this resolution's hull at the selected point, in VMAF per doubling of bitrate.">
@@ -281,7 +323,9 @@ export function DerivedLadderTable({
             <p className="text-xs text-muted-foreground">
               The bitrate at which the envelope hands over from one resolution to the next. Below
               its crossover a resolution is simply the wrong choice — a lower one reaches more
-              quality for the same bits — so each rung is capped at the crossover above it.
+              quality for the same bits — so each rung stays inside the window between the
+              crossovers either side of it, and is clamped to the nearer one when its λ point falls
+              outside.
             </p>
             <div className="flex flex-wrap gap-1.5">
               {crossovers.map(({ key, bps, extrapolated }) => {
