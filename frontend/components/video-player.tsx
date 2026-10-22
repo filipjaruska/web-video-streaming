@@ -161,9 +161,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     [streamingMethod, apiUrl, routeId, transcodeId, runTag],
   );
 
-  // Deferred load for adaptive streams; progressive can idle-load when visible.
+  // Deferred load for adaptive streams; progressive can idle-load when visible — except in a
+  // benchmark run, where it would start fetching before the run's clock does and flatter its
+  // startup against HLS and DASH, and never load at all while the player is scrolled out of view.
   const loadStrategy =
-    streamingMethod === "source" ? ("visible" as const) : ("play" as const);
+    streamingMethod === "source" && !benchmarkRun ? ("visible" as const) : ("play" as const);
 
   useVideoStatsTracking({
     videoElement,
