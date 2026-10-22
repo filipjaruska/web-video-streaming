@@ -12,16 +12,21 @@ namespace WebWVideoStreamingAPI.Analysis;
 /// registers — actually costs a candidate something.
 /// </param>
 /// <param name="SeriesKey">Which series field the result is stored under.</param>
+/// <param name="Pooled">
+/// Derive from this run's grid and the default grid together, each sample tagged with the setting
+/// it was encoded under, so every rung can take whichever setting does better at its rate.
+/// </param>
 public sealed record LadderDerivationOptions(
     string ProfileName,
     EncodeRecipe Recipe,
     double CambiPenaltyWeight = 0,
-    string SeriesKey = "derivedLadder") {
+    string SeriesKey = "derivedLadder",
+    bool Pooled = false) {
     public static readonly LadderDerivationOptions Dynamic =
         new("vmaf-crossover", EncodeRecipe.Default);
 
     public static readonly LadderDerivationOptions Animation =
-        new("animation-tuned", EncodeRecipe.Animation, CambiPenaltyWeight: 0.5, SeriesKey: "animationLadder");
+        new("animation-pooled", EncodeRecipe.Animation, CambiPenaltyWeight: 0.5, SeriesKey: "animationLadder", Pooled: true);
 }
 
 public sealed class LadderDerivationResult {
@@ -161,10 +166,16 @@ public sealed class LadderDerivation {
         _logger = logger;
     }
 
+    /// <param name="points">This run's own grid — the one stored with the ladder.</param>
+    /// <param name="defaultGrid">
+    /// The default grid, pooled with <paramref name="points"/> when <see cref="LadderDerivationOptions.Pooled"/>
+    /// is set. Read through tagged copies, so the default ladder's stored grid is left as it was.
+    /// </param>
     public async Task<LadderDerivationResult> DeriveAsync(
         Guid staticTranscodeId,
         IReadOnlyList<EncodeGridPoint> points,
         LadderDerivationOptions options,
+        IReadOnlyList<EncodeGridPoint>? defaultGrid = null,
         CancellationToken cancellationToken = default) {
         // Persisted with the points, so the stored grid reproduces exactly the decisions made here.
         foreach (var point in points) {
@@ -172,7 +183,11 @@ public sealed class LadderDerivation {
         }
 
         try {
-            var plan = Plan(points);
+            var candidates = options.Pooled && defaultGrid is { Count: > 0 }
+                ? Pool(points, defaultGrid, options.CambiPenaltyWeight)
+                : points;
+
+            var plan = Plan(candidates);
             if (plan.Error != null) {
                 return Fail(plan.Error);
             }
@@ -192,7 +207,7 @@ public sealed class LadderDerivation {
                     rung.Prediction.VmafHarmonicMean);
             }
 
-            var (variants, derivedVariants) = BuildVariants(plan, points);
+            var (variants, derivedVariants) = BuildVariants(plan, candidates);
 
             var profile = new TranscodeProfile {
                 Name = options.ProfileName,
@@ -207,7 +222,8 @@ public sealed class LadderDerivation {
             };
 
             var document = BuildDocument(plan, profile.Name, derivedVariants, options.CambiPenaltyWeight);
-            var sensitivity = options.CambiPenaltyWeight > 0 ? Sensitivity(points) : null;
+            document.Pooled = !ReferenceEquals(candidates, points);
+            var sensitivity = options.CambiPenaltyWeight > 0 ? Sensitivity(candidates) : null;
 
             var animation = options.SeriesKey != "derivedLadder";
             await _store.MergeSeriesAsync(
@@ -482,18 +498,36 @@ public sealed class LadderDerivation {
     internal static double LogRate(EncodeGridPoint point) => Math.Log2(point.BitrateBps);
 
     /// <summary>
-    /// Flags every grid point on the pooled convex hull, so the analysis UI can draw the hull
-    /// through the scatter.
+    /// Flags every point of this run's own grid that lies on the pooled convex hull, so the
+    /// analysis UI can draw the hull through the scatter. Matched by setting, resolution and CRF,
+    /// since a pooled ladder plans on copies.
     /// </summary>
-    private static void MarkGlobalHull(List<EncodeGridPoint> pooledHull, IReadOnlyList<EncodeGridPoint> all) {
-        foreach (var point in all) {
-            point.OnHull = false;
-        }
+    private static void MarkGlobalHull(List<EncodeGridPoint> pooledHull, IReadOnlyList<EncodeGridPoint> own) {
+        var onHull = pooledHull
+            .Select(point => (point.Setting ?? EncodeSettings.Tuned, point.Height, point.Crf))
+            .ToHashSet();
 
-        foreach (var point in pooledHull) {
-            point.OnHull = true;
+        foreach (var point in own) {
+            point.OnHull = onHull.Contains((point.Setting ?? EncodeSettings.Tuned, point.Height, point.Crf));
         }
     }
+
+    /// <summary>
+    /// One candidate set from the tuned grid and the default grid: every sample copied, tagged with
+    /// the setting it was encoded under and scored at the same CAMBI weight, so the two settings
+    /// compete on one decision quality. Hulls, windows and λ are then built from the pool.
+    /// </summary>
+    /// <remarks>
+    /// A sample in the tuned grid already tagged <see cref="EncodeSettings.Default"/> was taken under
+    /// the default setting while that grid refined the pooled ladder, and keeps its tag.
+    /// </remarks>
+    internal static List<EncodeGridPoint> Pool(
+        IReadOnlyList<EncodeGridPoint> tuned,
+        IReadOnlyList<EncodeGridPoint> defaults,
+        double weight) =>
+        tuned.Select(point => point.Pooled(point.Setting ?? EncodeSettings.Tuned, weight))
+            .Concat(defaults.Select(point => point.Pooled(EncodeSettings.Default, weight)))
+            .ToList();
 
     // ---- Envelope ----------------------------------------------------------------------------
 
@@ -943,9 +977,11 @@ public sealed class LadderDerivation {
             children.Add(Leaf($"{key}.warning.{index++}", "Warning", warning));
         }
 
-        var label = options.Recipe.Tune == null
-            ? "Derived ladder (VMAF crossover)"
-            : $"Animation-tuned ladder ({options.Recipe.Tune})";
+        var label = options.Pooled
+            ? $"Animation ladder (default + {options.Recipe.Tune} pooled)"
+            : options.Recipe.Tune == null
+                ? "Derived ladder (VMAF crossover)"
+                : $"Animation-tuned ladder ({options.Recipe.Tune})";
 
         return Section(
             key,

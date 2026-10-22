@@ -147,6 +147,8 @@ export interface DerivedLadderDocument {
   /** Harmonic VMAF below which grid points are left out of the hulls. */
   qualityFloor?: number;
   cambiPenaltyWeight?: number;
+  /** Derived from the default and tuned grids pooled, each rung free to take either setting. */
+  pooled?: boolean;
 }
 
 export interface CrossoverInfo {

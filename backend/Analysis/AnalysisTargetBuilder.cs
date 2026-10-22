@@ -6,7 +6,7 @@ namespace WebWVideoStreamingAPI.Analysis;
 public static class AnalysisTargetBuilder {
     public const string StaticLadderLabel = "Static ladder";
     public const string DynamicLadderLabel = "Dynamic ladder (VMAF crossover)";
-    public const string AnimationLadderLabel = "Animation-tuned ladder";
+    public const string AnimationLadderLabel = "Animation ladder (pooled)";
 
     public static string LadderLabel(LadderKind kind) => kind switch {
         LadderKind.Dynamic => DynamicLadderLabel,

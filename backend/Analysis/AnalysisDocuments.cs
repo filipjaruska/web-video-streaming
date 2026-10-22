@@ -259,6 +259,31 @@ public sealed class EncodeGridPoint {
         copy.CambiPenaltyWeight = weight;
         return copy;
     }
+
+    /// <summary>
+    /// The encoder setting this sample was taken under — <see cref="EncodeSettings.Default"/> or
+    /// <see cref="EncodeSettings.Tuned"/> — when a ladder pools samples of both. Null in a stored
+    /// grid means the grid's own setting.
+    /// </summary>
+    [JsonPropertyName("setting")]
+    public string? Setting { get; set; }
+
+    /// <summary>A copy tagged with the setting it was encoded under and scored at <paramref name="weight"/>, for pooling.</summary>
+    internal EncodeGridPoint Pooled(string setting, double weight) {
+        var copy = (EncodeGridPoint)MemberwiseClone();
+        copy.Setting = setting;
+        copy.CambiPenaltyWeight = weight;
+        return copy;
+    }
+}
+
+/// <summary>The two encoder settings a pooled ladder chooses between per rung.</summary>
+public static class EncodeSettings {
+    /// <summary>x264 defaults — the setting of the default grid.</summary>
+    public const string Default = "default";
+
+    /// <summary>The animation recipe's tune — the setting of the tuned grid.</summary>
+    public const string Tuned = "tuned";
 }
 
 public sealed class DerivedLadderVariant {
@@ -415,6 +440,10 @@ public sealed class DerivedLadderDocument {
 
     [JsonPropertyName("cambiPenaltyWeight")]
     public double? CambiPenaltyWeight { get; set; }
+
+    /// <summary>True when derived from the default and tuned grids pooled, each rung free to take either setting.</summary>
+    [JsonPropertyName("pooled")]
+    public bool? Pooled { get; set; }
 }
 
 /// <summary>The animation ladder re-derived under one alternative CAMBI weight.</summary>

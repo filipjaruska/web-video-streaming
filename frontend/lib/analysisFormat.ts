@@ -42,7 +42,7 @@ export function ladderLongLabel(kind: string | null | undefined): string {
     case "dynamic":
       return "Dynamic ladder (VMAF crossover)";
     case "animation":
-      return "Animation-tuned ladder";
+      return "Animation ladder (pooled)";
     case "source":
       return "Source (original)";
     default:

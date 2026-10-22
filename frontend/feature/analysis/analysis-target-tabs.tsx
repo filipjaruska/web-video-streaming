@@ -246,7 +246,7 @@ export function AnalysisTargetTabs({
             <DerivedLadderTable
               ladder={animationLadder}
               sensitivity={animationSensitivity}
-              caption="Same derivation re-run over the animation-tuned grid, with banding penalised in the selection."
+              caption="Same derivation over the default and animation-tuned grids pooled — each rung free to take either setting — with banding penalised in the selection."
             />
           </>
         ) : (

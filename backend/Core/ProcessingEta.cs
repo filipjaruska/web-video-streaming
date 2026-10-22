@@ -73,7 +73,7 @@ public static class ProcessingEta {
         [PipelineStep.DynamicSiti] = ("Analyzing dynamic ladder (SI/TI)", 40),
         [PipelineStep.DynamicVmaf] = ("Dynamic ladder VMAF", 105),
         [PipelineStep.AnimationGrid] = ("Encode grid — animation tuning", 30),
-        [PipelineStep.AnimationDeriveLadder] = ("Deriving animation-tuned ladder", 1),
+        [PipelineStep.AnimationDeriveLadder] = ("Deriving pooled animation ladder", 1),
         [PipelineStep.AnimationEncode] = ("Encoding animation ladder", 140),
         [PipelineStep.AnimationPackage] = ("Packaging animation ladder (HLS + DASH)", 8),
         [PipelineStep.AnimationSiti] = ("Analyzing animation ladder (SI/TI)", 40),

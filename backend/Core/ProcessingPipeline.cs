@@ -645,11 +645,12 @@ public sealed class ProcessingPipeline {
 
         try {
             var (dynamicPackage, baseGrid) = await RunPassAsync(
-                video, sourcePath, staticTranscodeId, DynamicPass, audio, facts, cancellationToken);
+                video, sourcePath, staticTranscodeId, DynamicPass, audio, facts, defaultGrid: null, cancellationToken);
             dynamicId = dynamicPackage?.Transcode.Id;
 
+            // The animation ladder pools its tuned grid with the default one just measured.
             var (animationPackage, tunedGrid) = await RunPassAsync(
-                video, sourcePath, staticTranscodeId, AnimationPass, audio, facts, cancellationToken);
+                video, sourcePath, staticTranscodeId, AnimationPass, audio, facts, defaultGrid: baseGrid, cancellationToken);
             animationId = animationPackage?.Transcode.Id;
 
             if (baseGrid != null && tunedGrid != null) {
@@ -692,6 +693,7 @@ public sealed class ProcessingPipeline {
     private sealed record DerivedLadderOutcome(Guid? DynamicTranscodeId, Guid? AnimationTranscodeId);
 
     /// <summary>Grid, derivation and packaging for one ladder. Returns null on any soft failure.</summary>
+    /// <param name="defaultGrid">The default grid, for a pass whose ladder pools it with its own.</param>
     private async Task<(PackageResult? Package, List<EncodeGridPoint>? Grid)> RunPassAsync(
         Video video,
         string sourcePath,
@@ -699,6 +701,7 @@ public sealed class ProcessingPipeline {
         DerivedLadderPass pass,
         EncodedAudio? audio,
         SourceFacts facts,
+        IReadOnlyList<EncodeGridPoint>? defaultGrid,
         CancellationToken cancellationToken) {
         await ReportAsync(video, pass.GridStep, cancellationToken);
 
@@ -724,6 +727,7 @@ public sealed class ProcessingPipeline {
             staticTranscodeId,
             grid.Points,
             pass.Options,
+            defaultGrid,
             cancellationToken);
 
         if (!derived.Success || derived.Profile == null) {
