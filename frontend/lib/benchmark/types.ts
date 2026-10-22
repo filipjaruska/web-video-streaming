@@ -12,8 +12,8 @@ export type ShapedProfile = Exclude<NetworkProfile, "variable">;
 
 /**
  * Shown in the UI, in megabits per second like every other rate in the app. Loss is emulated by its
- * cost — a lost packet crosses the link twice and the transfer waits one round trip — since a server
- * cannot drop a TCP segment.
+ * cost — a lost packet crosses the link twice and holds back the data behind it for one round trip,
+ * while the link keeps sending — since a server cannot drop a TCP segment.
  */
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
   standard: "Standard (unshaped)",
@@ -28,28 +28,16 @@ export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
  * Every phase is shaped. Starting unshaped would let the player fetch the whole 30 s clip within a
  * second, leaving the later phases nothing to act on. The drop to 3G lands mid-clip, and recovery is
  * timed from it until the player regains its rung once 4G returns.
+ *
+ * The server applies it — its copy in NetworkShaping.cs must match — to every byte as it is sent,
+ * so a change reaches responses already in flight. The client uses this copy only to record when
+ * each change happened.
  */
 export const VARIABLE_NETWORK_SCHEDULE: ReadonlyArray<{ fromMs: number; profile: ShapedProfile }> = [
   { fromMs: 0, profile: "fourG" },
   { fromMs: 5_000, profile: "threeG" },
   { fromMs: 18_000, profile: "fourG" },
 ];
-
-/** The fixed profile in force `elapsedMs` into a run. */
-export function effectiveProfile(profile: NetworkProfile, elapsedMs: number): ShapedProfile {
-  if (profile !== "variable") {
-    return profile;
-  }
-
-  let current = VARIABLE_NETWORK_SCHEDULE[0].profile;
-  for (const phase of VARIABLE_NETWORK_SCHEDULE) {
-    if (elapsedMs >= phase.fromMs) {
-      current = phase.profile;
-    }
-  }
-
-  return current;
-}
 
 /**
  * The rate each profile declares, bits per second — what the server holds the link to. Null where

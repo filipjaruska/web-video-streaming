@@ -39,6 +39,7 @@ import {
   pickStartLevel,
   SEGMENT_SEC,
   TARGET_BUFFER_SEC,
+  benchmarkRunToken,
   tagRunRequest,
   type RunRequestTag,
 } from "@/lib/streamingConfig";
@@ -97,12 +98,6 @@ interface VideoPlayerProps {
   networkProfile?: () => string | null;
 }
 
-/**
- * Prefix of every benchmark token, fixed per page load. Combined with the per-run nonce it keeps
- * tokens unique across runs and across reloads, without calling anything impure during render.
- */
-const PAGE_LOAD_TOKEN = Date.now().toString(36);
-
 /** What a benchmark needs in order to drive playback rather than wait for a viewer. */
 export interface VideoPlayerHandle {
   play: () => Promise<void>;
@@ -139,8 +134,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   const [error, setError] = useState<string | null>(null);
 
   // One token per benchmark run: the player remounts on every runNonce, so no two runs share a URL.
-  const runToken = benchmarkRun ? `${PAGE_LOAD_TOKEN}.${runNonce}` : null;
-  // Read when each request is made, not when the player renders: the variable profile changes mid-run.
+  const runToken = benchmarkRun ? benchmarkRunToken(runNonce) : null;
+  // Read when each request is made, not when the player renders, so a request always carries the
+  // profile of the run it belongs to.
   const networkProfileRef = useRef(networkProfile);
   networkProfileRef.current = networkProfile;
   const runTag = useCallback(
@@ -149,7 +145,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     [runToken],
   );
 
-  // The source is one URL for the whole run, so it keeps the profile in force when playback starts.
+  // The source is one URL for the whole run. Under the variable profile the server still changes its
+  // pace mid-response, on the run's schedule.
   const src = useMemo(
     () =>
       tagRunRequest(

@@ -75,6 +75,17 @@ export function pickFastStartLevel<T>(
 export const RUN_TOKEN_PARAM = "bench";
 export const NETWORK_PARAM = "net";
 
+/**
+ * Prefix of every benchmark token, fixed per page load. Combined with the per-run nonce it keeps
+ * tokens unique across runs and across reloads.
+ */
+const PAGE_LOAD_TOKEN = Date.now().toString(36);
+
+/** The token a benchmark run's requests carry, and that keys its link on the server. */
+export function benchmarkRunToken(runNonce: number): string {
+  return `${PAGE_LOAD_TOKEN}.${runNonce}`;
+}
+
 /** What a benchmark run stamps on its requests. */
 export interface RunRequestTag {
   /** Unique per run: no request can be answered from the browser's HTTP cache. */
@@ -88,8 +99,8 @@ export interface RunRequestTag {
  *
  * The token keeps repeated runs out of the browser's cache — the API once sent no Cache-Control, and
  * Chrome kept segments for a tenth of their age. It also keys the link the server shares between a
- * run's requests. The profile is replaced rather than kept because the variable-network run changes
- * it mid-run.
+ * run's requests. The profile is the same for the whole run — the variable one is a schedule the
+ * server follows — and is replaced rather than kept so a reused URL cannot carry another run's.
  */
 export function tagRunRequest(url: string, tag: RunRequestTag | null): string {
   if (!tag) {

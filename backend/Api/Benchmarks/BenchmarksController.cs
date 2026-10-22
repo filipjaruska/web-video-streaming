@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using WebWVideoStreamingAPI.Api.Streaming;
 
 namespace WebWVideoStreamingAPI.Api.Benchmarks;
 
@@ -32,9 +33,22 @@ public sealed class SubmitBenchmarkRequest {
 [Route("api/benchmarks")]
 public class BenchmarksController : ControllerBase {
     private readonly PlaybackBenchmarkStore _benchmarks;
+    private readonly NetworkLinks _links;
 
-    public BenchmarksController(PlaybackBenchmarkStore benchmarks) {
+    public BenchmarksController(PlaybackBenchmarkStore benchmarks, NetworkLinks links) {
         _benchmarks = benchmarks;
+        _links = links;
+    }
+
+    /// <summary>
+    /// Marks the start of a run, which the variable network profile's schedule is timed from on the
+    /// server — so a change of network reaches responses already in flight.
+    /// </summary>
+    [HttpPost("runs/{runToken}/start")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public IActionResult StartRun(string runToken) {
+        _links.StartClock(runToken);
+        return NoContent();
     }
 
     [HttpPost]

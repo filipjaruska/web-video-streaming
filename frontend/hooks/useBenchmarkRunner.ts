@@ -12,9 +12,9 @@ import {
   toSamples,
 } from "@/lib/benchmark/matrix";
 import { loadLadderQualities } from "@/lib/benchmark/ladderQuality";
+import { benchmarkRunToken } from "@/lib/streamingConfig";
 import {
   VARIABLE_NETWORK_SCHEDULE,
-  effectiveProfile,
   toServerProfile,
   type BenchmarkCell,
   type BenchmarkEvent,
@@ -117,18 +117,12 @@ export function useBenchmarkRunner({
 
   /**
    * The network profile a request made now travels under, as the server should shape it — null
-   * outside a sweep and for the unshaped network. The variable profile follows its schedule from the
-   * start of the current run.
+   * outside a sweep and for the unshaped network. The variable profile is passed as is: the server
+   * runs its schedule from the start of the run, mid-response included.
    */
   const networkProfileNow = useCallback((): string | null => {
     const profile = sweepProfileRef.current;
-    if (!profile) {
-      return null;
-    }
-
-    const elapsedMs = runStartRef.current > 0 ? performance.now() - runStartRef.current : 0;
-    const shaped = effectiveProfile(profile, elapsedMs);
-    return shaped === "standard" ? null : shaped;
+    return !profile || profile === "standard" ? null : profile;
   }, []);
 
   const cancel = useCallback(() => {
@@ -151,6 +145,19 @@ export function useBenchmarkRunner({
       // before asking the fresh instance to play.
       await delay(600);
       resetStats();
+
+      // The server times the variable schedule from this call, so it changes the network when the
+      // transitions below record it changing.
+      if (profile === "variable") {
+        try {
+          await fetch(`${apiUrl}/api/benchmarks/runs/${benchmarkRunToken(nonceRef.current)}/start`, {
+            method: "POST",
+          });
+        } catch {
+          // Unreachable here means unreachable for playback too, which the run reports itself.
+        }
+      }
+
       runStartRef.current = performance.now();
       runStartWallRef.current = Date.now();
 
@@ -237,7 +244,7 @@ export function useBenchmarkRunner({
         errorMessage: errored && "message" in errored ? errored.message : undefined,
       };
     },
-    [applyCell, getSnapshots, playerRef, resetStats],
+    [apiUrl, applyCell, getSnapshots, playerRef, resetStats],
   );
 
   const submit = useCallback(

@@ -47,6 +47,7 @@ builder.Services.AddSingleton<SitiAnalyzer>();
 builder.Services.AddSingleton<VmafAnalyzer>();
 builder.Services.AddSingleton<ProcessingQueue>();
 builder.Services.AddHostedService<ProcessingWorker>();
+builder.Services.AddSingleton<NetworkLinks>();
 
 // Everything below touches AppDbContext, so it follows the request/job scope.
 builder.Services.AddScoped<AnalysisStore>();

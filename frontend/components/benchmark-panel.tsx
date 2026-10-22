@@ -268,9 +268,9 @@ export function BenchmarkPanel({
               resolution was on screen for how much of the clip — weighted by each rung&apos;s
               measured VMAF into the quality actually delivered. Every run requests its files
               under a fresh URL, so nothing is served from the browser cache. The network
-              profile is applied by the server to every request of a run — bandwidth and
-              round-trip delay, no packet loss — and the variable one switches 4G → 3G → 4G
-              on its own. The throughput column shows what the link actually delivered.
+              profile is applied by the server to every request of a run — bandwidth,
+              round-trip delay and packet loss — and the variable one switches 4G → 3G → 4G
+              on its own, mid-download included. The throughput column shows what the link actually delivered.
             </CardDescription>
           </div>
           {results.length > 0 && (

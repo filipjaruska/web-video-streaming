@@ -23,12 +23,21 @@ public sealed record NetworkShape(long BitsPerSecond, int RoundTripMs, double Lo
 /// protocols are compared under exactly the same conditions.
 /// </para>
 /// <para>
+/// The variable profile is a schedule, not a shape, and the server runs it: every chunk is sent at the
+/// shape in force at the moment it goes out, timed from when the run started (see
+/// <see cref="NetworkLinks.StartClock"/>). A change of network therefore reaches a segment already
+/// downloading, and the progressive source — one long response for the whole run — as much as the
+/// requests made after it.
+/// </para>
+/// <para>
 /// Packet loss is emulated by its cost rather than by dropping anything: an application cannot drop
 /// a TCP segment, and a dropped segment would be retransmitted by the kernel in any case. Each
 /// response body is cut into maximum-segment-sized packets, and the configured share of them is
-/// marked lost. A lost packet has to be sent twice, so the link is charged for it twice, and the
-/// recovery costs one round trip before the data continues. Losses falling in the same chunk recover
-/// in one round trip together, as they would within one window in flight.
+/// marked lost. A lost packet crosses the link twice, so the link is charged for it twice. TCP also
+/// delivers in order, so the data behind a lost packet is held back until its retransmission lands one
+/// round trip later — but the sender keeps transmitting meanwhile, so that wait delays the response
+/// without idling the link. A profile therefore delivers its declared rate less only the retransmitted
+/// share, which is what makes its label a description of the run.
 /// </para>
 /// <para>
 /// What this leaves out is TCP's own reaction: a real sender halves its congestion window on loss
@@ -39,14 +48,16 @@ public sealed record NetworkShape(long BitsPerSecond, int RoundTripMs, double Lo
 /// </para>
 /// <para>
 /// The table must match <c>NETWORK_PROFILE_RATE_BPS</c> and the labels in the frontend's
-/// <c>lib/benchmark/types.ts</c>. A profile not listed here — the unshaped one — is served as is.
+/// <c>lib/benchmark/types.ts</c>, and <see cref="VariableSchedule"/> its
+/// <c>VARIABLE_NETWORK_SCHEDULE</c>. A profile not listed here — the unshaped one — is served as is.
 /// </para>
 /// </remarks>
 public sealed class NetworkShapingMiddleware {
     public const string RunParam = "bench";
     public const string ProfileParam = "net";
+    public const string VariableProfile = "variable";
 
-    private static readonly IReadOnlyDictionary<string, NetworkShape> Profiles =
+    private static readonly IReadOnlyDictionary<string, NetworkShape> Shapes =
         new Dictionary<string, NetworkShape>(StringComparer.OrdinalIgnoreCase) {
             // Carries the static top rung (7.8 Mb/s, peaks up to 1.5× that, plus audio) with margin.
             ["fourG"] = new(20_000_000, 40, 1.0),
@@ -54,37 +65,41 @@ public sealed class NetworkShapingMiddleware {
             ["threeG"] = new(2_000_000, 100, 5.0),
         };
 
+    /// <summary>The variable profile's timeline, from the moment the run starts.</summary>
+    private static readonly (TimeSpan From, string Profile)[] VariableSchedule = [
+        (TimeSpan.Zero, "fourG"),
+        (TimeSpan.FromSeconds(5), "threeG"),
+        (TimeSpan.FromSeconds(18), "fourG"),
+    ];
+
     private static readonly string[] ShapedPaths = ["/api/hls/", "/api/dash/", "/api/httprange/"];
 
-    /// <summary>A run's link is forgotten once nothing has used it for this long.</summary>
-    private static readonly TimeSpan IdleLinkLifetime = TimeSpan.FromMinutes(10);
-
-    private readonly ConcurrentDictionary<string, SharedLink> _links = new();
     private readonly RequestDelegate _next;
+    private readonly NetworkLinks _links;
 
-    public NetworkShapingMiddleware(RequestDelegate next) {
+    public NetworkShapingMiddleware(RequestDelegate next, NetworkLinks links) {
         _next = next;
+        _links = links;
     }
 
     public async Task InvokeAsync(HttpContext context) {
-        var shape = ResolveShape(context.Request, out var runToken);
-        if (shape == null) {
+        var profile = ResolveProfile(context.Request, out var runToken);
+        if (profile == null) {
             await _next(context);
             return;
         }
 
+        var link = _links.Get(runToken);
+
         try {
             // One round trip before the response starts: the request going out, the first byte back.
-            await Task.Delay(shape.RoundTripMs, context.RequestAborted);
+            await Task.Delay(link.ShapeNow(profile).RoundTripMs, context.RequestAborted);
         } catch (OperationCanceledException) {
             return;
         }
 
-        var link = _links.GetOrAdd(runToken, _ => new SharedLink());
-        ForgetIdleLinks();
-
         var original = context.Response.Body;
-        context.Response.Body = new ShapedStream(original, link, shape, context.RequestAborted);
+        context.Response.Body = new ShapedStream(original, link, profile, context.RequestAborted);
         try {
             await _next(context);
         } finally {
@@ -92,7 +107,23 @@ public sealed class NetworkShapingMiddleware {
         }
     }
 
-    private static NetworkShape? ResolveShape(HttpRequest request, out string runToken) {
+    /// <summary>The shape a profile has <paramref name="sinceStart"/> into its run.</summary>
+    internal static NetworkShape ShapeAt(string profile, TimeSpan sinceStart) {
+        if (!string.Equals(profile, VariableProfile, StringComparison.OrdinalIgnoreCase)) {
+            return Shapes[profile];
+        }
+
+        var current = VariableSchedule[0].Profile;
+        foreach (var (from, phase) in VariableSchedule) {
+            if (sinceStart >= from) {
+                current = phase;
+            }
+        }
+
+        return Shapes[current];
+    }
+
+    private static string? ResolveProfile(HttpRequest request, out string runToken) {
         runToken = request.Query[RunParam].ToString();
         if (runToken.Length == 0 ||
             !(HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method)) ||
@@ -100,78 +131,10 @@ public sealed class NetworkShapingMiddleware {
             return null;
         }
 
-        return Profiles.GetValueOrDefault(request.Query[ProfileParam].ToString());
-    }
-
-    private void ForgetIdleLinks() {
-        if (_links.Count < 32) {
-            return;
-        }
-
-        foreach (var (token, link) in _links) {
-            if (link.IdleFor() > IdleLinkLifetime) {
-                _links.TryRemove(token, out _);
-            }
-        }
-    }
-
-    /// <summary>
-    /// The link one run's requests share, as a schedule: each chunk is sent when the link would have
-    /// finished transmitting everything queued before it. An idle link builds up no credit, so there
-    /// are no bursts above the rate for a throughput estimate to be fooled by.
-    /// </summary>
-    private sealed class SharedLink {
-        /// <summary>
-        /// How far the schedule may lag real time and still be caught up on. A sleep overshoots its
-        /// deadline by up to the platform's timer tick, and without catching that up a fast link drifts
-        /// permanently behind its rate. The window is kept small — well under one segment of data — so
-        /// the catch-up is a short burst rather than the credit an idle link would otherwise build up.
-        /// </summary>
-        private static readonly TimeSpan CatchUp = TimeSpan.FromMilliseconds(25);
-
-        private readonly object _gate = new();
-        private readonly Random _loss = new();
-        private long _idleFrom = Stopwatch.GetTimestamp();
-        private long _lastUsed = Stopwatch.GetTimestamp();
-
-        /// <summary>
-        /// How long to wait before sending <paramref name="bytes"/> at <paramref name="bytesPerSecond"/>,
-        /// after <paramref name="stall"/> of recovery during which the link carries nothing.
-        /// </summary>
-        public TimeSpan Reserve(int bytes, double bytesPerSecond, TimeSpan stall = default) {
-            var now = Stopwatch.GetTimestamp();
-            lock (_gate) {
-                var earliest = now - (long)(CatchUp.TotalSeconds * Stopwatch.Frequency);
-                var start = Math.Max(earliest, _idleFrom) + (long)(stall.TotalSeconds * Stopwatch.Frequency);
-                _idleFrom = start + (long)(bytes / bytesPerSecond * Stopwatch.Frequency);
-                _lastUsed = now;
-                return Stopwatch.GetElapsedTime(now, _idleFrom);
-            }
-        }
-
-        /// <summary>
-        /// How many of <paramref name="packets"/> are lost at <paramref name="lossPercent"/>, drawn one
-        /// packet at a time. Shared across the run's requests so the whole link loses at one rate.
-        /// </summary>
-        public int CountLosses(int packets, double lossPercent) {
-            if (lossPercent <= 0) {
-                return 0;
-            }
-
-            var probability = lossPercent / 100.0;
-            var lost = 0;
-            lock (_gate) {
-                for (var i = 0; i < packets; i++) {
-                    if (_loss.NextDouble() < probability) {
-                        lost++;
-                    }
-                }
-            }
-
-            return lost;
-        }
-
-        public TimeSpan IdleFor() => Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastUsed));
+        var profile = request.Query[ProfileParam].ToString();
+        return Shapes.ContainsKey(profile) || string.Equals(profile, VariableProfile, StringComparison.OrdinalIgnoreCase)
+            ? profile
+            : null;
     }
 
     /// <summary>
@@ -181,9 +144,6 @@ public sealed class NetworkShapingMiddleware {
     /// </summary>
     private sealed class ShapedStream : Stream {
         private const int ChunkBytes = 16 * 1024;
-
-        /// <summary>Ethernet's maximum segment size for IPv4 TCP — the unit loss is counted in.</summary>
-        private const int PacketBytes = 1448;
 
         /// <summary>
         /// Waits shorter than this are not slept through. A sleep cannot be shorter than the platform's
@@ -195,16 +155,20 @@ public sealed class NetworkShapingMiddleware {
         private static readonly TimeSpan MinSleep = TimeSpan.FromMilliseconds(16);
 
         private readonly Stream _inner;
-        private readonly SharedLink _link;
-        private readonly NetworkShape _shape;
-        private readonly double _bytesPerSecond;
+        private readonly NetworkLinks.SharedLink _link;
+        private readonly string _profile;
         private readonly CancellationToken _aborted;
 
-        public ShapedStream(Stream inner, SharedLink link, NetworkShape shape, CancellationToken aborted) {
+        /// <summary>When the link finished sending the previous chunk.</summary>
+        private long _sentAt;
+
+        /// <summary>When the latest lost packet's retransmission lands; nothing behind it is released before.</summary>
+        private long _heldUntil;
+
+        public ShapedStream(Stream inner, NetworkLinks.SharedLink link, string profile, CancellationToken aborted) {
             _inner = inner;
             _link = link;
-            _shape = shape;
-            _bytesPerSecond = shape.BitsPerSecond / 8.0;
+            _profile = profile;
             _aborted = aborted;
         }
 
@@ -222,14 +186,17 @@ public sealed class NetworkShapingMiddleware {
             for (var offset = 0; offset < buffer.Length; offset += ChunkBytes) {
                 var chunk = buffer.Slice(offset, Math.Min(ChunkBytes, buffer.Length - offset));
 
-                // Lost packets occupy the link twice — once lost, once retransmitted — and recovery
-                // stalls it for one round trip, however many of them were lost in this chunk. The
-                // stall goes into the shared schedule, so it holds up the run's other requests too.
-                var packets = (chunk.Length + PacketBytes - 1) / PacketBytes;
-                var lost = _link.CountLosses(packets, _shape.LossPercent);
-                var stall = lost > 0 ? TimeSpan.FromMilliseconds(_shape.RoundTripMs) : TimeSpan.Zero;
+                // While a lost packet held this response back the sender kept transmitting it, so the
+                // next chunk follows on from the previous one rather than from now.
+                var continueFrom = _heldUntil > _sentAt ? _sentAt : long.MaxValue;
+                var (sentAt, shape, lost) = _link.Send(chunk.Length, _profile, continueFrom);
+                _sentAt = sentAt;
 
-                var wait = _link.Reserve(chunk.Length + lost * PacketBytes, _bytesPerSecond, stall);
+                if (lost > 0) {
+                    _heldUntil = Math.Max(_heldUntil, sentAt + (long)(shape.RoundTripMs / 1000.0 * Stopwatch.Frequency));
+                }
+
+                var wait = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), Math.Max(_sentAt, _heldUntil));
                 if (wait > MinSleep) {
                     await Task.Delay(wait, _aborted);
                 }
@@ -250,5 +217,121 @@ public sealed class NetworkShapingMiddleware {
         public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
+    }
+}
+
+/// <summary>
+/// The shaped links of benchmark runs, one per run token. Shared between the shaping middleware,
+/// which sends through them, and the benchmarks API, which starts a run's clock.
+/// </summary>
+public sealed class NetworkLinks {
+    /// <summary>A run's link is forgotten once nothing has used it for this long.</summary>
+    private static readonly TimeSpan IdleLinkLifetime = TimeSpan.FromMinutes(10);
+
+    private readonly ConcurrentDictionary<string, SharedLink> _links = new();
+
+    internal SharedLink Get(string runToken) {
+        var link = _links.GetOrAdd(runToken, _ => new SharedLink());
+        ForgetIdleLinks();
+        return link;
+    }
+
+    /// <summary>
+    /// Marks the moment a run starts, which the variable profile's schedule is timed from. Until it is
+    /// called the clock runs from the run's first request.
+    /// </summary>
+    /// <remarks>
+    /// The client's own record of each network change is timed from the same moment, so the two agree
+    /// to within one request's latency. The first request is not a usable start on its own: the
+    /// progressive source begins loading when the player mounts, before the run starts.
+    /// </remarks>
+    public void StartClock(string runToken) => Get(runToken).RestartClock();
+
+    private void ForgetIdleLinks() {
+        if (_links.Count < 32) {
+            return;
+        }
+
+        foreach (var (token, link) in _links) {
+            if (link.IdleFor() > IdleLinkLifetime) {
+                _links.TryRemove(token, out _);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The link one run's requests share, as a schedule: each chunk is sent when the link would have
+    /// finished transmitting everything queued before it. An idle link builds up no credit, so there
+    /// are no bursts above the rate for a throughput estimate to be fooled by.
+    /// </summary>
+    internal sealed class SharedLink {
+        /// <summary>
+        /// How far the schedule may lag real time and still be caught up on. A sleep overshoots its
+        /// deadline by up to the platform's timer tick, and without catching that up a fast link drifts
+        /// permanently behind its rate. The window is kept small — well under one segment of data — so
+        /// the catch-up is a short burst rather than the credit an idle link would otherwise build up.
+        /// </summary>
+        private static readonly TimeSpan CatchUp = TimeSpan.FromMilliseconds(25);
+
+        /// <summary>Ethernet's maximum segment size for IPv4 TCP — the unit loss is counted in.</summary>
+        private const int PacketBytes = 1448;
+
+        private readonly object _gate = new();
+        private readonly Random _loss = new();
+        private long _idleFrom = Stopwatch.GetTimestamp();
+        private long _lastUsed = Stopwatch.GetTimestamp();
+        private long _clockStart = Stopwatch.GetTimestamp();
+
+        public void RestartClock() => Interlocked.Exchange(ref _clockStart, Stopwatch.GetTimestamp());
+
+        /// <summary>The shape <paramref name="profile"/> has right now in this run.</summary>
+        public NetworkShape ShapeNow(string profile) =>
+            NetworkShapingMiddleware.ShapeAt(profile, Stopwatch.GetElapsedTime(Interlocked.Read(ref _clockStart)));
+
+        /// <summary>
+        /// Schedules <paramref name="bytes"/> on the link at the shape in force when they go out, lost
+        /// packets sent twice. Returns when the link finishes sending them, the shape used and how many
+        /// packets were lost.
+        /// </summary>
+        /// <param name="continueFrom">
+        /// For a response that was held back while the link went on sending it: when its previous chunk
+        /// finished, which this one follows on from even though that is more than <see cref="CatchUp"/> ago.
+        /// </param>
+        public (long SentAt, NetworkShape Shape, int Lost) Send(int bytes, string profile, long continueFrom) {
+            var now = Stopwatch.GetTimestamp();
+            lock (_gate) {
+                var earliest = Math.Min(now - (long)(CatchUp.TotalSeconds * Stopwatch.Frequency), continueFrom);
+                var start = Math.Max(earliest, _idleFrom);
+                var shape = NetworkShapingMiddleware.ShapeAt(profile, Stopwatch.GetElapsedTime(_clockStart, start));
+
+                var lost = CountLosses((bytes + PacketBytes - 1) / PacketBytes, shape.LossPercent);
+                var bytesPerSecond = shape.BitsPerSecond / 8.0;
+                _idleFrom = start + (long)((bytes + lost * PacketBytes) / bytesPerSecond * Stopwatch.Frequency);
+                _lastUsed = now;
+                return (_idleFrom, shape, lost);
+            }
+        }
+
+        /// <summary>
+        /// How many of <paramref name="packets"/> are lost at <paramref name="lossPercent"/>, drawn one
+        /// packet at a time. Shared across the run's requests so the whole link loses at one rate.
+        /// </summary>
+        private int CountLosses(int packets, double lossPercent) {
+            if (lossPercent <= 0) {
+                return 0;
+            }
+
+            var probability = lossPercent / 100.0;
+            var lost = 0;
+            for (var i = 0; i < packets; i++) {
+                if (_loss.NextDouble() < probability) {
+                    lost++;
+                }
+            }
+
+            return lost;
+        }
+
+        public TimeSpan IdleFor() => Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastUsed));
     }
 }
