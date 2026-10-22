@@ -268,6 +268,8 @@ export interface PackagingIntegrityRung {
 export interface PackagingIntegrityDocument {
   passed: boolean;
   segmentTablesIdentical: boolean;
+  /** Every rung keyframed at each forced segment boundary, on the same frame as every other rung. */
+  forcedKeyframesAligned?: boolean;
   problems: string[];
   rungs: PackagingIntegrityRung[];
 }

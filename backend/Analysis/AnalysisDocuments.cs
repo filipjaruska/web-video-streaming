@@ -659,6 +659,13 @@ public sealed class PackagingIntegrityDocument {
     [JsonPropertyName("segmentTablesIdentical")]
     public bool SegmentTablesIdentical { get; set; }
 
+    /// <summary>
+    /// Every rung has a keyframe at each forced segment boundary, on the same frame as every other
+    /// rung — what lets a ladder whose rungs use different encoder settings switch cleanly.
+    /// </summary>
+    [JsonPropertyName("forcedKeyframesAligned")]
+    public bool? ForcedKeyframesAligned { get; set; }
+
     [JsonPropertyName("problems")]
     public List<string> Problems { get; set; } = [];
 
@@ -669,6 +676,10 @@ public sealed class PackagingIntegrityDocument {
 public sealed class PackagingIntegrityRung {
     [JsonPropertyName("label")]
     public string Label { get; set; } = "";
+
+    /// <summary>Times of the keyframes forced at each segment boundary, seconds from the rendition's start.</summary>
+    [JsonPropertyName("forcedKeyframesSec")]
+    public List<double>? ForcedKeyframesSec { get; set; }
 
     [JsonPropertyName("renditionSha256")]
     public string? RenditionSha256 { get; set; }

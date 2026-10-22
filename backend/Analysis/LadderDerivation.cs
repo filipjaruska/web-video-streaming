@@ -248,7 +248,7 @@ public sealed class LadderDerivation {
                     rung.Prediction.Cambi);
             }
 
-            var (variants, derivedVariants) = BuildVariants(plan, candidates);
+            var (variants, derivedVariants) = BuildVariants(plan, candidates, options.Recipe.Tune);
 
             var profile = new TranscodeProfile {
                 Name = options.ProfileName,
@@ -257,8 +257,9 @@ public sealed class LadderDerivation {
                 AudioCodec = TranscodeProfile.Default.AudioCodec,
                 AudioBitrate = TranscodeProfile.Default.AudioBitrate,
                 SegmentDurationSeconds = TranscodeProfile.Default.SegmentDurationSeconds,
-                // Packaging must repeat the settings the grid was measured under.
-                Tune = options.Recipe.Tune,
+                // Packaging must repeat the settings the grid was measured under: a pooled ladder
+                // carries each rung's tune on the rung itself, every other ladder on the profile.
+                Tune = options.Pooled ? null : options.Recipe.Tune,
                 Decimate = options.Recipe.Decimate
             };
 
@@ -955,9 +956,11 @@ public sealed class LadderDerivation {
 
     // ---- Output ------------------------------------------------------------------------------
 
+    /// <param name="ownTune">The tune of the grid being derived from — what every rung not taken under the default setting is encoded with.</param>
     private static (List<TranscodeVariant> Variants, List<DerivedLadderVariant> Derived) BuildVariants(
         LadderPlan plan,
-        IReadOnlyList<EncodeGridPoint> allPoints) {
+        IReadOnlyList<EncodeGridPoint> allPoints,
+        string? ownTune = null) {
         var variants = new List<TranscodeVariant>();
         var derived = new List<DerivedLadderVariant>();
 
@@ -966,7 +969,9 @@ public sealed class LadderDerivation {
             var resolution = $"{rung.Hull.Width}:{rung.Hull.Height}";
             var prediction = rung.Prediction;
 
-            variants.Add(new TranscodeVariant(resolution, bitrate, rung.Hull.Label));
+            // Each rung is encoded with the setting its prediction was read from.
+            var tune = prediction.Setting == EncodeSettings.Default ? null : ownTune;
+            variants.Add(new TranscodeVariant(resolution, bitrate, rung.Hull.Label, tune));
             derived.Add(new DerivedLadderVariant {
                 Label = rung.Hull.Label,
                 Resolution = resolution,

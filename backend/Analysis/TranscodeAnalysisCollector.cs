@@ -99,7 +99,8 @@ public sealed class TranscodeAnalysisCollector {
         try {
             var rungs = await LocateRungsAsync(routeId, transcodeId, profile, describe: true, cancellationToken);
             var representations = hasDash ? ParseDashRepresentations(LoadMpd(routeId, transcodeId), profile) : [];
-            var integrity = await VerifyPackagingAsync(routeId, transcodeId, rungs, representations, hasHls, hasDash, cancellationToken);
+            var integrity = await VerifyPackagingAsync(
+                routeId, transcodeId, rungs, representations, hasHls, hasDash, profile.SegmentDurationSeconds, cancellationToken);
 
             var siti = new Dictionary<string, SitiSeriesData>(StringComparer.OrdinalIgnoreCase);
             foreach (var rung in rungs) {
@@ -300,6 +301,7 @@ public sealed class TranscodeAnalysisCollector {
         List<DashRepresentation> representations,
         bool hasHls,
         bool hasDash,
+        int segmentSeconds,
         CancellationToken cancellationToken) {
         var document = new PackagingIntegrityDocument();
         var problems = document.Problems;
@@ -446,11 +448,87 @@ public sealed class TranscodeAnalysisCollector {
                     $"{rung.Label} HLS {DescribeSegments(rung.HlsSegmentsSec)}, DASH {DescribeSegments(rung.DashSegmentsSec)}")));
             }
 
+            await VerifyForcedKeyframesAsync(document, rungs, segmentSeconds, frameSec, cancellationToken);
+
             document.Passed = problems.Count == 0;
             return document;
         } finally {
             TryDeleteDirectory(tempDir, _logger);
         }
+    }
+
+    /// <summary>
+    /// Checks every rung carries a keyframe at each forced segment boundary, at the same instant as
+    /// every other rung — the frames an ABR switch lands on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A pooled ladder encodes its rungs under two settings, so this is what guarantees the mix is
+    /// still switchable. Both settings take the same <c>-force_key_frames</c> and leave x264's
+    /// scene-cut threshold alone, so their forced keyframes should fall on identical frames; this
+    /// verifies the encodes rather than trusting the arguments.
+    /// </para>
+    /// <para>
+    /// Only the forced keyframes are compared. Scene-cut keyframes stay enabled and are decided per
+    /// encode — each resolution sees scene changes slightly differently — so the full keyframe
+    /// lists differ between rungs on any ladder, a single-setting one included. They fall inside
+    /// segments and never move a boundary.
+    /// </para>
+    /// </remarks>
+    private async Task VerifyForcedKeyframesAsync(
+        PackagingIntegrityDocument document,
+        List<EncodedRung> rungs,
+        int segmentSeconds,
+        double frameSec,
+        CancellationToken cancellationToken) {
+        var problems = document.Problems;
+        var halfFrame = frameSec / 2;
+        var before = problems.Count;
+        List<double>? reference = null;
+        string? referenceLabel = null;
+
+        foreach (var rung in rungs) {
+            var check = document.Rungs.FirstOrDefault(item => item.Label == rung.Variant.Label);
+            var packets = await _probe.ProbePacketsAsync(rung.Path, "v:0", cancellationToken);
+            if (packets is not { Count: > 0 }) {
+                problems.Add($"{rung.Variant.Label}: keyframes could not be read");
+                continue;
+            }
+
+            // Times on the rendition's own timeline, where the encoder forced its keyframes.
+            var start = packets.Min(packet => packet.PtsTime);
+            var frames = packets.Select(packet => packet.PtsTime - start).Order().ToList();
+            var keyframes = packets.Where(packet => packet.Key).Select(packet => packet.PtsTime - start).ToList();
+
+            var forced = new List<double>();
+            for (var boundary = 0.0; boundary <= frames[^1]; boundary += segmentSeconds) {
+                // The keyframe forced for this boundary is on the first frame at or after it — the
+                // encoder's own rule (t ≥ n·segment); the epsilon only absorbs float noise.
+                var frame = frames.First(time => time >= boundary - 1e-6);
+                if (!keyframes.Any(time => Math.Abs(time - frame) < halfFrame)) {
+                    problems.Add($"{rung.Variant.Label}: no keyframe at the {boundary.ToString("0.###", CultureInfo.InvariantCulture)} s segment boundary");
+                }
+
+                forced.Add(Math.Round(frame, 6));
+            }
+
+            if (check != null) {
+                check.ForcedKeyframesSec = forced;
+            }
+
+            if (reference == null) {
+                (reference, referenceLabel) = (forced, rung.Variant.Label);
+            } else if (forced.Count != reference.Count || forced.Zip(reference).Any(pair => Math.Abs(pair.First - pair.Second) >= halfFrame)) {
+                problems.Add(
+                    $"Forced keyframes differ between rungs — {referenceLabel} at {DescribeTimes(reference)}, " +
+                    $"{rung.Variant.Label} at {DescribeTimes(forced)}");
+            }
+        }
+
+        document.ForcedKeyframesAligned = problems.Count == before;
+
+        static string DescribeTimes(List<double> times) =>
+            string.Join(", ", times.Select(time => time.ToString("0.###", CultureInfo.InvariantCulture)));
     }
 
     private async Task<(string? Hash, int? Packets, double? AvDeltaMs)> InspectPackagedAsync(
@@ -899,6 +977,13 @@ public sealed class TranscodeAnalysisCollector {
             $"{formatId}.integrity.segment_tables",
             "Segment tables identical across rungs and protocols",
             integrity.SegmentTablesIdentical ? "Yes" : "No"));
+
+        if (integrity.ForcedKeyframesAligned is { } aligned) {
+            children.Add(Leaf(
+                $"{formatId}.integrity.forced_keyframes",
+                "Forced keyframes on the same frames in every rung",
+                aligned ? "Yes" : "No"));
+        }
 
         if (integrity.Problems.Count > 0) {
             children.Add(Leaf($"{formatId}.integrity.problems", "Problems", string.Join("; ", integrity.Problems)));

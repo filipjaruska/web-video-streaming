@@ -6,7 +6,11 @@ using System.Xml.Linq;
 
 namespace WebWVideoStreamingAPI.Core;
 
-public sealed record TranscodeVariant(string Resolution, string Bitrate, string Label);
+/// <param name="Tune">
+/// This rung's own x264 <c>-tune</c>, overriding the profile's — set on a pooled ladder, where each
+/// rung is encoded with the setting its prediction came from. Null takes the profile's.
+/// </param>
+public sealed record TranscodeVariant(string Resolution, string Bitrate, string Label, string? Tune = null);
 
 /// <summary>
 /// The encoder settings a ladder is built and packaged with. Everything that differs between the
@@ -108,7 +112,8 @@ public sealed class TranscodeProfile {
                 variants = Variants.Select(variant => new {
                     label = variant.Label,
                     resolution = variant.Resolution,
-                    bitrate = variant.Bitrate
+                    bitrate = variant.Bitrate,
+                    tune = variant.Tune ?? Tune
                 })
             },
             Analysis.AnalysisSchema.Json);
@@ -216,6 +221,12 @@ public sealed class Transcoder {
         decimate ? "-fps_mode vfr " : "";
 
     /// <summary>Everything a rendition's two passes share. Any difference between passes breaks x264's 2-pass.</summary>
+    /// <remarks>
+    /// The tune is the rung's own when it has one, so a pooled ladder encodes each rung under the
+    /// setting it was predicted with. Keyframe placement is the same for every setting: one
+    /// <see cref="KeyframeArgs"/>, and neither setting touches x264's scene-cut threshold — the
+    /// animation tune changes deblocking, psy-rd, AQ strength, B-frames and references only.
+    /// </remarks>
     internal static string RenditionArguments(string inputPath, TranscodeVariant variant, TranscodeProfile profile) {
         var kbps = TranscodeProfile.ParseBitrateKbps(variant.Bitrate);
         var maxrate = (int)Math.Round(kbps * MaxrateFactor);
@@ -224,7 +235,7 @@ public sealed class Transcoder {
         return
             $@"-hide_banner -y -i ""{inputPath}"" -map 0:v:0 -an -sn -dn " +
             $@"-vf ""{PreScaleFilter(profile.Decimate)}scale={variant.Resolution}"" {FpsModeArg(profile.Decimate)}" +
-            $@"-c:v {profile.VideoCodec} -preset {Preset} {TuneArg(profile.Tune)}-pix_fmt yuv420p " +
+            $@"-c:v {profile.VideoCodec} -preset {Preset} {TuneArg(variant.Tune ?? profile.Tune)}-pix_fmt yuv420p " +
             $@"-b:v {kbps}k -maxrate {maxrate}k -bufsize {bufsize}k " +
             KeyframeArgs(profile.SegmentDurationSeconds);
     }
