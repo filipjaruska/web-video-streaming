@@ -16,17 +16,34 @@ namespace WebWVideoStreamingAPI.Analysis;
 /// Derive from this run's grid and the default grid together, each sample tagged with the setting
 /// it was encoded under, so every rung can take whichever setting does better at its rate.
 /// </param>
+/// <param name="CambiLimit">Which rungs must keep their predicted CAMBI under the limit.</param>
 public sealed record LadderDerivationOptions(
     string ProfileName,
     EncodeRecipe Recipe,
     double CambiPenaltyWeight = 0,
     string SeriesKey = "derivedLadder",
-    bool Pooled = false) {
+    bool Pooled = false,
+    CambiLimitMode CambiLimit = CambiLimitMode.Off) {
     public static readonly LadderDerivationOptions Dynamic =
         new("vmaf-crossover", EncodeRecipe.Default);
 
     public static readonly LadderDerivationOptions Animation =
         new("animation-pooled", EncodeRecipe.Animation, CambiPenaltyWeight: 0.5, SeriesKey: "animationLadder", Pooled: true);
+}
+
+/// <summary>Which rungs the CAMBI limit (<see cref="LadderDerivation.MaxPredictedCambi"/>) applies to.</summary>
+public enum CambiLimitMode {
+    Off,
+    TopRung,
+    AtLeast720p
+}
+
+/// <summary>Configuration section <c>LadderDerivation</c>.</summary>
+public sealed class LadderDerivationSettings {
+    public const string SectionName = "LadderDerivation";
+
+    /// <summary>Which rungs of the animation ladder are held to the CAMBI limit.</summary>
+    public CambiLimitMode CambiLimit { get; set; } = CambiLimitMode.Off;
 }
 
 public sealed class LadderDerivationResult {
@@ -83,6 +100,12 @@ public sealed class LadderDerivation {
     /// floor would delete a resolution by fiat instead of letting the envelope decide.
     /// </remarks>
     internal const double QualityFloor = 20.0;
+
+    /// <summary>
+    /// Predicted CAMBI a rung held to the limit may not exceed. Netflix's CAMBI documentation puts
+    /// the point where banding starts to become slightly annoying at around 5.
+    /// </summary>
+    internal const double MaxPredictedCambi = 5.0;
 
     /// <summary>
     /// Adjacent rungs must differ by at least this factor in bitrate. Two rungs a few percent
@@ -147,6 +170,21 @@ public sealed class LadderDerivation {
 
         /// <summary>Raised to <see cref="BitrateFloorBps"/>.</summary>
         public const string Floor = "floor";
+
+        /// <summary>Raised to the lowest rate whose predicted CAMBI stays within <see cref="MaxPredictedCambi"/>.</summary>
+        public const string Cambi = "cambi";
+    }
+
+    /// <summary>What the CAMBI limit did to a rung it applies to.</summary>
+    internal static class CambiLimitStatus {
+        /// <summary>The rung's own placement already meets the limit.</summary>
+        public const string Met = "met";
+
+        /// <summary>The limit raised the rung — its placement is <see cref="Placements.Cambi"/>.</summary>
+        public const string Binding = "binding";
+
+        /// <summary>No rate inside the interval meets the limit; the rung stays where the other rules put it.</summary>
+        public const string Unmet = "cambi-unmet";
     }
 
     /// <summary>How finely the log-rate axis is scanned to find where each resolution wins.</summary>
@@ -187,7 +225,7 @@ public sealed class LadderDerivation {
                 ? Pool(points, defaultGrid, options.CambiPenaltyWeight)
                 : points;
 
-            var plan = Plan(candidates);
+            var plan = Plan(candidates, cambiLimit: options.CambiLimit);
             if (plan.Error != null) {
                 return Fail(plan.Error);
             }
@@ -196,11 +234,12 @@ public sealed class LadderDerivation {
 
             foreach (var rung in plan.Rungs) {
                 _logger.LogInformation(
-                    "{Name} {Label}: {Bitrate} kb/s by {Placement} rule, setting {Setting} — λ point {LambdaPoint} kb/s, interval [{Low}, {High}] kb/s, predicted harm. VMAF {Predicted:0.##}, CAMBI {Cambi:0.##}",
+                    "{Name} {Label}: {Bitrate} kb/s by {Placement} rule{CambiLimit}, setting {Setting} — λ point {LambdaPoint} kb/s, interval [{Low}, {High}] kb/s, predicted harm. VMAF {Predicted:0.##}, CAMBI {Cambi:0.##}",
                     options.ProfileName,
                     rung.Hull.Label,
                     rung.BitrateBps / 1000,
                     rung.Placement,
+                    rung.CambiLimit == CambiLimitStatus.Unmet ? " (cambi-unmet)" : "",
                     rung.Prediction.Setting ?? "own",
                     rung.LambdaPoint.BitrateBps / 1000,
                     Math.Round(rung.IntervalLowBps / 1000),
@@ -225,7 +264,9 @@ public sealed class LadderDerivation {
 
             var document = BuildDocument(plan, profile.Name, derivedVariants, options.CambiPenaltyWeight);
             document.Pooled = !ReferenceEquals(candidates, points);
-            var sensitivity = options.CambiPenaltyWeight > 0 ? Sensitivity(candidates) : null;
+            document.CambiLimit = options.CambiLimit == CambiLimitMode.Off ? null : options.CambiLimit.ToString();
+            document.MaxPredictedCambi = options.CambiLimit == CambiLimitMode.Off ? null : MaxPredictedCambi;
+            var sensitivity = options.CambiPenaltyWeight > 0 ? Sensitivity(candidates, options.CambiLimit) : null;
 
             var animation = options.SeriesKey != "derivedLadder";
             await _store.MergeSeriesAsync(
@@ -273,7 +314,10 @@ public sealed class LadderDerivation {
     /// calls this between samples to aim its refinement at the rungs and crossovers the final
     /// derivation will read, so the two can never disagree about where the ladder is.
     /// </summary>
-    internal static LadderPlan Plan(IReadOnlyList<EncodeGridPoint> points, double qualityFloor = QualityFloor) {
+    internal static LadderPlan Plan(
+        IReadOnlyList<EncodeGridPoint> points,
+        double qualityFloor = QualityFloor,
+        CambiLimitMode cambiLimit = CambiLimitMode.Off) {
         var usable = points.Where(point => IsUsable(point, qualityFloor)).ToList();
         if (usable.Count < 2) {
             return LadderPlan.Failed("Need at least two successful encode-grid points above the quality floor to derive a ladder");
@@ -291,7 +335,17 @@ public sealed class LadderDerivation {
         }
 
         var pooledHull = UpperHull(hulls.SelectMany(hull => hull.Points).OrderBy(LogRate).ToList());
-        var (lambda, lambdaRule) = ChooseLambda(top, envelope.Windows[top.Height]);
+
+        // λ is judged on the top rung as it ships: raised into its window, to the floor, and —
+        // when the limit covers it — to the rate its predicted CAMBI allows.
+        var topWindow = envelope.Windows[top.Height];
+        var topLow = Math.Max(topWindow.LowBps, BitrateFloorBps);
+        if (CambiLimitApplies(cambiLimit, top, isTopRung: true) &&
+            CambiEdge(top, topLow, top.Points[^1].BitrateBps) is { } topEdge) {
+            topLow = Math.Max(topLow, topEdge);
+        }
+
+        var (lambda, lambdaRule) = ChooseLambda(top, topLow);
         var dropped = new Dictionary<string, string>();
         var emptyWindows = new List<EnvelopeWindow>();
         var warnings = new List<string>();
@@ -333,11 +387,29 @@ public sealed class LadderDerivation {
                 continue;
             }
 
+            // The CAMBI limit is one more lower edge of the interval. It never reaches past the
+            // interval: when no rate inside it meets the limit, the other rules alone place the rung.
+            string? cambiStatus = null;
+            if (CambiLimitApplies(cambiLimit, hull, isTopRung: rungs.Count == 0)) {
+                if (CambiEdge(hull, low.Bps, Math.Min(high.Bps, measuredTop)) is { } edge) {
+                    cambiStatus = CambiLimitStatus.Met;
+                    if (Exceeds(edge, low.Bps)) {
+                        low = new Bound(edge, Placements.Cambi, $"predicted CAMBI ≤ {MaxPredictedCambi:0.#}");
+                    }
+                } else {
+                    cambiStatus = CambiLimitStatus.Unmet;
+                }
+            }
+
             var lambdaPoint = Optimal(hull, lambda);
             var (target, placement) =
                 FallsShort(lambdaPoint.BitrateBps, low.Bps) ? (low.Bps, low.Rule)
                 : Exceeds(lambdaPoint.BitrateBps, high.Bps) ? (high.Bps, high.Rule)
                 : (lambdaPoint.BitrateBps, Placements.Lambda);
+
+            if (placement == Placements.Cambi) {
+                cambiStatus = CambiLimitStatus.Binding;
+            }
 
             var bitrate = ShipBps(target, low.Bps, high.Bps);
             var prediction = PredictAt(hull, bitrate);
@@ -362,7 +434,8 @@ public sealed class LadderDerivation {
                 low.Bps,
                 double.IsInfinity(high.Bps) ? null : high.Bps,
                 window,
-                HullDeficit(pooledHull, bitrate, prediction.DecisionQuality)));
+                HullDeficit(pooledHull, bitrate, prediction.DecisionQuality),
+                cambiStatus));
 
             above = bitrate;
             aboveLabel = hull.Label;
@@ -414,6 +487,57 @@ public sealed class LadderDerivation {
 
         // Narrower than 1 kb/s: as good as a single point.
         return (long)Math.Round(bps);
+    }
+
+    private static bool CambiLimitApplies(CambiLimitMode mode, ResolutionHull hull, bool isTopRung) => mode switch {
+        CambiLimitMode.TopRung => isTopRung,
+        CambiLimitMode.AtLeast720p => hull.Height >= 720,
+        _ => false
+    };
+
+    /// <summary>
+    /// The lowest rate in [<paramref name="lowBps"/>, <paramref name="highBps"/>] from which the
+    /// predicted CAMBI stays within <see cref="MaxPredictedCambi"/> all the way up to
+    /// <paramref name="highBps"/> — or null when it is already over the limit at the top, so no
+    /// rate inside the interval meets it.
+    /// </summary>
+    /// <remarks>
+    /// Read off the same per-setting curves the rung's prediction comes from, so the setting that
+    /// wins at each rate is the one whose CAMBI counts. Banding is not monotonic in rate at the low
+    /// end, which is why the edge is where it stays within the limit, not merely where it first dips.
+    /// </remarks>
+    private static double? CambiEdge(ResolutionHull hull, double lowBps, double highBps) {
+        const int steps = 400;
+
+        bool Meets(double bps) => PredictAt(hull, bps).Cambi is { } cambi && cambi <= MaxPredictedCambi;
+
+        if (!Meets(highBps)) {
+            return null;
+        }
+
+        var ratio = highBps / lowBps;
+        var met = highBps;
+        for (var i = steps - 1; i >= 0; i--) {
+            var bps = lowBps * Math.Pow(ratio, (double)i / steps);
+            if (!Meets(bps)) {
+                // Between the last rate that failed and the first that held: bisect for the edge.
+                var (fail, hold) = (bps, met);
+                for (var j = 0; j < 40; j++) {
+                    var mid = Math.Sqrt(fail * hold);
+                    if (Meets(mid)) {
+                        hold = mid;
+                    } else {
+                        fail = mid;
+                    }
+                }
+
+                return hold;
+            }
+
+            met = bps;
+        }
+
+        return lowBps;
     }
 
     private static string Mbps(double bps) =>
@@ -735,11 +859,12 @@ public sealed class LadderDerivation {
     /// behind convex-hull ladder design: picking each rung at a fixed target score instead spends
     /// bits unevenly, over-paying wherever that resolution's curve happens to be flat.
     /// </remarks>
-    /// <param name="window">The top resolution's window. The top rung that ships is its λ point
-    /// raised to the bottom of that window (or the floor) when it falls below, so λ is judged on
-    /// that rung — judging it on the unclamped point would let the two disagree.</param>
-    internal static (double Lambda, string Rule) ChooseLambda(ResolutionHull top, EnvelopeWindow window) {
-        var low = Math.Max(window.LowBps, BitrateFloorBps);
+    /// <param name="low">The lower edge of the top rung's interval. The top rung that ships is its λ
+    /// point raised to that edge when it falls below — the bottom of its window, the floor, or the
+    /// CAMBI limit — so λ is judged on that rung; judging it on the unclamped point would let the two
+    /// disagree. Because the edge is applied first, the CAMBI limit takes precedence over the
+    /// ceiling: λ can pin the top rung at the edge but never pull it under.</param>
+    internal static (double Lambda, string Rule) ChooseLambda(ResolutionHull top, double low) {
         var reachable = top.Points.Max(point => point.DecisionQuality);
         var lambda = LambdaBaseSlope;
 
@@ -852,6 +977,7 @@ public sealed class LadderDerivation {
                 PredictedVmafMin = Round(prediction.VmafMin),
                 PredictedCambi = Round(prediction.Cambi),
                 Setting = prediction.Setting,
+                CambiLimit = rung.CambiLimit,
                 Crf = prediction.OnVertex ? prediction.Vertex.Crf : null,
                 InterpolatedBetweenCrf = prediction.OnVertex ? null : [prediction.Lower.Crf, prediction.Upper.Crf],
                 HullSlope = rung.Slope,
@@ -941,12 +1067,14 @@ public sealed class LadderDerivation {
     /// computation over stored points — it costs no encoding — and it shows whether the chosen
     /// weight changes any decision at all.
     /// </summary>
-    internal static List<LadderSensitivityEntry> Sensitivity(IReadOnlyList<EncodeGridPoint> points) {
+    internal static List<LadderSensitivityEntry> Sensitivity(
+        IReadOnlyList<EncodeGridPoint> points,
+        CambiLimitMode cambiLimit = CambiLimitMode.Off) {
         var entries = new List<LadderSensitivityEntry>();
 
         foreach (var weight in SensitivityWeights) {
             var weighted = points.Select(point => point.WithPenaltyWeight(weight)).ToList();
-            var plan = Plan(weighted);
+            var plan = Plan(weighted, cambiLimit: cambiLimit);
             if (plan.Error != null) {
                 entries.Add(new LadderSensitivityEntry { Weight = weight, Error = plan.Error });
                 continue;
@@ -978,7 +1106,8 @@ public sealed class LadderDerivation {
                       $"{(variant.Crf is { } crf ? $"CRF {crf}" : $"between CRF {variant.InterpolatedBetweenCrf?[0]} and {variant.InterpolatedBetweenCrf?[1]}")}, " +
                       $"pred. harm. VMAF {Format(variant.PredictedVmafHarmonic)}" +
                       $"{(variant.PredictedCambi != null ? $", CAMBI {Format(variant.PredictedCambi)}" : "")})" +
-                      (variant.AtGridBoundary == true ? ", at grid edge" : "")
+                      (variant.AtGridBoundary == true ? ", at grid edge" : "") +
+                      (variant.CambiLimit == CambiLimitStatus.Unmet ? $", CAMBI limit {MaxPredictedCambi:0.#} unmet inside its interval" : "")
                     : variant.Fallback == true
                         ? $"{variant.Bitrate} (default — no measurement)"
                         : variant.Bitrate))
@@ -993,6 +1122,14 @@ public sealed class LadderDerivation {
                 $"{key}.cambiPenalty",
                 "CAMBI penalty",
                 $"{Format(options.CambiPenaltyWeight)} VMAF per CAMBI unit"));
+        }
+
+        if (options.CambiLimit != CambiLimitMode.Off) {
+            children.Insert(options.CambiPenaltyWeight > 0 ? 4 : 3, Leaf(
+                $"{key}.cambiLimit",
+                "CAMBI limit",
+                $"predicted CAMBI ≤ {MaxPredictedCambi:0.#} on " +
+                (options.CambiLimit == CambiLimitMode.TopRung ? "the top rung" : "every rung at 720p and above")));
         }
 
         foreach (var crossover in document.Crossovers ?? []) {
@@ -1033,6 +1170,7 @@ public sealed class LadderDerivation {
         Placements.Cap => "lowered to the crossover above",
         Placements.Spacing => $"lowered to ×{MinRungSpacing} below the rung above",
         Placements.Floor => "raised to the bitrate floor",
+        Placements.Cambi => $"raised until its predicted CAMBI stays within {MaxPredictedCambi:0.#}",
         _ => "at the λ point"
     };
 
@@ -1079,6 +1217,7 @@ public sealed class LadderDerivation {
     /// <param name="Prediction">Its quality read off the hull at <paramref name="BitrateBps"/>.</param>
     /// <param name="LambdaPoint">Its resolution's λ point, where it sits unless clamped.</param>
     /// <param name="IntervalHighBps">Upper end of its admissible interval; null for the top rung.</param>
+    /// <param name="CambiLimit">What the CAMBI limit did to it (see <see cref="CambiLimitStatus"/>); null when the limit does not cover it.</param>
     internal sealed record PlannedRung(
         ResolutionHull Hull,
         long BitrateBps,
@@ -1090,7 +1229,8 @@ public sealed class LadderDerivation {
         double IntervalLowBps,
         double? IntervalHighBps,
         EnvelopeWindow Window,
-        double HullDeficit) {
+        double HullDeficit,
+        string? CambiLimit = null) {
         /// <summary>The grid sample nearest the shipped rate.</summary>
         public EncodeGridPoint Anchor => Prediction.Vertex;
     }

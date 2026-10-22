@@ -67,6 +67,7 @@ public sealed class EncodeGrid {
         string sectionId = "encodeGrid",
         Func<int, int, CancellationToken, Task>? onProgress = null,
         IReadOnlyList<EncodeGridPoint>? defaultGrid = null,
+        CambiLimitMode cambiLimit = CambiLimitMode.Off,
         CancellationToken cancellationToken = default) {
         var points = new List<EncodeGridPoint>();
         var tempRoot = NewTempDir("encode-grid");
@@ -109,7 +110,7 @@ public sealed class EncodeGrid {
                     ? LadderDerivation.Pool(points, defaultGrid, cambiPenaltyWeight)
                     : points;
 
-                var plan = LadderDerivation.Plan(candidates);
+                var plan = LadderDerivation.Plan(candidates, cambiLimit: cambiLimit);
                 if (plan.Error != null) {
                     break;
                 }

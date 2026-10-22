@@ -313,6 +313,14 @@ public sealed class DerivedLadderVariant {
     public double? PredictedCambi { get; set; }
 
     /// <summary>
+    /// When the CAMBI limit covers the rung: "met" (its placement already meets it), "binding" (the
+    /// limit raised it — placement "cambi") or "cambi-unmet" (no rate inside its interval meets it,
+    /// so the other rules alone placed it). Absent when the limit does not cover the rung.
+    /// </summary>
+    [JsonPropertyName("cambiLimit")]
+    public string? CambiLimit { get; set; }
+
+    /// <summary>
     /// In a pooled ladder, the setting the rung is encoded with — the one whose own curve gives the
     /// higher decision quality at its rate; its CRFs and predicted scores come from that curve.
     /// </summary>
@@ -455,6 +463,14 @@ public sealed class DerivedLadderDocument {
     /// <summary>True when derived from the default and tuned grids pooled, each rung free to take either setting.</summary>
     [JsonPropertyName("pooled")]
     public bool? Pooled { get; set; }
+
+    /// <summary>Which rungs were held to the CAMBI limit ("TopRung" or "AtLeast720p"); absent when off.</summary>
+    [JsonPropertyName("cambiLimit")]
+    public string? CambiLimit { get; set; }
+
+    /// <summary>The CAMBI limit's value, when it was on.</summary>
+    [JsonPropertyName("maxPredictedCambi")]
+    public double? MaxPredictedCambi { get; set; }
 }
 
 /// <summary>The animation ladder re-derived under one alternative CAMBI weight.</summary>

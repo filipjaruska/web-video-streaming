@@ -69,6 +69,12 @@ function placementFlag(variant: DerivedLadderVariant): RungFlag | null {
         title: `λ point at ${lambdaPoint} lies below the bitrate floor — raised to ${formatBitrate(variant.intervalLowBps)}.`,
         variant: "secondary",
       };
+    case "cambi":
+      return {
+        label: "cambi",
+        title: `λ point at ${lambdaPoint} predicts too much banding — raised to ${formatBitrate(variant.intervalLowBps)}, the lowest rate whose predicted CAMBI stays within the limit.`,
+        variant: "secondary",
+      };
     default:
       return null;
   }
@@ -100,6 +106,15 @@ function rungFlags(variant: DerivedLadderVariant): RungFlag[] {
       title:
         "On the grid's lowest CRF with the hull still steeper than λ — the tangent point lies past the sampled range, so the grid, not the content, set this rung.",
       variant: "secondary",
+    });
+  }
+
+  if (variant.cambiLimit === "cambi-unmet") {
+    flags.push({
+      label: "cambi-unmet",
+      title:
+        "No rate inside this rung's interval keeps its predicted CAMBI within the limit, so the other rules alone placed it.",
+      variant: "destructive",
     });
   }
 
@@ -184,6 +199,7 @@ export function DerivedLadderTable({
         variant.predictedVmafMin ?? "",
         variant.predictedCambi ?? "",
         variant.setting ?? "",
+        variant.cambiLimit ?? "",
         variant.hullSlope ?? "",
         variant.onEnvelope ?? "",
         variant.hullDeficit ?? "",
@@ -236,6 +252,11 @@ export function DerivedLadderTable({
       `Rungs are chosen on harmonic VMAF − ${formatNumber(ladder.cambiPenaltyWeight)} × CAMBI, so banding counts against a rung.`,
     );
   }
+  if (ladder.cambiLimit) {
+    notes.push(
+      `${ladder.cambiLimit === "TopRung" ? "The top rung is" : "Every rung at 720p and above is"} held to predicted CAMBI ≤ ${formatNumber(ladder.maxPredictedCambi)}, a lower edge of its interval that takes precedence over the 95 ceiling.`,
+    );
+  }
 
   return (
     <Card>
@@ -264,6 +285,7 @@ export function DerivedLadderTable({
               "predicted_vmaf_min",
               "predicted_cambi",
               "setting",
+              "cambi_limit",
               "hull_slope",
               "on_envelope",
               "hull_deficit",

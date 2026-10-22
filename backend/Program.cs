@@ -27,6 +27,7 @@ Directory.CreateDirectory(storageRoot);
 
 builder.Services.Configure<StorageOptions>(options => options.RootPath = storageRoot);
 builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection(UploadOptions.SectionName));
+builder.Services.Configure<LadderDerivationSettings>(builder.Configuration.GetSection(LadderDerivationSettings.SectionName));
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString)) {

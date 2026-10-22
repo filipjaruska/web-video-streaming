@@ -37,6 +37,7 @@ public sealed class ProcessingPipeline {
     private readonly LadderDerivation _ladderDerivation;
     private readonly LadderComparison _ladderComparison;
     private readonly TuningComparison _tuningComparison;
+    private readonly LadderDerivationSettings _ladderSettings;
     private readonly ILogger<ProcessingPipeline> _logger;
 
     /// <summary>Per run. The pipeline is scoped, so one instance serves one run at a time.</summary>
@@ -56,6 +57,7 @@ public sealed class ProcessingPipeline {
         LadderDerivation ladderDerivation,
         LadderComparison ladderComparison,
         TuningComparison tuningComparison,
+        IOptions<LadderDerivationSettings> ladderSettings,
         ILogger<ProcessingPipeline> logger) {
         _dbContext = dbContext;
         _paths = paths;
@@ -70,6 +72,7 @@ public sealed class ProcessingPipeline {
         _ladderDerivation = ladderDerivation;
         _ladderComparison = ladderComparison;
         _tuningComparison = tuningComparison;
+        _ladderSettings = ladderSettings.Value;
         _logger = logger;
     }
 
@@ -648,9 +651,14 @@ public sealed class ProcessingPipeline {
                 video, sourcePath, staticTranscodeId, DynamicPass, audio, facts, defaultGrid: null, cancellationToken);
             dynamicId = dynamicPackage?.Transcode.Id;
 
-            // The animation ladder pools its tuned grid with the default one just measured.
+            // The animation ladder pools its tuned grid with the default one just measured, under
+            // the configured CAMBI limit.
+            var animationPass = AnimationPass with {
+                Options = AnimationPass.Options with { CambiLimit = _ladderSettings.CambiLimit }
+            };
+
             var (animationPackage, tunedGrid) = await RunPassAsync(
-                video, sourcePath, staticTranscodeId, AnimationPass, audio, facts, defaultGrid: baseGrid, cancellationToken);
+                video, sourcePath, staticTranscodeId, animationPass, audio, facts, defaultGrid: baseGrid, cancellationToken);
             animationId = animationPackage?.Transcode.Id;
 
             if (baseGrid != null && tunedGrid != null) {
@@ -714,6 +722,7 @@ public sealed class ProcessingPipeline {
             pass.GridSectionId,
             onProgress: (done, total, ct) => ReportSubAsync(video, pass.GridStep, done, total, ct),
             defaultGrid: pass.Options.Pooled ? defaultGrid : null,
+            cambiLimit: pass.Options.CambiLimit,
             cancellationToken: cancellationToken);
 
         if (!grid.Success) {

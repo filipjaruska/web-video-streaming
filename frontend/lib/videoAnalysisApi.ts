@@ -118,7 +118,12 @@ export interface DerivedLadderVariant {
    * The rule that placed the rung: at its λ point, or clamped to the bound of its admissible
    * interval named here.
    */
-  placement?: "lambda" | "window" | "cap" | "spacing" | "floor";
+  placement?: "lambda" | "window" | "cap" | "spacing" | "floor" | "cambi";
+  /**
+   * When the CAMBI limit covers the rung: met by its placement, binding (it raised the rung), or
+   * unmet inside its interval — the rung then stays where the other rules put it.
+   */
+  cambiLimit?: "met" | "binding" | "cambi-unmet";
   /** Where its resolution's λ point lies — the rung's rate unless clamped. */
   lambdaPointBps?: number;
   intervalLowBps?: number;
@@ -158,6 +163,9 @@ export interface DerivedLadderDocument {
   cambiPenaltyWeight?: number;
   /** Derived from the default and tuned grids pooled, each rung free to take either setting. */
   pooled?: boolean;
+  /** Which rungs were held to the CAMBI limit; absent when it was off. */
+  cambiLimit?: "TopRung" | "AtLeast720p";
+  maxPredictedCambi?: number;
 }
 
 export interface CrossoverInfo {
