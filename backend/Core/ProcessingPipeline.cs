@@ -767,6 +767,99 @@ public sealed class ProcessingPipeline {
         return (package, grid.Points);
     }
 
+    // —— Re-deriving the animation ladder ——————————————————————————————————
+
+    /// <summary>
+    /// Derives the animation ladder again from the grids stored with the video's static ladder —
+    /// the tuned grid pooled with the default one — packages and verifies it, and replaces the
+    /// previous animation ladder. No grid is re-run: for a change to the derivation that leaves the
+    /// measured grids valid as they are.
+    /// </summary>
+    public async Task<ProcessingResult> RederiveAnimationLadderAsync(string routeId, CancellationToken cancellationToken = default) {
+        var video = await _dbContext.Videos
+            .Include(item => item.UploadSessions)
+            .FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
+        if (video == null) {
+            return new ProcessingResult { Success = false, ErrorMessage = "Video not found" };
+        }
+
+        var sourcePath = _paths.ResolveSource(video.RouteId);
+        if (sourcePath == null) {
+            return new ProcessingResult { Success = false, ErrorMessage = "Source video not found" };
+        }
+
+        var transcodes = await _dbContext.Transcodes
+            .Where(transcode => transcode.VideoId == video.Id)
+            .ToListAsync(cancellationToken);
+
+        Transcode? Latest(LadderKind kind) => transcodes
+            .Where(transcode => transcode.LadderKind == kind && transcode.Status == TranscodeStatus.Succeeded)
+            .MaxBy(transcode => transcode.CreatedAtUtc);
+
+        var staticTranscode = Latest(LadderKind.Static);
+        if (staticTranscode == null) {
+            return new ProcessingResult { Success = false, ErrorMessage = "No static ladder to derive from" };
+        }
+
+        var stored = await _analysis.TryGetAsync(AnalysisOwner.Transcode, staticTranscode.Id, cancellationToken);
+        if (stored?.Series.EncodeGridAnimation is not { Count: > 0 } tunedGrid) {
+            return new ProcessingResult { Success = false, ErrorMessage = "No stored animation grid" };
+        }
+
+        var facts = await ReadSourceFactsAsync(sourcePath, cancellationToken);
+        var audio = await EncodeSharedAudioAsync(video, sourcePath, cancellationToken);
+        var pass = AnimationPass with {
+            Options = AnimationPass.Options with { CambiLimit = _ladderSettings.CambiLimit }
+        };
+
+        var derived = await _ladderDerivation.DeriveAsync(
+            staticTranscode.Id, tunedGrid, pass.Options, stored.Value.Series.EncodeGrid, cancellationToken);
+        if (!derived.Success || derived.Profile == null) {
+            return new ProcessingResult { Success = false, ErrorMessage = derived.ErrorMessage ?? "Derivation failed" };
+        }
+
+        var package = await PackageAndAnalyzeAsync(
+            video, sourcePath, LadderKind.AnimationTuned, derived.Profile, staticTranscode.Id, pass.Steps, audio, facts, cancellationToken);
+        if (!package.Succeeded) {
+            return new ProcessingResult { Success = false, ErrorMessage = package.ErrorMessage ?? "Packaging failed" };
+        }
+
+        // The ladder it replaces goes entirely: row, analysis and files.
+        var previous = transcodes
+            .Where(transcode => transcode.LadderKind == LadderKind.AnimationTuned && transcode.Id != package.Transcode.Id)
+            .ToList();
+        foreach (var transcode in previous) {
+            TryDeleteDirectory(_paths.TranscodeDir(video.RouteId, transcode.Id));
+        }
+
+        await _analysis.DeleteForVideosAsync([], previous.Select(transcode => transcode.Id), cancellationToken);
+        _dbContext.Transcodes.RemoveRange(previous);
+        video.ActiveTranscodeId = package.Transcode.Id;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var candidates = new List<(LadderKind, Guid)>();
+        if (Latest(LadderKind.Dynamic) is { } dynamic) {
+            candidates.Add((LadderKind.Dynamic, dynamic.Id));
+        }
+
+        candidates.Add((LadderKind.AnimationTuned, package.Transcode.Id));
+        await _ladderComparison.CompareAsync(staticTranscode.Id, candidates, cancellationToken);
+
+        _logger.LogInformation(
+            "Re-derived the animation ladder for {RouteId}: {New} replaces {Old}",
+            video.RouteId,
+            package.Transcode.Id,
+            string.Join(", ", previous.Select(transcode => transcode.Id)));
+
+        // TranscodeId is the new animation ladder here, not the static one.
+        return new ProcessingResult {
+            Success = true,
+            TranscodeId = package.Transcode.Id,
+            HasHls = package.HasHls,
+            HasDash = package.HasDash
+        };
+    }
+
     // —— Session progress ——————————————————————————————————————————————————
 
     private Task ReportAsync(Video video, PipelineStep step, CancellationToken cancellationToken) {

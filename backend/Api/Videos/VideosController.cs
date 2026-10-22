@@ -200,6 +200,24 @@ public class VideosController : ControllerBase {
         });
     }
 
+    /// <summary>
+    /// Re-derives and re-packages the animation ladder from the grids already stored, replacing the
+    /// previous one — for a change to the derivation, without re-running the grids. Synchronous:
+    /// the response comes once the new ladder is packaged and verified.
+    /// </summary>
+    [HttpPost("{routeId}/animation-ladder/rederive")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RederiveAnimationLadder(
+        string routeId,
+        [FromServices] ProcessingPipeline pipeline,
+        CancellationToken cancellationToken) {
+        var result = await pipeline.RederiveAnimationLadderAsync(routeId, cancellationToken);
+        return result.Success
+            ? Ok(new { routeId, animationTranscodeId = result.TranscodeId?.ToString("N") })
+            : BadRequest(new { message = result.ErrorMessage });
+    }
+
     [HttpDelete("{routeId}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
