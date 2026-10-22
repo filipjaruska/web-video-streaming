@@ -197,9 +197,11 @@ export default async function ConceptsPage() {
           </p>
           <p>
             λ starts at 4 for every clip and moves for one reason only: to keep the top rung between
-            harmonic VMAF 88 and 95. If the top rung lands above 95, λ is raised until it no longer
-            does; if it lands below 88, λ is lowered until it clears 88, or until the top resolution's
-            best sample when it never gets there. Each ladder records which of these applied.
+            harmonic VMAF 88 and 95. If the top rung lands above 95, λ is raised onto the cheapest
+            measured sample that still reaches 95 — the grid is discrete, so that sample can sit a
+            little above it; if it lands below 88, λ is lowered until it clears 88, or until the top
+            resolution's best sample when it never gets there. Each ladder records which of these
+            applied.
           </p>
         </Section>
 

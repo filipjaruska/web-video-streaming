@@ -98,7 +98,7 @@ function describeLambdaRule(ladder: DerivedLadderDocument): string | null {
 
   switch (ladder.lambdaRule) {
     case "ceiling":
-      return `λ starts at ${base}; there the top rung exceeded ${range}, so λ was raised until it no longer does.`;
+      return `λ starts at ${base}; there the top rung exceeded ${range}, so λ was raised onto the cheapest sample that still reaches the ceiling.`;
     case "floor":
       return `λ starts at ${base}; there the top rung fell short of ${range}, so λ was lowered until it clears the floor.`;
     case "reachable":

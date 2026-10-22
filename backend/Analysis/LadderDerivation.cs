@@ -108,7 +108,10 @@ public sealed class LadderDerivation {
         /// <summary>The base slope already put the top rung inside its quality range.</summary>
         public const string Base = "base";
 
-        /// <summary>At the base slope the top rung exceeded the ceiling; λ was raised until it no longer does.</summary>
+        /// <summary>
+        /// At the base slope the top rung exceeded the ceiling; λ was raised as far as it goes while the
+        /// top rung still reaches it — onto the cheapest measured sample at or above the ceiling.
+        /// </summary>
         public const string Ceiling = "ceiling";
 
         /// <summary>At the base slope the top rung fell under the floor; λ was lowered until it clears it.</summary>
@@ -923,7 +926,7 @@ public sealed class LadderDerivation {
         var start = string.Create(CultureInfo.InvariantCulture, $"base slope {document.LambdaBase:0.##}");
 
         return document.LambdaRule switch {
-            LambdaRules.Ceiling => $"raised from the {start}: the top rung there exceeded {range}",
+            LambdaRules.Ceiling => $"raised from the {start}: the top rung there exceeded {range}, so it moves to the cheapest sample still reaching the ceiling",
             LambdaRules.Floor => $"lowered from the {start}: the top rung there fell short of {range}",
             LambdaRules.Reachable => $"lowered from the {start} to the top resolution's best sample, which stays under {range}",
             _ => $"{start}: the top rung already lies inside {range}"

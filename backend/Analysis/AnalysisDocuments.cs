@@ -361,7 +361,7 @@ public sealed class DerivedLadderDocument {
 
     /// <summary>
     /// How λ was reached: "base" (the base slope kept the top rung inside its quality range),
-    /// "ceiling" (raised until the top rung no longer exceeds the ceiling), "floor" (lowered until
+    /// "ceiling" (raised onto the cheapest sample still reaching the ceiling), "floor" (lowered until
     /// it clears the floor) or "reachable" (lowered to the top resolution's best sample, which
     /// never reaches the floor).
     /// </summary>
