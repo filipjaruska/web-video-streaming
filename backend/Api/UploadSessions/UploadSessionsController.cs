@@ -20,6 +20,9 @@ public sealed class UploadSessionStateDto {
     public DateTime? CompletedAtUtc { get; init; }
     public DateTime? ProcessingStartedAtUtc { get; init; }
     public int? EstimatedRemainingSeconds { get; init; }
+
+    /// <summary>Videos the worker takes before this one, while the status is Queued; otherwise null.</summary>
+    public int? QueuePosition { get; init; }
 }
 
 public sealed class UploadSessionVideoDto {
@@ -56,7 +59,7 @@ public class UploadSessionsController : ControllerBase {
     [ProducesResponseType<UploadSessionResponse>(StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateSession(CancellationToken cancellationToken) {
         var session = await _sessions.CreateSessionAsync(cancellationToken);
-        return CreatedAtAction(nameof(GetSession), new { sessionId = session.Id }, ToResponse(session));
+        return CreatedAtAction(nameof(GetSession), new { sessionId = session.Id }, ToResponse(session, queuePosition: null));
     }
 
     [HttpGet("{sessionId:guid}")]
@@ -66,7 +69,7 @@ public class UploadSessionsController : ControllerBase {
         var session = await _sessions.GetSessionAsync(sessionId, cancellationToken);
         return session == null
             ? NotFound(new { message = "Upload session not found" })
-            : Ok(ToResponse(session));
+            : Ok(await RespondAsync(session, cancellationToken));
     }
 
     [HttpPatch("{sessionId:guid}/video")]
@@ -84,7 +87,7 @@ public class UploadSessionsController : ControllerBase {
 
         return session == null
             ? NotFound(new { message = "Upload session not found" })
-            : Ok(ToResponse(session));
+            : Ok(await RespondAsync(session, cancellationToken));
     }
 
     [HttpPost("{sessionId:guid}/upload")]
@@ -120,10 +123,13 @@ public class UploadSessionsController : ControllerBase {
             _queue.Enqueue(result.VideoId.Value);
         }
 
-        return Ok(ToResponse(result.Session!));
+        return Ok(await RespondAsync(result.Session!, cancellationToken));
     }
 
-    private static UploadSessionResponse ToResponse(UploadSession session) {
+    private async Task<UploadSessionResponse> RespondAsync(UploadSession session, CancellationToken cancellationToken) =>
+        ToResponse(session, await _sessions.QueuePositionAsync(session, cancellationToken));
+
+    private static UploadSessionResponse ToResponse(UploadSession session, int? queuePosition) {
         return new UploadSessionResponse {
             SessionId = session.Id,
             RedirectUrl = $"/upload/{session.Id}",
@@ -137,7 +143,8 @@ public class UploadSessionsController : ControllerBase {
                 UploadedAtUtc = session.UploadedAtUtc,
                 CompletedAtUtc = session.CompletedAtUtc,
                 ProcessingStartedAtUtc = session.ProcessingStartedAtUtc,
-                EstimatedRemainingSeconds = session.EstimatedRemainingSeconds
+                EstimatedRemainingSeconds = session.EstimatedRemainingSeconds,
+                QueuePosition = queuePosition
             },
             Video = new UploadSessionVideoDto {
                 RouteId = session.Video.RouteId,

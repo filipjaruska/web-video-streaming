@@ -24,6 +24,8 @@ export interface UploadSessionState {
   completedAtUtc: string | null;
   processingStartedAtUtc?: string | null;
   estimatedRemainingSeconds?: number | null;
+  /** While `Queued`: how many videos the worker takes before this one. */
+  queuePosition?: number | null;
 }
 
 export interface UploadSessionResponse {

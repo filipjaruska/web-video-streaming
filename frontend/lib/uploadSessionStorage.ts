@@ -21,7 +21,8 @@ export function uploadSessionButtonLabel(
       return "Resume";
     case "Uploading":
       return "Uploading";
-    case "Uploaded":
+    case "Queued":
+      return "Queued";
     case "Processing": {
       const step = shortenProcessingStep(currentStep) ?? "Processing";
       if (
@@ -85,7 +86,7 @@ function shortenProcessingStep(step: string | null | undefined): string | null {
   if (normalized.includes("dash")) {
     return "DASH";
   }
-  if (normalized.includes("queued") || normalized.includes("starting")) {
+  if (normalized.includes("starting")) {
     return "Processing";
   }
 

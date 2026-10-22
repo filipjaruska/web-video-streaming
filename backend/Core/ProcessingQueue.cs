@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Microsoft.EntityFrameworkCore;
 
 namespace WebWVideoStreamingAPI.Core;
 
@@ -42,6 +43,12 @@ public sealed class ProcessingWorker : BackgroundService {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
         _logger.LogInformation("Video processing worker started");
 
+        try {
+            await RecoverAsync(stoppingToken);
+        } catch (Exception ex) when (ex is not OperationCanceledException) {
+            _logger.LogError(ex, "Could not recover processing jobs from before the restart");
+        }
+
         await foreach (var job in _queue.ReadAllAsync(stoppingToken)) {
             try {
                 using var scope = _scopeFactory.CreateScope();
@@ -67,5 +74,56 @@ public sealed class ProcessingWorker : BackgroundService {
         }
 
         _logger.LogInformation("Video processing worker stopped");
+    }
+
+    /// <summary>
+    /// Puts back what a restart dropped. The queue lives in memory, so a restart forgets every job
+    /// in it: videos still waiting are queued again, in upload order, and a run cut off midway is
+    /// marked failed — its partial outputs are nothing to resume from, and the video can be uploaded
+    /// again.
+    /// </summary>
+    private async Task RecoverAsync(CancellationToken cancellationToken) {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var now = DateTime.UtcNow;
+        const string interrupted = "Interrupted by a server restart";
+
+        var sessions = await db.UploadSessions
+            .Where(session => session.Status == UploadSessionStatus.Queued || session.Status == UploadSessionStatus.Processing)
+            .OrderBy(session => session.UploadedAtUtc)
+            .ToListAsync(cancellationToken);
+
+        foreach (var session in sessions) {
+            if (session.Status == UploadSessionStatus.Queued) {
+                _queue.Enqueue(session.VideoId);
+                continue;
+            }
+
+            session.Status = UploadSessionStatus.Failed;
+            session.CurrentStep = interrupted;
+            session.EstimatedRemainingSeconds = null;
+            session.CompletedAtUtc = now;
+            session.UpdatedAtUtc = now;
+        }
+
+        var transcodes = await db.Transcodes
+            .Where(transcode => transcode.Status == TranscodeStatus.Running)
+            .ToListAsync(cancellationToken);
+
+        foreach (var transcode in transcodes) {
+            transcode.Status = TranscodeStatus.Failed;
+            transcode.ErrorMessage = interrupted;
+            transcode.CompletedAtUtc = now;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        var requeued = sessions.Count(session => session.Status == UploadSessionStatus.Queued);
+        if (requeued > 0 || sessions.Count > requeued || transcodes.Count > 0) {
+            _logger.LogInformation(
+                "Recovered after restart: {Requeued} queued video(s) requeued, {Failed} interrupted run(s) marked failed",
+                requeued,
+                sessions.Count - requeued);
+        }
     }
 }

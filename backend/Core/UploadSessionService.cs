@@ -145,9 +145,14 @@ public sealed class UploadSessionService {
             await _paths.SaveSourceAsync(session.Video.RouteId, content, cancellationToken);
 
             var uploadedAt = DateTime.UtcNow;
-            session.Status = UploadSessionStatus.Processing;
+            // Processing starts when the worker reaches this video, which sets the status itself.
+            session.Status = UploadSessionStatus.Queued;
             session.ProgressPercent = ProcessingEta.PercentFor(PipelineStep.Starting);
-            session.CurrentStep = "Queued for processing";
+            session.CurrentStep = "Waiting for processing";
+            // A retry after a failed run starts over; the earlier run's timing describes nothing now.
+            session.ProcessingStartedAtUtc = null;
+            session.CompletedAtUtc = null;
+            session.EstimatedRemainingSeconds = null;
             session.UploadedAtUtc = uploadedAt;
             session.UpdatedAtUtc = uploadedAt;
             session.Video.OriginalFileName = Path.GetFileName(fileName);
@@ -178,6 +183,23 @@ public sealed class UploadSessionService {
             await _dbContext.SaveChangesAsync(cancellationToken);
             return Fail("UploadFailed", ex.Message, session);
         }
+    }
+
+    /// <summary>
+    /// How many videos the worker takes before this one: the one processing and every video queued
+    /// earlier. Null when the session is not queued.
+    /// </summary>
+    public async Task<int?> QueuePositionAsync(UploadSession session, CancellationToken cancellationToken = default) {
+        if (session.Status != UploadSessionStatus.Queued) {
+            return null;
+        }
+
+        // The worker drains its queue in upload order.
+        return await _dbContext.UploadSessions.CountAsync(
+            other => other.Id != session.Id &&
+                     (other.Status == UploadSessionStatus.Processing ||
+                      (other.Status == UploadSessionStatus.Queued && other.UploadedAtUtc < session.UploadedAtUtc)),
+            cancellationToken);
     }
 
     private Task<UploadSession?> FindLiveSessionAsync(Guid sessionId, CancellationToken cancellationToken) {

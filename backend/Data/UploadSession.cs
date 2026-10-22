@@ -3,7 +3,8 @@ namespace WebWVideoStreamingAPI.Data;
 public enum UploadSessionStatus {
     AwaitingUpload = 0,
     Uploading = 1,
-    Uploaded = 2,
+    /// <summary>Uploaded and waiting for the processing worker, which takes one video at a time.</summary>
+    Queued = 2,
     Processing = 3,
     Completed = 4,
     Failed = 5,
@@ -17,7 +18,7 @@ public class UploadSession {
     public UploadSessionStatus Status { get; set; }
     public int ProgressPercent { get; set; }
 
-    /// <summary>Human-readable pipeline phase while status is Processing (e.g. "SI/TI analysis").</summary>
+    /// <summary>Human-readable pipeline phase while status is Queued or Processing (e.g. "SI/TI analysis").</summary>
     public string? CurrentStep { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }

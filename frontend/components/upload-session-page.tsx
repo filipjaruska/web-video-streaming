@@ -60,12 +60,11 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     }
   }, [session.session.status]);
 
-  const isProcessing =
-    session.session.status === "Processing" ||
-    session.session.status === "Uploaded";
+  const isProcessing = session.session.status === "Processing";
+  const isQueued = session.session.status === "Queued";
+  const queuePosition = session.session.queuePosition;
 
-  const processingStartedAt =
-    session.session.processingStartedAtUtc ?? session.session.uploadedAtUtc;
+  const processingStartedAt = session.session.processingStartedAtUtc;
 
   const elapsedSeconds = useMemo(() => {
     if (!isProcessing || !processingStartedAt) {
@@ -111,7 +110,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     if (
       session.session.status !== "Processing" &&
       session.session.status !== "Uploading" &&
-      session.session.status !== "Uploaded"
+      session.session.status !== "Queued"
     ) {
       return;
     }
@@ -284,6 +283,14 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
             )}
 
             <Progress value={session.session.progressPercent} />
+
+            {isQueued && queuePosition != null && (
+              <p className="text-sm text-muted-foreground">
+                {queuePosition === 0
+                  ? "Next in line — processing starts in a moment."
+                  : `${queuePosition} ${queuePosition === 1 ? "video" : "videos"} ahead in the queue. Videos are processed one at a time.`}
+              </p>
+            )}
 
             {isProcessing && (
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">

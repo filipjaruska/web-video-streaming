@@ -780,7 +780,7 @@ public sealed class ProcessingPipeline {
         var remaining = _eta.EstimateRemainingSeconds(now);
 
         foreach (var session in video.UploadSessions.Where(session =>
-                     session.Status is UploadSessionStatus.Uploaded
+                     session.Status is UploadSessionStatus.Queued
                          or UploadSessionStatus.Processing
                          or UploadSessionStatus.Uploading)) {
             session.Status = UploadSessionStatus.Processing;
@@ -800,7 +800,7 @@ public sealed class ProcessingPipeline {
         video.UpdatedAtUtc = completedAt;
 
         foreach (var session in video.UploadSessions.Where(session =>
-                     session.Status is UploadSessionStatus.Processing or UploadSessionStatus.Uploaded)) {
+                     session.Status is UploadSessionStatus.Processing or UploadSessionStatus.Queued)) {
             session.Status = succeeded ? UploadSessionStatus.Completed : UploadSessionStatus.Failed;
             session.ProgressPercent = succeeded ? 100 : session.ProgressPercent;
             session.CurrentStep = succeeded ? null : session.CurrentStep;
