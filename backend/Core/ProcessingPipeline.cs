@@ -713,7 +713,8 @@ public sealed class ProcessingPipeline {
             pass.CambiPenaltyWeight,
             pass.GridSectionId,
             onProgress: (done, total, ct) => ReportSubAsync(video, pass.GridStep, done, total, ct),
-            cancellationToken);
+            defaultGrid: pass.Options.Pooled ? defaultGrid : null,
+            cancellationToken: cancellationToken);
 
         if (!grid.Success) {
             _logger.LogWarning(

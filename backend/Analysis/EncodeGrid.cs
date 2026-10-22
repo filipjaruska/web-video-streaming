@@ -66,6 +66,7 @@ public sealed class EncodeGrid {
         double cambiPenaltyWeight = 0,
         string sectionId = "encodeGrid",
         Func<int, int, CancellationToken, Task>? onProgress = null,
+        IReadOnlyList<EncodeGridPoint>? defaultGrid = null,
         CancellationToken cancellationToken = default) {
         var points = new List<EncodeGridPoint>();
         var tempRoot = NewTempDir("encode-grid");
@@ -103,28 +104,41 @@ public sealed class EncodeGrid {
             }
 
             while (points.Count < MaxSamplesTotal) {
-                var plan = LadderDerivation.Plan(points);
+                // A pooled ladder is refined against both settings' samples, the way it is derived.
+                var candidates = defaultGrid != null
+                    ? LadderDerivation.Pool(points, defaultGrid, cambiPenaltyWeight)
+                    : points;
+
+                var plan = LadderDerivation.Plan(candidates);
                 if (plan.Error != null) {
                     break;
                 }
 
-                var next = NextTargets(points, plan, variants)
+                var next = NextTargets(candidates, plan, variants)
                     .FirstOrDefault(target => points.Count(point => point.Height == target.Height) < MaxSamplesPerResolution);
 
                 if (next == null) {
                     break;
                 }
 
+                // A sample the pooled ladder wants under the default setting is encoded under it and
+                // kept in this grid tagged as such; everything else is this grid's own setting.
+                var underDefault = defaultGrid != null && next.Setting == EncodeSettings.Default;
+                var sampleRecipe = underDefault ? EncodeRecipe.Default : recipe;
+
                 cancellationToken.ThrowIfCancellationRequested();
                 _logger.LogInformation(
-                    "Encode grid refinement{Suffix}: {Label} CRF{Crf} — {Reason}",
+                    "Encode grid refinement{Suffix}: {Label} CRF{Crf}{Setting} — {Reason}",
                     recipe.Tune == null ? "" : $" [{recipe.Tune}]",
                     next.Variant.Label,
                     next.Crf,
+                    underDefault ? " under the default setting" : "",
                     next.Reason);
 
-                points.Add(await SampleAsync(
-                    sourcePath, tempRoot, next.Variant, next.Crf, reference.Value, recipe, cambiPenaltyWeight, cancellationToken));
+                var point = await SampleAsync(
+                    sourcePath, tempRoot, next.Variant, next.Crf, reference.Value, sampleRecipe, cambiPenaltyWeight, cancellationToken);
+                point.Setting = underDefault ? EncodeSettings.Default : null;
+                points.Add(point);
                 await ReportAsync(onProgress, ++done, total, cancellationToken);
             }
 
@@ -170,7 +184,11 @@ public sealed class EncodeGrid {
     }
 
     /// <summary>A sample the refinement wants, in priority order (lower first).</summary>
-    internal sealed record GridTarget(TranscodeVariant Variant, int Height, int Crf, int Priority, string Reason);
+    /// <param name="Setting">
+    /// The setting to encode it under — null for the grid's own. Set only when refining a pooled
+    /// ladder, where a rung's sample belongs in the grid of the setting that rung takes.
+    /// </param>
+    internal sealed record GridTarget(TranscodeVariant Variant, int Height, int Crf, int Priority, string Reason, string? Setting = null);
 
     /// <summary>
     /// Where the next samples are worth spending, given the current provisional ladder.
@@ -185,13 +203,18 @@ public sealed class EncodeGrid {
     /// Priority 4 — a quality gap next to a selected rung.
     /// Targets predicted to fall below the quality floor, outside the CRF range, or already
     /// sampled are skipped.
+    /// <para>
+    /// On a pooled ladder every target names the setting to encode it under: a rung's in the
+    /// setting that rung takes, a crossover's in the setting that does better there. CRF and rate
+    /// are related differently under each setting, so each is aimed off that setting's samples.
+    /// </para>
     /// </remarks>
     internal static List<GridTarget> NextTargets(
         IReadOnlyList<EncodeGridPoint> points,
         LadderDerivation.LadderPlan plan,
         IReadOnlyList<TranscodeVariant> variants) {
         var ok = points.Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0).ToList();
-        var sampled = points.Select(point => (point.Height, point.Crf)).ToHashSet();
+        var sampled = points.Select(point => (point.Height, point.Crf, point.Setting)).ToHashSet();
         var variantByHeight = variants
             .Select(variant => (Variant: variant, Height: ParseResolution(variant.Resolution)?.Height ?? 0))
             .Where(item => item.Height > 0)
@@ -200,67 +223,76 @@ public sealed class EncodeGrid {
 
         var targets = new List<GridTarget>();
 
-        List<EncodeGridPoint> SamplesAt(int height) =>
-            ok.Where(point => point.Height == height).OrderBy(point => point.Crf).ToList();
+        List<EncodeGridPoint> SamplesAt(int height, string? setting) =>
+            ok.Where(point => point.Height == height && point.Setting == setting).OrderBy(point => point.Crf).ToList();
 
-        void Add(int height, int? crf, int priority, string reason) {
+        // The setting that does better at a rate on a resolution's curves — null on a single-setting grid.
+        string? SettingAt(int height, double bitrateBps) =>
+            plan.Hulls.FirstOrDefault(hull => hull.Height == height) is { } hull
+                ? LadderDerivation.PredictAt(hull, bitrateBps).Setting
+                : null;
+
+        void Add(int height, string? setting, int? crf, int priority, string reason) {
             if (crf == null || !variantByHeight.TryGetValue(height, out var variant)) {
                 return;
             }
 
             var value = Math.Clamp(crf.Value, LowestCrf, HighestCrf);
-            if (sampled.Contains((height, value))) {
+            if (sampled.Contains((height, value, setting))) {
                 return;
             }
 
-            if (PredictQuality(SamplesAt(height), value) is { } predicted && predicted < LadderDerivation.QualityFloor) {
+            if (PredictQuality(SamplesAt(height, setting), value) is { } predicted && predicted < LadderDerivation.QualityFloor) {
                 return;
             }
 
-            targets.Add(new GridTarget(variant, height, value, priority, reason));
+            targets.Add(new GridTarget(variant, height, value, priority, reason, setting));
         }
 
         foreach (var rung in plan.Rungs) {
             var height = rung.Hull.Height;
-            var samples = SamplesAt(height);
-            if (samples.Count == 0) {
-                continue;
-            }
 
             if (rung.AtGridBoundary) {
-                var minCrf = samples.Min(point => point.Crf);
-                var extended = sampled.Contains((height, minCrf - 4)) ? minCrf - 2 : minCrf - 4;
-                Add(height, extended, 1, "tangent point lies past the grid's lowest CRF");
+                var setting = rung.LambdaPoint.Setting;
+                var samples = SamplesAt(height, setting);
+                if (samples.Count > 0) {
+                    var minCrf = samples.Min(point => point.Crf);
+                    var extended = sampled.Contains((height, minCrf - 4, setting)) ? minCrf - 2 : minCrf - 4;
+                    Add(height, setting, extended, 1, "tangent point lies past the grid's lowest CRF");
+                }
             }
 
-            // A clamped rung's quality is read off the hull between two samples; one at its own rate
-            // makes that reading a measurement.
+            // A clamped rung's quality is read off its setting's curve between two samples; one at
+            // its own rate, in that setting, makes that reading a measurement.
+            var rungSetting = rung.Prediction.Setting;
+            var rungSamples = SamplesAt(height, rungSetting);
             if (rung.Placement != LadderDerivation.Placements.Lambda && !rung.Prediction.OnVertex) {
                 Add(
                     height,
-                    CrfForRate(samples, rung.BitrateBps),
+                    rungSetting,
+                    CrfForRate(rungSamples, rung.BitrateBps),
                     2,
                     $"at the {rung.Placement} bound this rung is clamped to");
             }
 
             var anchor = rung.Anchor;
-            var index = samples.FindIndex(point => ReferenceEquals(point, anchor));
+            var index = rungSamples.FindIndex(point => ReferenceEquals(point, anchor));
             if (index < 0) {
                 continue;
             }
 
             foreach (var neighbourIndex in new[] { index - 1, index + 1 }) {
-                if (neighbourIndex < 0 || neighbourIndex >= samples.Count) {
+                if (neighbourIndex < 0 || neighbourIndex >= rungSamples.Count) {
                     continue;
                 }
 
-                var neighbour = samples[neighbourIndex];
+                var neighbour = rungSamples[neighbourIndex];
                 if (Math.Abs(neighbour.Crf - anchor.Crf) < 2 ||
                     Math.Abs(neighbour.RawQuality - anchor.RawQuality) <= MaxQualityGap) {
                     continue;
                 }
 
-                Add(height, (neighbour.Crf + anchor.Crf) / 2, 4, "quality gap next to the selected rung");
+                Add(height, rungSetting, (neighbour.Crf + anchor.Crf) / 2, 4, "quality gap next to the selected rung");
             }
         }
 
@@ -269,24 +301,31 @@ public sealed class EncodeGrid {
                 continue;
             }
 
+            var rate = Math.Sqrt(window.LowBps * window.HighBps);
+            var setting = SettingAt(window.Height, rate);
             Add(
                 window.Height,
-                CrfForRate(SamplesAt(window.Height), Math.Sqrt(window.LowBps * window.HighBps)),
+                setting,
+                CrfForRate(SamplesAt(window.Height, setting), rate),
                 2,
                 "no sample inside the window where this resolution wins");
         }
 
         foreach (var crossover in plan.Envelope.Crossovers) {
+            var upper = SettingAt(crossover.UpperHeight, crossover.BitrateBps);
             Add(
                 crossover.UpperHeight,
-                CrfForRate(SamplesAt(crossover.UpperHeight), crossover.BitrateBps),
+                upper,
+                CrfForRate(SamplesAt(crossover.UpperHeight, upper), crossover.BitrateBps),
                 3,
                 $"at the {crossover.Key} crossover");
 
             if (crossover.Extrapolated) {
+                var lower = SettingAt(crossover.LowerHeight, crossover.BitrateBps);
                 Add(
                     crossover.LowerHeight,
-                    CrfForRate(SamplesAt(crossover.LowerHeight), crossover.BitrateBps),
+                    lower,
+                    CrfForRate(SamplesAt(crossover.LowerHeight, lower), crossover.BitrateBps),
                     3,
                     $"extends the lower curve to the {crossover.Key} crossover");
             }
@@ -296,7 +335,7 @@ public sealed class EncodeGrid {
             .OrderBy(target => target.Priority)
             .ThenByDescending(target => target.Height)
             .ThenBy(target => target.Crf)
-            .DistinctBy(target => (target.Height, target.Crf))
+            .DistinctBy(target => (target.Height, target.Crf, target.Setting))
             .ToList();
     }
 

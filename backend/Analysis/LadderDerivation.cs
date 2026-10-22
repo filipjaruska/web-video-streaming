@@ -196,15 +196,17 @@ public sealed class LadderDerivation {
 
             foreach (var rung in plan.Rungs) {
                 _logger.LogInformation(
-                    "{Name} {Label}: {Bitrate} kb/s by {Placement} rule — λ point {LambdaPoint} kb/s, interval [{Low}, {High}] kb/s, predicted harm. VMAF {Predicted:0.##}",
+                    "{Name} {Label}: {Bitrate} kb/s by {Placement} rule, setting {Setting} — λ point {LambdaPoint} kb/s, interval [{Low}, {High}] kb/s, predicted harm. VMAF {Predicted:0.##}, CAMBI {Cambi:0.##}",
                     options.ProfileName,
                     rung.Hull.Label,
                     rung.BitrateBps / 1000,
                     rung.Placement,
+                    rung.Prediction.Setting ?? "own",
                     rung.LambdaPoint.BitrateBps / 1000,
                     Math.Round(rung.IntervalLowBps / 1000),
                     rung.IntervalHighBps is { } high ? Math.Round(high / 1000).ToString(CultureInfo.InvariantCulture) : "∞",
-                    rung.Prediction.VmafHarmonicMean);
+                    rung.Prediction.VmafHarmonicMean,
+                    rung.Prediction.Cambi);
             }
 
             var (variants, derivedVariants) = BuildVariants(plan, candidates);
@@ -295,9 +297,10 @@ public sealed class LadderDerivation {
         var warnings = new List<string>();
         var rungs = new List<PlannedRung>();
 
+        // Per setting: each setting's grid has its own lowest CRF.
         var lowestCrf = points
             .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0)
-            .GroupBy(point => point.Height)
+            .GroupBy(point => (point.Height, point.Setting))
             .ToDictionary(group => group.Key, group => group.Min(point => point.Crf));
 
         // Top rung first, so each rung's spacing bound comes from the final rung above it.
@@ -338,12 +341,12 @@ public sealed class LadderDerivation {
 
             var bitrate = ShipBps(target, low.Bps, high.Bps);
             var prediction = PredictAt(hull, bitrate);
-            var slope = prediction.OnVertex ? LocalSlope(hull, prediction.Vertex) : prediction.SegmentSlope;
+            var slope = prediction.OnVertex ? LocalSlope(prediction.Curve, prediction.Vertex) : prediction.SegmentSlope;
 
             var atBoundary =
                 placement == Placements.Lambda &&
                 ReferenceEquals(lambdaPoint, hull.Points[^1]) &&
-                lowestCrf.TryGetValue(hull.Height, out var minCrf) &&
+                lowestCrf.TryGetValue((hull.Height, lambdaPoint.Setting), out var minCrf) &&
                 lambdaPoint.Crf == minCrf &&
                 (slope == null || slope > lambda) &&
                 !(ReferenceEquals(hull, top) && lambdaPoint.DecisionQuality >= TopRungCeiling);
@@ -446,7 +449,12 @@ public sealed class LadderDerivation {
                 group.Key,
                 group.First().Label,
                 group.First().Width,
-                UpperHull(group.OrderBy(point => point.BitrateBps).ToList())))
+                UpperHull(group.OrderBy(point => point.BitrateBps).ToList()),
+                group
+                    .GroupBy(point => point.Setting ?? "")
+                    .ToDictionary(
+                        setting => setting.Key,
+                        setting => UpperHull(setting.OrderBy(point => point.BitrateBps).ToList()))))
             .Where(hull => hull.Points.Count > 0)
             .OrderByDescending(hull => hull.Height)
             .ToList();
@@ -668,15 +676,37 @@ public sealed class LadderDerivation {
     }
 
     /// <summary>
-    /// What a resolution is predicted to deliver at a bitrate: read off its hull, linearly in
-    /// log-rate between the two grid samples either side — the same curve the λ point and the
-    /// envelope are taken from. Clamped to the sampled range, which the admissible interval keeps
-    /// every rung inside.
+    /// What a resolution is predicted to deliver at a bitrate, under the setting that does better
+    /// there: each setting's own curve read linearly in log-rate between the two of its samples
+    /// either side, and the higher decision quality taken. Clamped to the sampled range, which the
+    /// admissible interval keeps every rung inside.
     /// </summary>
+    /// <remarks>
+    /// With a single setting its curve is the hull itself, the same curve the λ point and the
+    /// envelope are taken from. With two, a rung is never read off a pooled hull segment that joins
+    /// a sample of one setting to a sample of the other: such a segment describes no encode anyone
+    /// would make, while each setting's own curve describes the encode that ships.
+    /// </remarks>
     internal static RungPrediction PredictAt(ResolutionHull hull, double bitrateBps) {
-        var points = hull.Points;
+        if (hull.Curves.Count <= 1) {
+            return Interpolate(hull.Points, bitrateBps, hull.Curves.Keys.FirstOrDefault());
+        }
+
+        var covering = hull.Curves
+            .Where(curve =>
+                !FallsShort(bitrateBps, curve.Value[0].BitrateBps) &&
+                !Exceeds(bitrateBps, curve.Value[^1].BitrateBps))
+            .ToList();
+
+        return (covering.Count > 0 ? covering : hull.Curves.ToList())
+            .Select(curve => Interpolate(curve.Value, bitrateBps, curve.Key))
+            .MaxBy(prediction => prediction.DecisionQuality)!;
+    }
+
+    private static RungPrediction Interpolate(List<EncodeGridPoint> points, double bitrateBps, string? setting) {
+        var tag = string.IsNullOrEmpty(setting) ? null : setting;
         if (bitrateBps <= points[0].BitrateBps) {
-            return new RungPrediction(points[0], points[0], 0);
+            return new RungPrediction(points, points[0], points[0], 0, tag);
         }
 
         for (var i = 0; i < points.Count - 1; i++) {
@@ -685,10 +715,10 @@ public sealed class LadderDerivation {
             }
 
             var t = (Math.Log2(bitrateBps) - LogRate(points[i])) / (LogRate(points[i + 1]) - LogRate(points[i]));
-            return new RungPrediction(points[i], points[i + 1], t);
+            return new RungPrediction(points, points[i], points[i + 1], t, tag);
         }
 
-        return new RungPrediction(points[^1], points[^1], 0);
+        return new RungPrediction(points, points[^1], points[^1], 0, tag);
     }
 
     // ---- Lagrangian selection ----------------------------------------------------------------
@@ -784,15 +814,15 @@ public sealed class LadderDerivation {
         }
     }
 
-    private static double? LocalSlope(ResolutionHull hull, EncodeGridPoint point) {
-        var index = hull.Points.IndexOf(point);
-        if (index < 0 || hull.Points.Count < 2) {
+    private static double? LocalSlope(IReadOnlyList<EncodeGridPoint> curve, EncodeGridPoint point) {
+        var index = curve.ToList().IndexOf(point);
+        if (index < 0 || curve.Count < 2) {
             return null;
         }
 
         var (a, b) = index == 0
-            ? (hull.Points[0], hull.Points[1])
-            : (hull.Points[index - 1], hull.Points[index]);
+            ? (curve[0], curve[1])
+            : (curve[index - 1], curve[index]);
 
         var run = LogRate(b) - LogRate(a);
         return run > 1e-9 ? (b.DecisionQuality - a.DecisionQuality) / run : null;
@@ -820,6 +850,8 @@ public sealed class LadderDerivation {
                 PredictedVmaf = Round(prediction.VmafMean),
                 PredictedVmafHarmonic = Round(prediction.VmafHarmonicMean),
                 PredictedVmafMin = Round(prediction.VmafMin),
+                PredictedCambi = Round(prediction.Cambi),
+                Setting = prediction.Setting,
                 Crf = prediction.OnVertex ? prediction.Vertex.Crf : null,
                 InterpolatedBetweenCrf = prediction.OnVertex ? null : [prediction.Lower.Crf, prediction.Upper.Crf],
                 HullSlope = rung.Slope,
@@ -942,8 +974,10 @@ public sealed class LadderDerivation {
                 variant.Label,
                 variant.PredictedVmafHarmonic != null
                     ? $"{variant.Bitrate} — {DescribePlacement(variant.Placement)} " +
-                      $"({(variant.Crf is { } crf ? $"CRF {crf}" : $"between CRF {variant.InterpolatedBetweenCrf?[0]} and {variant.InterpolatedBetweenCrf?[1]}")}, " +
-                      $"pred. harm. VMAF {Format(variant.PredictedVmafHarmonic)})" +
+                      $"({(variant.Setting != null ? $"{variant.Setting} setting, " : "")}" +
+                      $"{(variant.Crf is { } crf ? $"CRF {crf}" : $"between CRF {variant.InterpolatedBetweenCrf?[0]} and {variant.InterpolatedBetweenCrf?[1]}")}, " +
+                      $"pred. harm. VMAF {Format(variant.PredictedVmafHarmonic)}" +
+                      $"{(variant.PredictedCambi != null ? $", CAMBI {Format(variant.PredictedCambi)}" : "")})" +
                       (variant.AtGridBoundary == true ? ", at grid edge" : "")
                     : variant.Fallback == true
                         ? $"{variant.Bitrate} (default — no measurement)"
@@ -1020,7 +1054,14 @@ public sealed class LadderDerivation {
         new() { Success = false, ErrorMessage = message };
 
     /// <summary>One resolution's rate-quality curve, reduced to its upper convex hull.</summary>
-    internal sealed record ResolutionHull(int Height, string Label, int Width, List<EncodeGridPoint> Points);
+    /// <param name="Points">The hull over every sample, whatever its setting — what λ and the windows are taken from.</param>
+    /// <param name="Curves">The upper hull of each setting's samples alone, keyed by setting ("" when untagged).</param>
+    internal sealed record ResolutionHull(
+        int Height,
+        string Label,
+        int Width,
+        List<EncodeGridPoint> Points,
+        IReadOnlyDictionary<string, List<EncodeGridPoint>> Curves);
 
     /// <summary>The bitrate range in which one resolution delivers the highest quality.</summary>
     internal sealed record EnvelopeWindow(int Height, string Label, double LowBps, double HighBps, bool Fragmented);
@@ -1055,10 +1096,18 @@ public sealed class LadderDerivation {
     }
 
     /// <summary>
-    /// Quality at a bitrate between two neighbouring hull vertices, <paramref name="T"/> of the way
-    /// from <paramref name="Lower"/> to <paramref name="Upper"/> in log-rate.
+    /// Quality at a bitrate between two neighbouring vertices of one setting's curve,
+    /// <paramref name="T"/> of the way from <paramref name="Lower"/> to <paramref name="Upper"/> in
+    /// log-rate.
     /// </summary>
-    internal sealed record RungPrediction(EncodeGridPoint Lower, EncodeGridPoint Upper, double T) {
+    /// <param name="Curve">The curve read — one setting's samples only.</param>
+    /// <param name="Setting">That setting, or null when the ladder has only one.</param>
+    internal sealed record RungPrediction(
+        IReadOnlyList<EncodeGridPoint> Curve,
+        EncodeGridPoint Lower,
+        EncodeGridPoint Upper,
+        double T,
+        string? Setting = null) {
         private const double VertexTolerance = 1e-6;
 
         /// <summary>True when the rate is a grid sample's own, so no interpolation was needed.</summary>
@@ -1075,6 +1124,8 @@ public sealed class LadderDerivation {
             Lower.VmafHarmonicMean is { } a && Upper.VmafHarmonicMean is { } b ? Mix(a, b) : null;
 
         public double? VmafMin => Lower.VmafMin is { } a && Upper.VmafMin is { } b ? Mix(a, b) : null;
+
+        public double? Cambi => Lower.Cambi is { } a && Upper.Cambi is { } b ? Mix(a, b) : null;
 
         /// <summary>Slope of the hull segment the rate falls on, in decision quality per doubling.</summary>
         public double? SegmentSlope {

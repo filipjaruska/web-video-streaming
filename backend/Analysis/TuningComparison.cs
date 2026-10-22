@@ -130,8 +130,11 @@ public sealed class TuningComparison {
 
         return document;
 
+        // The tuned grid also holds default-setting samples taken while refining the pooled ladder;
+        // they are not the tune, so they are no part of a tune-against-default comparison.
         static IEnumerable<EncodeGridPoint> Usable(IReadOnlyList<EncodeGridPoint> grid) => grid
-            .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0 && point.VmafMean > 0);
+            .Where(point => string.IsNullOrEmpty(point.Error) && point.BitrateBps > 0 && point.VmafMean > 0)
+            .Where(point => point.Setting != EncodeSettings.Default);
 
         // Same floor the ladder is derived above: below it the harmonic mean measures clipping.
         static bool AboveFloor(EncodeGridPoint point) => point.RawQuality >= LadderDerivation.QualityFloor;

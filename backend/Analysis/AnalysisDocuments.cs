@@ -308,6 +308,17 @@ public sealed class DerivedLadderVariant {
     [JsonPropertyName("predictedVmafMin")]
     public double? PredictedVmafMin { get; set; }
 
+    /// <summary>CAMBI read off the same curve as the predicted VMAF.</summary>
+    [JsonPropertyName("predictedCambi")]
+    public double? PredictedCambi { get; set; }
+
+    /// <summary>
+    /// In a pooled ladder, the setting the rung is encoded with — the one whose own curve gives the
+    /// higher decision quality at its rate; its CRFs and predicted scores come from that curve.
+    /// </summary>
+    [JsonPropertyName("setting")]
+    public string? Setting { get; set; }
+
     /// <summary>CRF of the grid sample the rung sits on; null when its rate falls between two samples.</summary>
     [JsonPropertyName("crf")]
     public int? Crf { get; set; }

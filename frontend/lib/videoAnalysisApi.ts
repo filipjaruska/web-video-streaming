@@ -85,6 +85,11 @@ export interface EncodeGridPoint {
   onHull?: boolean;
   /** CAMBI penalty the ladder decision used for this point (0 on the generic grid). */
   cambiPenaltyWeight?: number;
+  /**
+   * Set to "default" on a sample of the animation grid encoded under the default setting, taken
+   * while refining the pooled ladder; absent on the grid's own samples.
+   */
+  setting?: "default" | "tuned";
   /** Wall time of the encode and its VMAF, milliseconds. */
   elapsedMs?: number;
   error?: string;
@@ -98,6 +103,10 @@ export interface DerivedLadderVariant {
   predictedVmaf?: number;
   predictedVmafHarmonic?: number;
   predictedVmafMin?: number;
+  /** CAMBI read off the same curve as the predicted VMAF. */
+  predictedCambi?: number;
+  /** Pooled ladder only: the setting this rung is encoded with. */
+  setting?: "default" | "tuned";
   crf?: number;
   /** Local hull slope, in VMAF per doubling of bitrate. */
   hullSlope?: number;

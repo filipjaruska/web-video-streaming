@@ -78,6 +78,17 @@ function placementFlag(variant: DerivedLadderVariant): RungFlag | null {
 function rungFlags(variant: DerivedLadderVariant): RungFlag[] {
   const flags: RungFlag[] = [];
 
+  if (variant.setting) {
+    flags.push({
+      label: variant.setting,
+      title:
+        variant.setting === "tuned"
+          ? "Encoded with the animation tune: its own curve gives the higher decision quality at this rate."
+          : "Encoded with the default settings: their own curve gives the higher decision quality at this rate.",
+      variant: "secondary",
+    });
+  }
+
   const placement = placementFlag(variant);
   if (placement) {
     flags.push(placement);
@@ -171,6 +182,8 @@ export function DerivedLadderTable({
         variant.predictedVmaf ?? "",
         variant.predictedVmafHarmonic ?? "",
         variant.predictedVmafMin ?? "",
+        variant.predictedCambi ?? "",
+        variant.setting ?? "",
         variant.hullSlope ?? "",
         variant.onEnvelope ?? "",
         variant.hullDeficit ?? "",
@@ -249,6 +262,8 @@ export function DerivedLadderTable({
               "predicted_vmaf",
               "predicted_vmaf_harmonic",
               "predicted_vmaf_min",
+              "predicted_cambi",
+              "setting",
               "hull_slope",
               "on_envelope",
               "hull_deficit",
@@ -272,6 +287,7 @@ export function DerivedLadderTable({
             "CRF",
             "Pred. VMAF",
             "Pred. harm. VMAF",
+            "Pred. CAMBI",
             "Hull slope",
             "Notes",
           ]}
@@ -291,6 +307,7 @@ export function DerivedLadderTable({
                 </DataCell>
                 <DataCell>{formatNumber(variant.predictedVmaf)}</DataCell>
                 <DataCell>{formatNumber(variant.predictedVmafHarmonic)}</DataCell>
+                <DataCell>{formatNumber(variant.predictedCambi)}</DataCell>
                 <DataCell title="Local slope of this resolution's hull at the selected point, in VMAF per doubling of bitrate.">
                   {formatNumber(variant.hullSlope)}
                 </DataCell>

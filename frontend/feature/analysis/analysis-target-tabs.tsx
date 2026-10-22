@@ -154,6 +154,9 @@ export function AnalysisTargetTabs({
 
   const encodeGrid = staticTranscode?.series.encodeGrid ?? [];
   const encodeGridAnimation = staticTranscode?.series.encodeGridAnimation ?? [];
+  // Default-setting samples taken while refining the pooled ladder count towards the grid's cost
+  // but are not the tune, so the animation scatter leaves them out.
+  const tunedSamples = encodeGridAnimation.filter((point) => point.setting !== "default");
   const derivedLadder = staticTranscode?.series.derivedLadder;
   const animationLadder = staticTranscode?.series.animationLadder;
   const animationSensitivity = staticTranscode?.series.animationLadderSensitivity;
@@ -235,9 +238,9 @@ export function AnalysisTargetTabs({
               caption="Envelope operating points, used as 2-pass VBR targets (maxrate 1.5×) for the dynamic packaging run."
             />
 
-            {encodeGridAnimation.length > 0 && (
+            {tunedSamples.length > 0 && (
               <RdScatterChart
-                encodeGrid={encodeGridAnimation}
+                encodeGrid={tunedSamples}
                 derivedLadder={animationLadder}
                 crossoverBps={animationLadder?.crossoverBps}
                 title="Rate–distortion (animation grid)"
