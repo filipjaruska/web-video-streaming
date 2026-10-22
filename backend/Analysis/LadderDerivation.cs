@@ -380,21 +380,21 @@ public sealed class LadderDerivation {
     }
 
     /// <summary>
-    /// <paramref name="bps"/> rounded to <see cref="RoundToKbps"/>, kept inside the interval where a
-    /// multiple of the step fits in it.
+    /// <paramref name="bps"/> rounded to <see cref="RoundToKbps"/> and kept inside the interval —
+    /// or to whole kb/s when the interval is too narrow to hold a multiple of the coarser step, so
+    /// rounding never pushes a rung past its own bounds.
     /// </summary>
     private static long ShipBps(double bps, double low, double high) {
-        const double step = RoundToKbps * 1000.0;
-        var shipped = Math.Round(bps / step) * step;
-        if (Exceeds((long)shipped, high)) {
-            shipped = Math.Floor(high / step) * step;
+        foreach (var step in new[] { RoundToKbps * 1000.0, 1000.0 }) {
+            var lowest = Math.Ceiling(low * (1 - RateTolerance) / step) * step;
+            var highest = Math.Floor(high * (1 + RateTolerance) / step) * step;
+            if (lowest <= highest) {
+                return (long)Math.Clamp(Math.Round(bps / step) * step, lowest, highest);
+            }
         }
 
-        if (FallsShort((long)shipped, low)) {
-            shipped = Math.Ceiling(low / step) * step;
-        }
-
-        return (long)shipped;
+        // Narrower than 1 kb/s: as good as a single point.
+        return (long)Math.Round(bps);
     }
 
     private static string Mbps(double bps) =>
