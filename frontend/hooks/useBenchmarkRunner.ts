@@ -32,6 +32,9 @@ const START_TIMEOUT_MS = 20_000;
 const RUN_TIMEOUT_FACTOR = 3;
 const RUN_TIMEOUT_FLOOR_MS = 60_000;
 
+/** Rounding slack on a baseline run's top-rung share, which must otherwise be exactly 1. */
+const TOP_RUNG_SHARE_TOLERANCE = 1e-6;
+
 interface UseBenchmarkRunnerProps {
   routeId: string;
   apiUrl: string;
@@ -229,19 +232,31 @@ export function useBenchmarkRunner({
 
       const errored = events.find((event) => event.kind === "error");
       const trace = { samples, events, durationMs };
+      // The source cell plays the original file, not a rung of a ladder, so it has no ladder VMAF.
+      const metrics = computeMetrics(
+        trace,
+        cell.transcodeId ? laddersRef.current.get(cell.transcodeId) : undefined,
+      );
+
+      // The fixed-quality control is pinned to the top rung; a run recorded anywhere else measured
+      // something other than the control — a pin that missed, or a rung misattributed.
+      const offTop =
+        cell.algorithm === "baseline" &&
+        metrics.topRungShare != null &&
+        metrics.topRungShare < 1 - TOP_RUNG_SHARE_TOLERANCE;
 
       return {
         cell,
         networkProfile: profile,
         repetition,
-        // The source cell plays the original file, not a rung of a ladder, so it has no ladder VMAF.
-        metrics: computeMetrics(
-          trace,
-          cell.transcodeId ? laddersRef.current.get(cell.transcodeId) : undefined,
-        ),
+        metrics,
         trace,
-        failed: !!errored,
-        errorMessage: errored && "message" in errored ? errored.message : undefined,
+        failed: !!errored || offTop,
+        errorMessage: errored && "message" in errored
+          ? errored.message
+          : offTop
+            ? `baseline off the top rung: ${(metrics.topRungShare! * 100).toFixed(1)} % on top`
+            : undefined,
       };
     },
     [apiUrl, applyCell, getSnapshots, playerRef, resetStats],

@@ -69,6 +69,8 @@ export function useVideoStatsTracking({
     lastBandwidthMbps: 0,
   });
   const bitrateStateRef = useRef<HttpRangeBitrateState>({ ...EMPTY_BITRATE_STATE });
+  /** DASH video representations in the order they reached the screen, most recent last. */
+  const renderedDashIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
     hasStartedPlayingRef.current = false;
@@ -139,9 +141,22 @@ export function useVideoStatsTracking({
         dashInstance,
         throughputStateRef.current,
         bitrateStateRef.current,
+        renderedDashIdsRef.current,
       );
       statsCallbackRef.current?.(stats);
     };
+
+    // dash.js raises this as the playhead enters a segment of another representation, the first one
+    // included; the frame height alone cannot tell apart two rungs of one resolution.
+    renderedDashIdsRef.current = [];
+    const handleDashRendered = (event: { mediaType?: string; newRepresentation?: { id?: string } }) => {
+      const id = event.newRepresentation?.id;
+      if (event.mediaType !== "video" || id == null) return;
+      const rendered = renderedDashIdsRef.current.filter((seen) => seen !== id);
+      rendered.push(id);
+      renderedDashIdsRef.current = rendered;
+    };
+    dashInstance?.on?.("qualityChangeRendered", handleDashRendered);
 
     // The source's size and codec are fetched once metadata is in, so they are known by the first
     // sample instead of being guessed from the resolution until the request came back.
@@ -179,6 +194,7 @@ export function useVideoStatsTracking({
       videoElement.removeEventListener("stalled", handleStall);
       videoElement.removeEventListener("ended", handleEnded);
       videoElement.removeEventListener("error", handleError);
+      dashInstance?.off?.("qualityChangeRendered", handleDashRendered);
       clearInterval(interval);
       hasStartedPlayingRef.current = false;
       stalledSinceRef.current = null;
@@ -193,6 +209,7 @@ function collectStats(
   dashInstance: any,
   throughputState: HttpRangeThroughputState,
   bitrateState: HttpRangeBitrateState,
+  renderedDashIds: readonly string[],
 ): Partial<CurrentStats> {
   const stats: Partial<CurrentStats> = {
     bufferLevel: getBufferLevel(video),
@@ -202,7 +219,7 @@ function collectStats(
   if (streamingMethod === "hls" && hlsInstance) {
     collectHlsStats(hlsInstance, stats);
   } else if (streamingMethod === "dash" && dashInstance) {
-    collectDashStats(dashInstance, video, stats);
+    collectDashStats(dashInstance, video, stats, renderedDashIds);
   } else if (streamingMethod === "source") {
     collectHttpRangeStats(video, stats, throughputState, bitrateState);
   }
@@ -222,8 +239,13 @@ function collectHlsStats(hls: Hls, stats: Partial<CurrentStats>) {
   }
 }
 
-function collectDashStats(dash: any, video: HTMLVideoElement, stats: Partial<CurrentStats>) {
-  const quality = getDashQuality(dash, video);
+function collectDashStats(
+  dash: any,
+  video: HTMLVideoElement,
+  stats: Partial<CurrentStats>,
+  renderedDashIds: readonly string[],
+) {
+  const quality = getDashQuality(dash, video, renderedDashIds);
   if (quality) stats.quality = quality;
 
   try {
@@ -449,17 +471,27 @@ function getHlsQuality(hls: Hls): VideoQuality | null {
  * getCurrentRepresentationForType answers with the rung dash.js has scheduled for its next request,
  * where hls.js's currentLevel is the level of the fragment at the playhead. Read that way, DASH was
  * credited with a rung up to a whole buffer ahead of the picture: a run that played its first
- * segment at 480p was recorded as 1080p throughout. The frame on screen settles it, since every
- * ladder carries one rung per height. The bitrate includes the audio track, as an HLS BANDWIDTH does.
+ * segment at 480p was recorded as 1080p throughout. The frame on screen settles it, by its height.
+ * A derived ladder can carry two rungs of one height, and the first of them by height alone is the
+ * lowest; among those the one dash.js last rendered is on screen. The bitrate includes the audio
+ * track, as an HLS BANDWIDTH does.
  */
-function getDashQuality(dash: any, video: HTMLVideoElement): VideoQuality | null {
+export function getDashQuality(
+  dash: any,
+  video: HTMLVideoElement,
+  renderedIds: readonly string[] = [],
+): VideoQuality | null {
   try {
     if (dash.getCurrentRepresentationForType) {
       const representations: any[] = dash.getRepresentationsByType?.("video") ?? [];
-      const onScreen =
+      const sameHeight =
         video.videoHeight > 0
-          ? representations.find((representation) => representation.height === video.videoHeight)
-          : undefined;
+          ? representations.filter((representation) => representation.height === video.videoHeight)
+          : [];
+      const onScreen =
+        sameHeight.length > 1
+          ? latestRendered(sameHeight, renderedIds, dash.getCurrentRepresentationForType("video"))
+          : sameHeight[0];
       const currentRep = onScreen ?? dash.getCurrentRepresentationForType("video");
       if (currentRep && currentRep.width && currentRep.height) {
         return {
@@ -496,6 +528,18 @@ function getDashQuality(dash: any, video: HTMLVideoElement): VideoQuality | null
     console.error("Error getting DASH quality:", e);
   }
   return null;
+}
+
+/**
+ * Of several representations sharing the on-screen height, the one dash.js rendered last; before it
+ * has reported any, the one scheduled, if it is among them.
+ */
+function latestRendered(candidates: any[], renderedIds: readonly string[], scheduled: any): any {
+  for (let i = renderedIds.length - 1; i >= 0; i--) {
+    const match = candidates.find((representation) => representation.id === renderedIds[i]);
+    if (match) return match;
+  }
+  return candidates.find((representation) => representation.id === scheduled?.id) ?? candidates[0];
 }
 
 /**
