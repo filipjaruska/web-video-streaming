@@ -42,8 +42,13 @@ public sealed class BdRateResult {
 /// </para>
 /// </remarks>
 public static class BdRate {
-    /// <summary>Fewer rungs than this give too little curve to integrate meaningfully.</summary>
-    private const int MinPoints = 4;
+    /// <summary>
+    /// Fewer rungs than this give no curve at all. Akima needs three points; two are joined by a
+    /// straight line, as the Herglotz et al. reference implementation does. The four this used to
+    /// require belonged to the least-squares cubic, which needs four coefficients — keeping it would
+    /// leave a ladder the floor and spacing rules cut to two or three rungs with no BD-rate at all.
+    /// </summary>
+    private const int MinPoints = 2;
 
     /// <param name="minQuality">
     /// Optional lower bound on the integration range. Both curves are still interpolated through
@@ -170,13 +175,26 @@ public static class BdRate {
             _c3 = c3;
         }
 
-        /// <summary>Interpolates through (x, y) with x strictly increasing; null when it is not.</summary>
+        /// <summary>
+        /// Interpolates through (x, y) with x strictly increasing; null when it is not. Two points
+        /// are joined by a straight line, which is what Akima's rule cannot be applied to.
+        /// </summary>
         public static AkimaCurve? Fit(IEnumerable<double> xs, IEnumerable<double> ys) {
             var x = xs.ToArray();
             var y = ys.ToArray();
             var n = x.Length;
-            if (n < 3 || y.Length != n) {
+            if (n < 2 || y.Length != n) {
                 return null;
+            }
+
+            if (n == 2) {
+                var h = x[1] - x[0];
+                if (h <= 0) {
+                    return null;
+                }
+
+                var secant = (y[1] - y[0]) / h;
+                return new AkimaCurve(x, y, [secant, secant], [0], [0]);
             }
 
             // Secants m[2..n], padded with two linearly extrapolated secants at each end.
