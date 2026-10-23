@@ -1,5 +1,5 @@
 import { getVideoAnalysis, type AnalysisTarget } from "@/lib/videoAnalysisApi";
-import type { LadderQuality } from "./types";
+import type { LadderQuality, LadderRung } from "./types";
 
 const normaliseId = (id: string | null | undefined) => id?.replace(/-/g, "").toLowerCase();
 
@@ -10,26 +10,45 @@ function ladderQualityOf(target: AnalysisTarget): LadderQuality | null {
     return null;
   }
 
+  // What the players report a level's bitrate as, per rung — the key that tells apart two rungs
+  // of one resolution.
+  const declared = new Map(
+    (target.series.packagingIntegrity?.rungs ?? []).map((rung) => [rung.label, rung.hlsBandwidthBps]),
+  );
+
   const vmafByHeight: Record<number, number> = {};
   const bitrateByHeight: Record<number, number> = {};
+  const rungs: LadderRung[] = [];
   for (const [label, series] of Object.entries(byRung)) {
     const height = series.summary.height ?? Number.parseInt(label, 10);
     if (!Number.isFinite(height) || height <= 0) {
       continue;
     }
 
-    if (series.summary.harmonicMean > 0) {
-      vmafByHeight[height] = series.summary.harmonicMean;
+    const vmaf = series.summary.harmonicMean > 0 ? series.summary.harmonicMean : undefined;
+    const bitrateBps = (series.summary.bitrateBps ?? 0) > 0 ? (series.summary.bitrateBps as number) : undefined;
+
+    // By height for ladders with one rung per resolution; the highest-bitrate rung wins a height.
+    if (vmaf !== undefined && !(bitrateByHeight[height] > (bitrateBps ?? 0))) {
+      vmafByHeight[height] = vmaf;
     }
 
-    if ((series.summary.bitrateBps ?? 0) > 0) {
-      bitrateByHeight[height] = series.summary.bitrateBps as number;
+    if (bitrateBps !== undefined && !(bitrateByHeight[height] > bitrateBps)) {
+      bitrateByHeight[height] = bitrateBps;
     }
+
+    rungs.push({ label, height, declaredBps: declared.get(label) ?? undefined, vmaf, bitrateBps });
   }
 
   const heights = Object.keys(vmafByHeight).map(Number);
+  const rungsKnown = rungs.length > 0 && rungs.every((rung) => rung.declaredBps !== undefined);
   return heights.length > 0
-    ? { topHeight: Math.max(...heights), vmafByHeight, bitrateByHeight }
+    ? {
+        topHeight: Math.max(...heights),
+        vmafByHeight,
+        bitrateByHeight,
+        ...(rungsKnown ? { rungs } : {}),
+      }
     : null;
 }
 

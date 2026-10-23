@@ -79,18 +79,26 @@ export function describeCellFull(cell: BenchmarkCell, profile: NetworkProfile): 
 /**
  * Turns the raw per-second snapshots into benchmark samples.
  *
- * `rungIndex` is an ordinal over the distinct heights seen **within this run**, not a ladder index.
+ * `rungIndex` is an ordinal over the distinct levels seen **within this run**, not a ladder index.
  * Switches, oscillations and recovery are all relative comparisons inside one run, so a within-run
- * ordinal is sufficient and avoids depending on a ladder definition the player never reports.
+ * ordinal is sufficient and avoids depending on a ladder definition the player never reports. A
+ * level is its height and declared bitrate together, ordered by bitrate, so a switch between two
+ * rungs of one resolution still counts.
  */
 export function toSamples(snapshots: StatsSnapshot[], runStartMs: number): BenchmarkSample[] {
-  const heights = Array.from(
-    new Set(
+  const levelKey = (snapshot: StatsSnapshot) => `${snapshot.quality?.bitrate ?? 0}|${snapshot.quality?.height}`;
+  const levels = Array.from(
+    new Map(
       snapshots
-        .map((snapshot) => snapshot.quality?.height)
-        .filter((height): height is number => typeof height === "number" && height > 0),
+        .filter((snapshot) => typeof snapshot.quality?.height === "number" && snapshot.quality.height > 0)
+        .map((snapshot) => [
+          levelKey(snapshot),
+          { bitrate: snapshot.quality?.bitrate ?? 0, height: snapshot.quality?.height as number },
+        ]),
     ),
-  ).sort((a, b) => a - b);
+  )
+    .sort(([, a], [, b]) => a.bitrate - b.bitrate || a.height - b.height)
+    .map(([key]) => key);
 
   return snapshots.map((snapshot) => ({
     atMs: snapshot.timestamp - runStartMs,
@@ -99,7 +107,7 @@ export function toSamples(snapshots: StatsSnapshot[], runStartMs: number): Bench
     // CurrentStats carries bandwidth in Mbps while every metric works in bits per second.
     bandwidthBps: snapshot.bandwidth * 1_000_000,
     bitrateBps: snapshot.quality?.bitrate ?? 0,
-    rungIndex: snapshot.quality?.height ? heights.indexOf(snapshot.quality.height) : -1,
+    rungIndex: snapshot.quality?.height ? levels.indexOf(levelKey(snapshot)) : -1,
     height: snapshot.quality?.height ?? 0,
     droppedFrames: snapshot.droppedFrames,
     totalFrames: snapshot.totalFrames,

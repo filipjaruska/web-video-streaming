@@ -382,7 +382,7 @@ public sealed class TranscodeAnalysisCollector {
                     TryDeleteFile(concat);
                     check.HlsSegmentsSec = ReadExtinf(Path.Combine(hlsDir, MediaNames.HlsPlaylist(label)));
 
-                    if (master.TryGetValue(rung.Height, out var declared)) {
+                    if (master.TryGetValue(MediaNames.HlsPlaylist(label), out var declared)) {
                         check.HlsBandwidthBps = declared.Bandwidth;
                         check.HlsAverageBandwidthBps = declared.Average;
                     }
@@ -391,9 +391,10 @@ public sealed class TranscodeAnalysisCollector {
                 }
 
                 if (hasDash) {
-                    var representation = representations.FirstOrDefault(rep => rep.IsVideo && rep.Height == rung.Height);
+                    // By label, not height: a ladder may carry two rungs of one resolution.
+                    var representation = representations.FirstOrDefault(rep => rep.IsVideo && rep.Label == label);
                     if (representation == null) {
-                        problems.Add($"{label}: no DASH representation at height {rung.Height}");
+                        problems.Add($"{label}: no DASH representation for this rung");
                     } else {
                         var concat = Path.Combine(tempDir, $"dash-{label}.mp4");
                         if (await ConcatDashAsync(dashDir, representation.RepresentationId, concat, cancellationToken)) {
@@ -663,26 +664,33 @@ public sealed class TranscodeAnalysisCollector {
         return durations;
     }
 
-    /// <summary>Declared BANDWIDTH / AVERAGE-BANDWIDTH per variant height, read back from the master playlist.</summary>
-    private static Dictionary<int, (long Bandwidth, long? Average)> ParseMasterPlaylist(string path) {
-        var result = new Dictionary<int, (long Bandwidth, long? Average)>();
+    /// <summary>
+    /// Declared BANDWIDTH / AVERAGE-BANDWIDTH per variant playlist URI, read back from the master
+    /// playlist. Keyed by URI rather than resolution, since a ladder may repeat a resolution.
+    /// </summary>
+    private static Dictionary<string, (long Bandwidth, long? Average)> ParseMasterPlaylist(string path) {
+        var result = new Dictionary<string, (long Bandwidth, long? Average)>(StringComparer.OrdinalIgnoreCase);
         if (!File.Exists(path)) {
             return result;
         }
 
-        foreach (var line in File.ReadLines(path)) {
-            if (!line.StartsWith("#EXT-X-STREAM-INF:", StringComparison.Ordinal)) {
+        (long Bandwidth, long? Average)? pending = null;
+        foreach (var raw in File.ReadLines(path)) {
+            var line = raw.Trim();
+            if (line.StartsWith("#EXT-X-STREAM-INF:", StringComparison.Ordinal)) {
+                var bandwidth = Regex.Match(line, "(?<![-A-Z])BANDWIDTH=(\\d+)");
+                var average = Regex.Match(line, "AVERAGE-BANDWIDTH=(\\d+)");
+                pending = bandwidth.Success
+                    ? (long.Parse(bandwidth.Groups[1].Value, CultureInfo.InvariantCulture),
+                        average.Success ? long.Parse(average.Groups[1].Value, CultureInfo.InvariantCulture) : null)
+                    : null;
                 continue;
             }
 
-            var bandwidth = Regex.Match(line, "(?<![-A-Z])BANDWIDTH=(\\d+)");
-            var average = Regex.Match(line, "AVERAGE-BANDWIDTH=(\\d+)");
-            var resolution = Regex.Match(line, "RESOLUTION=(\\d+)x(\\d+)");
-
-            if (bandwidth.Success && resolution.Success) {
-                result[int.Parse(resolution.Groups[2].Value, CultureInfo.InvariantCulture)] = (
-                    long.Parse(bandwidth.Groups[1].Value, CultureInfo.InvariantCulture),
-                    average.Success ? long.Parse(average.Groups[1].Value, CultureInfo.InvariantCulture) : null);
+            // The URI line that follows a STREAM-INF tag names the variant it describes.
+            if (pending is { } declared && line.Length > 0 && !line.StartsWith('#')) {
+                result[line] = declared;
+                pending = null;
             }
         }
 
@@ -1115,6 +1123,15 @@ public sealed class TranscodeAnalysisCollector {
         XNamespace ns = document.Root?.Name.NamespaceName ?? "urn:mpeg:dash:schema:mpd:2011";
         var videoIndex = 0;
 
+        // Packaging maps the rungs in the profile's order, so the n-th video representation is the
+        // n-th rung whenever none is missing. That holds even where two rungs share a resolution,
+        // which matching by height cannot tell apart.
+        var videoCount = document.Descendants(ns + "Representation").Count(representation =>
+            representation.Attribute("height") != null ||
+            (representation.Attribute("mimeType")?.Value ?? representation.Parent?.Attribute("mimeType")?.Value ?? "")
+                .StartsWith("video", StringComparison.OrdinalIgnoreCase));
+        var byOrder = videoCount == profile.Variants.Count;
+
         foreach (var representation in document.Descendants(ns + "Representation")) {
             var mime = representation.Attribute("mimeType")?.Value
                        ?? representation.Parent?.Attribute("mimeType")?.Value
@@ -1135,7 +1152,9 @@ public sealed class TranscodeAnalysisCollector {
                 : null;
 
             results.Add(new DashRepresentation(
-                isVideo ? MatchVariantLabel(profile, height, videoIndex++) : MediaNames.HlsAudioName,
+                isVideo
+                    ? byOrder ? profile.Variants[videoIndex++].Label : MatchVariantLabel(profile, height, videoIndex++)
+                    : MediaNames.HlsAudioName,
                 id,
                 isVideo,
                 height,

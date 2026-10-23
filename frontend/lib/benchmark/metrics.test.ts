@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { computeMetrics, summarize } from "./metrics";
-import type { BenchmarkEvent, BenchmarkSample, BenchmarkTrace } from "./types";
+import type { BenchmarkEvent, BenchmarkSample, BenchmarkTrace, LadderQuality } from "./types";
 
 /**
  * Traces here are hand-built so every expected value can be computed on paper. A wrong metric
@@ -159,6 +159,42 @@ describe("recovery", () => {
   it("reports null when no transition was marked", () => {
     const result = computeMetrics(trace([sample(0, 4)], [{ kind: "startup", atMs: 0 }], 5000));
     expect(result.recoveryMs).toBeNull();
+  });
+});
+
+describe("ladders that repeat a resolution", () => {
+  // Two 720p rungs, told apart only by the bandwidth the player declares for them.
+  const ladder: LadderQuality = {
+    topHeight: 720,
+    vmafByHeight: { 720: 94, 540: 80 },
+    rungs: [
+      { label: "720p", height: 720, declaredBps: 2_200_000, vmaf: 94, bitrateBps: 1_900_000 },
+      { label: "720p-500k", height: 720, declaredBps: 800_000, vmaf: 88, bitrateBps: 500_000 },
+      { label: "540p", height: 540, declaredBps: 350_000, vmaf: 80, bitrateBps: 160_000 },
+    ],
+  };
+
+  const at = (atMs: number, height: number, declared: number): BenchmarkSample => ({
+    ...sample(atMs, 0, declared),
+    height,
+  });
+
+  // 540p for 2 s, the lower 720p for 4 s, the upper 720p for 4 s.
+  const samples = [at(0, 540, 350_000), at(2000, 720, 800_000), at(6000, 720, 2_200_000)];
+  const result = computeMetrics(trace(samples, [{ kind: "startup", atMs: 0 }], 10_000), ladder);
+
+  it("scores each rung at its own VMAF, not its resolution's", () => {
+    // (2·80 + 4·88 + 4·94) / 10 = 88.8
+    expect(result.timeWeightedVmaf).toBeCloseTo(88.8, 6);
+  });
+
+  it("counts only the highest-bitrate rung as the top", () => {
+    expect(result.topRungShare).toBeCloseTo(0.4, 6);
+  });
+
+  it("weights each rung's measured bitrate", () => {
+    // (2·0.16 + 4·0.5 + 4·1.9) / 10 Mb/s
+    expect(result.timeWeightedBitrateBps).toBeCloseTo(992_000, 0);
   });
 });
 

@@ -620,6 +620,9 @@ public sealed class Transcoder {
         var document = XDocument.Load(manifestPath);
         XNamespace ns = document.Root?.Name.NamespaceName ?? "urn:mpeg:dash:schema:mpd:2011";
 
+        // Video representations come out in the order the renditions were mapped, so the n-th one
+        // is the n-th rendition — the only match that holds when two rungs share a resolution.
+        var videoIndex = 0;
         foreach (var representation in document.Descendants(ns + "Representation")) {
             var mime = representation.Attribute("mimeType")?.Value ?? representation.Parent?.Attribute("mimeType")?.Value ?? "";
 
@@ -635,9 +638,9 @@ public sealed class Transcoder {
                 continue;
             }
 
-            var rendition = renditions.FirstOrDefault(item =>
-                Analysis.MediaFormatting.ParseResolution(item.Variant.Resolution)?.Height == height);
-            if (rendition != null) {
+            var rendition = videoIndex < renditions.Count ? renditions[videoIndex] : null;
+            videoIndex++;
+            if (rendition != null && Analysis.MediaFormatting.ParseResolution(rendition.Variant.Resolution)?.Height == height) {
                 representation.SetAttributeValue("bandwidth", DeclaredVideoBandwidth(rendition).Peak);
             }
         }

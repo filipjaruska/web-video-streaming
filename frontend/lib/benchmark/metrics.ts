@@ -4,6 +4,7 @@ import type {
   BenchmarkSample,
   BenchmarkTrace,
   LadderQuality,
+  LadderRung,
 } from "./types";
 
 /**
@@ -126,6 +127,30 @@ function switchDirections(rungs: number[]): number[] {
 }
 
 /**
+ * The rung a sample was played on: by height, and among rungs that share a height by the declared
+ * bandwidth the player reports for the level. Undefined when the ladder does not list its rungs or
+ * the sample cannot be placed.
+ */
+export function rungOf(sample: BenchmarkSample, ladder?: LadderQuality): LadderRung | undefined {
+  if (!ladder?.rungs || !sample.height) {
+    return undefined;
+  }
+
+  const candidates = ladder.rungs.filter((rung) => rung.height === sample.height);
+  if (candidates.length <= 1) {
+    return candidates[0];
+  }
+
+  if (sample.bitrateBps <= 0) {
+    return undefined;
+  }
+
+  const distance = (rung: LadderRung) =>
+    Math.abs(Math.log((rung.declaredBps ?? rung.bitrateBps ?? 1) / sample.bitrateBps));
+  return candidates.reduce((best, rung) => (distance(rung) < distance(best) ? rung : best));
+}
+
+/**
  * Mean bitrate weighted by how long each rung was actually held.
  *
  * An unweighted mean over samples would let a rung that lasted one second count as much as one that
@@ -150,7 +175,11 @@ function timeWeightedBitrate(
       continue;
     }
 
-    const measured = samples[i].height ? ladder?.bitrateByHeight?.[samples[i].height as number] : undefined;
+    const measured = ladder?.rungs
+      ? rungOf(samples[i], ladder)?.bitrateBps
+      : samples[i].height
+        ? ladder?.bitrateByHeight?.[samples[i].height as number]
+        : undefined;
     weighted += (measured ?? samples[i].bitrateBps) * dt;
     total += dt;
   }
@@ -167,9 +196,31 @@ function timeWeightedBitrate(
  * The last sample has no successor and is credited with the median step.
  */
 function resolutionShare(samples: BenchmarkSample[], startupMs: number): Record<number, number> {
+  const share = mediaTimeShare(samples, startupMs, (sample) => sample.height as number);
+  return Object.fromEntries(share);
+}
+
+/**
+ * Share of the played media time spent on each rung, keyed by label — the per-rung counterpart of
+ * {@link resolutionShare} for ladders that may repeat a resolution. Null when a played sample cannot
+ * be placed on a rung, since a share over part of the run would describe nobody's session.
+ */
+function rungShare(samples: BenchmarkSample[], startupMs: number, ladder: LadderQuality): Map<string, number> | null {
+  const unplaced = samples.some(
+    (sample) => sample.atMs >= startupMs && (sample.height ?? 0) > 0 && !rungOf(sample, ladder),
+  );
+  return unplaced ? null : mediaTimeShare(samples, startupMs, (sample) => rungOf(sample, ladder)!.label);
+}
+
+/** Media-time share of the playing samples by a key, as described on {@link resolutionShare}. */
+function mediaTimeShare<K>(
+  samples: BenchmarkSample[],
+  startupMs: number,
+  keyOf: (sample: BenchmarkSample) => K,
+): Map<K, number> {
   const playing = samples.filter((sample) => sample.atMs >= startupMs && (sample.height ?? 0) > 0);
   if (playing.length === 0) {
-    return {};
+    return new Map();
   }
 
   const steps: number[] = [];
@@ -181,19 +232,19 @@ function resolutionShare(samples: BenchmarkSample[], startupMs: number): Record<
   const ordered = steps.filter((step) => step > 0).sort((a, b) => a - b);
   const typicalStep = ordered.length > 0 ? ordered[Math.floor(ordered.length / 2)] : 1;
 
-  const seconds = new Map<number, number>();
+  const seconds = new Map<K, number>();
   playing.forEach((sample, index) => {
-    const height = sample.height as number;
+    const key = keyOf(sample);
     const step = index < steps.length ? steps[index] : typicalStep;
-    seconds.set(height, (seconds.get(height) ?? 0) + step);
+    seconds.set(key, (seconds.get(key) ?? 0) + step);
   });
 
   const total = Array.from(seconds.values()).reduce((sum, value) => sum + value, 0);
   if (total <= 0) {
-    return {};
+    return new Map();
   }
 
-  return Object.fromEntries(Array.from(seconds, ([height, value]) => [height, value / total]));
+  return new Map(Array.from(seconds, ([key, value]) => [key, value / total]));
 }
 
 /**
@@ -205,9 +256,36 @@ function resolutionShare(samples: BenchmarkSample[], startupMs: number): Record<
  * unknown, or when a rung that was played has no measured score — averaging over only part of the
  * run would report a quality nobody measured.
  */
-function deliveredVmaf(share: Record<number, number>, ladder?: LadderQuality): number | null {
+function deliveredVmaf(
+  share: Record<number, number>,
+  byRung: Map<string, number> | null,
+  ladder?: LadderQuality,
+): number | null {
+  if (!ladder) {
+    return null;
+  }
+
+  // Per rung when the ladder lists its rungs, so two rungs of one resolution count at their own scores.
+  if (ladder.rungs) {
+    if (!byRung || byRung.size === 0) {
+      return null;
+    }
+
+    let total = 0;
+    for (const [label, fraction] of byRung) {
+      const vmaf = ladder.rungs.find((rung) => rung.label === label)?.vmaf;
+      if (vmaf === undefined) {
+        return null;
+      }
+
+      total += fraction * vmaf;
+    }
+
+    return total;
+  }
+
   const entries = Object.entries(share);
-  if (!ladder || entries.length === 0) {
+  if (entries.length === 0) {
     return null;
   }
 
@@ -222,6 +300,26 @@ function deliveredVmaf(share: Record<number, number>, ladder?: LadderQuality): n
   }
 
   return total;
+}
+
+/** Share of played media time on the ladder's top rung — the highest-bitrate one. */
+function topRungShare(
+  share: Record<number, number>,
+  byRung: Map<string, number> | null,
+  ladder?: LadderQuality,
+): number | null {
+  if (!ladder || Object.keys(share).length === 0) {
+    return null;
+  }
+
+  if (ladder.rungs) {
+    const top = ladder.rungs.reduce((best, rung) =>
+      (rung.declaredBps ?? rung.bitrateBps ?? 0) > (best.declaredBps ?? best.bitrateBps ?? 0) ? rung : best,
+    );
+    return byRung ? (byRung.get(top.label) ?? 0) : null;
+  }
+
+  return share[ladder.topHeight] ?? 0;
 }
 
 /**
@@ -300,6 +398,7 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
   const rungs = rungSeries(samples, startupMs);
   const directions = switchDirections(rungs);
   const share = resolutionShare(samples, startupMs);
+  const byRung = ladder?.rungs ? rungShare(samples, startupMs, ladder) : null;
 
   let oscillations = 0;
   for (let i = 1; i < directions.length; i++) {
@@ -322,8 +421,8 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
     timeWeightedBitrateBps: timeWeightedBitrate(samples, durationMs, ladder),
     avgThroughputBps: averageThroughput(samples, startupMs),
     resolutionShare: share,
-    topRungShare: ladder && Object.keys(share).length > 0 ? (share[ladder.topHeight] ?? 0) : null,
-    timeWeightedVmaf: deliveredVmaf(share, ladder),
+    topRungShare: topRungShare(share, byRung, ladder),
+    timeWeightedVmaf: deliveredVmaf(share, byRung, ladder),
     droppedFrameRatio: last && last.totalFrames > 0 ? last.droppedFrames / last.totalFrames : 0,
     recoveryMs: measureRecovery(samples, events),
   };

@@ -155,6 +155,25 @@ export interface LadderQuality {
   vmafByHeight: Record<number, number>;
   /** Absent for ladders analysed before the measured bitrate was stored. */
   bitrateByHeight?: Record<number, number>;
+  /**
+   * Every rung on its own, for ladders that may repeat a resolution. When present the metrics key on
+   * rungs rather than heights; absent for ladders analysed before the declared bandwidth was stored.
+   */
+  rungs?: LadderRung[];
+}
+
+/** One rung, identified the way a player reports it: its height and declared bandwidth. */
+export interface LadderRung {
+  label: string;
+  height: number;
+  /**
+   * BANDWIDTH as declared to the player — video peak plus audio peak, the same in the HLS master and,
+   * summed, in the MPD. Players report this as the level's bitrate.
+   */
+  declaredBps?: number;
+  vmaf?: number;
+  /** Measured average video bitrate. */
+  bitrateBps?: number;
 }
 
 /**
