@@ -467,8 +467,8 @@ public sealed class LadderDerivation {
 
     /// <summary>
     /// Closes every gap wider than ×<see cref="MaxRungGap"/> between adjacent rungs: a rung goes in
-    /// at the geometric-mean bitrate, at the resolution and setting that predict the best decision
-    /// quality there, until no adjacent pair is further apart.
+    /// at the geometric-mean bitrate, at the resolution best on the hull there and the setting whose
+    /// own curve does better for it, until no adjacent pair is further apart.
     /// </summary>
     /// <remarks>
     /// One rung per resolution leaves holes wherever a resolution's window is narrow or lies under
@@ -502,21 +502,24 @@ public sealed class LadderDerivation {
             var target = Math.Sqrt((double)upper.BitrateBps * lower.BitrateBps);
             var bitrate = ShipBps(target, lower.BitrateBps * 1.0001, upper.BitrateBps * 0.9999);
 
-            // Only a resolution whose curve was sampled across this rate can be read there.
-            var best = hulls
-                .Where(hull =>
-                    !FallsShort(bitrate, hull.Points[0].BitrateBps) &&
-                    !Exceeds(bitrate, hull.Points[^1].BitrateBps))
-                .Select(hull => (Hull: hull, Prediction: PredictAt(hull, bitrate)))
-                .MaxBy(candidate => candidate.Prediction.DecisionQuality);
+            // The resolution is the one best on the hull there — the envelope's choice, on the same
+            // pooled hulls the windows come from; only a resolution sampled across this rate can be
+            // read there. The setting is then whichever of its own curves does better at the rate.
+            // Choosing resolution and setting together off the per-setting curves would disagree with
+            // the windows: a pooled hull segment that bridges two settings lies above both curves.
+            var hull = hulls
+                .Where(candidate =>
+                    !FallsShort(bitrate, candidate.Points[0].BitrateBps) &&
+                    !Exceeds(bitrate, candidate.Points[^1].BitrateBps))
+                .MaxBy(candidate => QualityAt(candidate.Points, Math.Log2(bitrate)));
 
-            if (best.Hull == null) {
+            if (hull == null) {
                 warnings.Add(
                     $"Gap between {upper.Hull.Label} and {lower.Hull.Label} left open: no resolution was sampled at {Mbps(bitrate)}.");
                 return;
             }
 
-            var (hull, prediction) = best;
+            var prediction = PredictAt(hull, bitrate);
             var window = envelope.Windows.TryGetValue(hull.Height, out var own)
                 ? own
                 : new EnvelopeWindow(hull.Height, hull.Label, lower.BitrateBps, upper.BitrateBps, false);
