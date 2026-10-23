@@ -201,22 +201,55 @@ public class VideosController : ControllerBase {
     }
 
     /// <summary>
-    /// Re-derives and re-packages the animation ladder from the grids already stored, replacing the
-    /// previous one — for a change to the derivation, without re-running the grids. Synchronous:
-    /// the response comes once the new ladder is packaged and verified.
+    /// Re-derives and re-packages a derived ladder ("dynamic" or "animation") from the grids already
+    /// stored, replacing the previous one — for a change to the derivation, without re-running the
+    /// grids. Synchronous: the response comes once the new ladder is packaged and verified.
     /// </summary>
-    [HttpPost("{routeId}/animation-ladder/rederive")]
+    [HttpPost("{routeId}/ladders/{ladder}/rederive")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> RederiveAnimationLadder(
+    public async Task<IActionResult> RederiveLadder(
         string routeId,
+        string ladder,
         [FromServices] ProcessingPipeline pipeline,
         CancellationToken cancellationToken) {
-        var result = await pipeline.RederiveAnimationLadderAsync(routeId, cancellationToken);
+        if (DerivedLadderKind(ladder) is not { } kind) {
+            return BadRequest(new { message = "ladder must be 'dynamic' or 'animation'" });
+        }
+
+        var result = await pipeline.RederiveLadderAsync(routeId, kind, cancellationToken);
         return result.Success
-            ? Ok(new { routeId, animationTranscodeId = result.TranscodeId?.ToString("N") })
+            ? Ok(new { routeId, ladder, transcodeId = result.TranscodeId?.ToString("N") })
             : BadRequest(new { message = result.ErrorMessage });
     }
+
+    /// <summary>
+    /// Re-runs the refinement of a derived ladder's grid from its stored coarse samples under the
+    /// current derivation and settings. Re-derive afterwards to package a ladder from it.
+    /// </summary>
+    [HttpPost("{routeId}/ladders/{ladder}/refine-grid")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RefineGrid(
+        string routeId,
+        string ladder,
+        [FromServices] ProcessingPipeline pipeline,
+        CancellationToken cancellationToken) {
+        if (DerivedLadderKind(ladder) is not { } kind) {
+            return BadRequest(new { message = "ladder must be 'dynamic' or 'animation'" });
+        }
+
+        var result = await pipeline.RefineGridAsync(routeId, kind, cancellationToken);
+        return result.Success
+            ? Ok(new { routeId, ladder })
+            : BadRequest(new { message = result.ErrorMessage });
+    }
+
+    private static LadderKind? DerivedLadderKind(string token) => token.ToLowerInvariant() switch {
+        "dynamic" => LadderKind.Dynamic,
+        "animation" => LadderKind.AnimationTuned,
+        _ => null
+    };
 
     [HttpDelete("{routeId}")]
     [ProducesResponseType(StatusCodes.Status200OK)]

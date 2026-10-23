@@ -68,8 +68,10 @@ public sealed class EncodeGrid {
         Func<int, int, CancellationToken, Task>? onProgress = null,
         IReadOnlyList<EncodeGridPoint>? defaultGrid = null,
         CambiLimitMode cambiLimit = CambiLimitMode.Off,
+        IReadOnlyList<EncodeGridPoint>? seed = null,
         CancellationToken cancellationToken = default) {
-        var points = new List<EncodeGridPoint>();
+        // Samples already measured — a stored grid's coarse pass, when only its refinement is re-run.
+        var points = seed?.ToList() ?? [];
         var tempRoot = NewTempDir("encode-grid");
 
         try {
@@ -98,6 +100,13 @@ public sealed class EncodeGrid {
             foreach (var crf in recipe.CoarseCrfs) {
                 foreach (var variant in variants) {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (points.Any(point =>
+                            point.Crf == crf && point.Setting == null &&
+                            point.Height == (ParseResolution(variant.Resolution)?.Height ?? 0))) {
+                        await ReportAsync(onProgress, ++done, total, cancellationToken);
+                        continue;
+                    }
+
                     points.Add(await SampleAsync(
                         sourcePath, tempRoot, variant, crf, reference.Value, recipe, cambiPenaltyWeight, cancellationToken));
                     await ReportAsync(onProgress, ++done, total, cancellationToken);
