@@ -941,6 +941,40 @@ public sealed class ProcessingPipeline {
         };
     }
 
+    /// <summary>
+    /// Recomputes the ladder and tuning comparisons from the measurements stored with the video's
+    /// ladders and grids. Nothing is encoded or packaged: for a change to how the comparisons are
+    /// computed.
+    /// </summary>
+    public async Task<ProcessingResult> RecomputeComparisonsAsync(string routeId, CancellationToken cancellationToken = default) {
+        var (context, error) = await LoadStoredLadderContextAsync(routeId, cancellationToken);
+        if (context == null) {
+            return new ProcessingResult { Success = false, ErrorMessage = error };
+        }
+
+        if (context.Series.EncodeGrid is { Count: > 0 } baseGrid && context.Series.EncodeGridAnimation is { Count: > 0 } tunedGrid) {
+            await _tuningComparison.CompareAsync(
+                context.StaticTranscode.Id, baseGrid, tunedGrid, AnimationPass.Options.Recipe, cancellationToken);
+        }
+
+        var candidates = new List<(LadderKind, Guid)>();
+        foreach (var candidate in new[] { LadderKind.Dynamic, LadderKind.AnimationTuned }) {
+            if (context.Latest(candidate) is { } latest) {
+                candidates.Add((candidate, latest.Id));
+            }
+        }
+
+        var comparison = candidates.Count > 0
+            ? await _ladderComparison.CompareAsync(context.StaticTranscode.Id, candidates, cancellationToken)
+            : null;
+
+        return new ProcessingResult {
+            Success = comparison != null,
+            ErrorMessage = comparison == null ? "No derived ladder could be compared" : null,
+            TranscodeId = context.StaticTranscode.Id
+        };
+    }
+
     // —— Session progress ——————————————————————————————————————————————————
 
     private Task ReportAsync(Video video, PipelineStep step, CancellationToken cancellationToken) {

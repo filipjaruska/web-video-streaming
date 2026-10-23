@@ -111,6 +111,7 @@ public sealed class TuningComparison {
         // genuine rate-quality curve; the whole grid is not — its resolutions interleave in bitrate
         // — so one curve interpolated through all of them would measure nothing coherent.
         var byResolution = new Dictionary<string, double>();
+        var interpolation = new Dictionary<string, string>();
         foreach (var group in Usable(baseGrid).Where(AboveFloor).GroupBy(point => point.Height).OrderByDescending(group => group.Key)) {
             var tunedCurve = Usable(tunedGrid)
                 .Where(point => point.Height == group.Key && AboveFloor(point))
@@ -120,11 +121,13 @@ public sealed class TuningComparison {
             var result = BdRate.Compute(group.Select(ToRateQuality).ToList(), tunedCurve);
             if (result.Success) {
                 byResolution[group.First().Label] = result.BdRatePercent;
+                interpolation[group.First().Label] = result.Interpolation!;
             }
         }
 
         if (byResolution.Count > 0) {
             document.BdRateByResolution = byResolution;
+            document.BdRateInterpolationByResolution = interpolation;
             document.BdRatePercent = byResolution.Values.Average();
         }
 

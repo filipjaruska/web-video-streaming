@@ -100,10 +100,13 @@ public sealed class LadderComparison {
         entry.OverlapHighVmaf = result.OverlapHighQuality;
         entry.BitrateSavingPercent = result.BitrateSavingPercent;
         entry.VmafGainAtEqualBitrate = result.QualityGainAtEqualBitrate;
+        entry.BdRateInterpolation = result.Interpolation;
+        entry.VmafGainInterpolation = result.QualityGainInterpolation;
 
         var highBand = BdRate.Compute(reference, test, HighBandFloorVmaf);
         if (highBand.Success) {
             entry.BdRateHighBandPercent = highBand.BdRatePercent;
+            entry.BdRateHighBandInterpolation = highBand.Interpolation;
         }
 
         return entry;
@@ -151,7 +154,7 @@ public sealed class LadderComparison {
             children.Add(Leaf(
                 $"ladderComparison.{entry.LadderKind}.bdRate",
                 $"{entry.Label} — BD-rate vs static",
-                Percent(entry.BdRatePercent)));
+                $"{Percent(entry.BdRatePercent)} ({entry.BdRateInterpolation})"));
             children.Add(Leaf(
                 $"ladderComparison.{entry.LadderKind}.overlap",
                 $"{entry.Label} — measured over harmonic VMAF",
@@ -159,7 +162,7 @@ public sealed class LadderComparison {
             children.Add(Leaf(
                 $"ladderComparison.{entry.LadderKind}.bdRateHigh",
                 $"{entry.Label} — BD-rate at VMAF ≥ {Number(HighBandFloorVmaf)}",
-                entry.BdRateHighBandPercent is { } high ? Percent(high) : "—"));
+                entry.BdRateHighBandPercent is { } high ? $"{Percent(high)} ({entry.BdRateHighBandInterpolation})" : "—"));
             children.Add(Leaf(
                 $"ladderComparison.{entry.LadderKind}.saving",
                 $"{entry.Label} — bitrate at equal quality",

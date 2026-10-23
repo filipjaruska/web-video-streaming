@@ -245,6 +245,23 @@ public class VideosController : ControllerBase {
             : BadRequest(new { message = result.ErrorMessage });
     }
 
+    /// <summary>
+    /// Recomputes the ladder and tuning comparisons (BD-rates) from the stored measurements, without
+    /// encoding or packaging anything — for a change to how they are computed.
+    /// </summary>
+    [HttpPost("{routeId}/comparisons/recompute")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RecomputeComparisons(
+        string routeId,
+        [FromServices] ProcessingPipeline pipeline,
+        CancellationToken cancellationToken) {
+        var result = await pipeline.RecomputeComparisonsAsync(routeId, cancellationToken);
+        return result.Success
+            ? Ok(new { routeId })
+            : BadRequest(new { message = result.ErrorMessage });
+    }
+
     private static LadderKind? DerivedLadderKind(string token) => token.ToLowerInvariant() switch {
         "dynamic" => LadderKind.Dynamic,
         "animation" => LadderKind.AnimationTuned,

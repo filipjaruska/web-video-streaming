@@ -532,6 +532,19 @@ public sealed class LadderComparisonEntry {
     [JsonPropertyName("vmafGainAtEqualBitrate")]
     public double? VmafGainAtEqualBitrate { get; set; }
 
+    /// <summary>
+    /// How the curves behind <see cref="BdRatePercent"/> and <see cref="BitrateSavingPercent"/> were
+    /// interpolated: akima, pchip where Akima was not monotone over the range, or linear.
+    /// </summary>
+    [JsonPropertyName("bdRateInterpolation")]
+    public string? BdRateInterpolation { get; set; }
+
+    [JsonPropertyName("bdRateHighBandInterpolation")]
+    public string? BdRateHighBandInterpolation { get; set; }
+
+    [JsonPropertyName("vmafGainInterpolation")]
+    public string? VmafGainInterpolation { get; set; }
+
     [JsonPropertyName("points")]
     public List<LadderComparisonPoint> Points { get; set; } = [];
 
@@ -583,6 +596,10 @@ public sealed class TuningComparisonDocument {
     /// </summary>
     [JsonPropertyName("bdRateByResolution")]
     public Dictionary<string, double>? BdRateByResolution { get; set; }
+
+    /// <summary>How each resolution's curves were interpolated, keyed as <see cref="BdRateByResolution"/>.</summary>
+    [JsonPropertyName("bdRateInterpolationByResolution")]
+    public Dictionary<string, string>? BdRateInterpolationByResolution { get; set; }
 
     [JsonPropertyName("meanVmafDelta")]
     public double? MeanVmafDelta { get; set; }

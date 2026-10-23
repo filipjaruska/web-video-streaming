@@ -21,6 +21,26 @@ public sealed class BdRateResult {
 
     /// <summary>Quality difference at the midpoint of the overlapping bitrate range.</summary>
     public double? QualityGainAtEqualBitrate { get; init; }
+
+    /// <summary>
+    /// How the curves behind <see cref="BdRatePercent"/> and <see cref="BitrateSavingPercent"/> were
+    /// interpolated; one of <see cref="BdRateInterpolation"/>.
+    /// </summary>
+    public string? Interpolation { get; init; }
+
+    /// <summary>How the curves behind <see cref="QualityGainAtEqualBitrate"/> were interpolated.</summary>
+    public string? QualityGainInterpolation { get; init; }
+}
+
+/// <summary>The interpolation reported next to each value.</summary>
+public static class BdRateInterpolation {
+    public const string Akima = "akima";
+
+    /// <summary>Akima's curve was not monotone over the integration range on one of the two ladders.</summary>
+    public const string Pchip = "pchip";
+
+    /// <summary>Both ladders had two points, which every method joins with a straight line.</summary>
+    public const string Linear = "linear";
 }
 
 /// <summary>
@@ -39,6 +59,13 @@ public sealed class BdRateResult {
 /// the measured points and lets every rung bend the curve everywhere, so on ladders whose rungs are
 /// unevenly spaced it can overshoot between them; Akima's curve passes through every point and
 /// each piece depends only on its neighbours.
+/// </para>
+/// <para>
+/// Akima still does not preserve monotonicity: where a ladder's rungs crowd together in quality
+/// beside a long step, a piece can dip, and a rate that falls as quality rises is no ladder at all.
+/// Such a dip inside the integration range is integrated as if it were measured. When either curve
+/// is not monotone over that range both are refit with PCHIP (Fritsch–Carlson), which is monotone
+/// wherever the points are, and the value says so.
 /// </para>
 /// </remarks>
 public static class BdRate {
@@ -78,15 +105,20 @@ public static class BdRate {
         }
 
         // log₁₀(rate) as a function of quality.
-        var refCurve = AkimaCurve.Fit(refPoints.Select(p => p.Quality), refPoints.Select(p => Math.Log10(p.BitrateBps)));
-        var testCurve = AkimaCurve.Fit(testPoints.Select(p => p.Quality), testPoints.Select(p => Math.Log10(p.BitrateBps)));
+        var curves = FitPair(
+            refPoints.Select(p => p.Quality), refPoints.Select(p => Math.Log10(p.BitrateBps)),
+            testPoints.Select(p => p.Quality), testPoints.Select(p => Math.Log10(p.BitrateBps)),
+            low,
+            high);
 
-        if (refCurve == null || testCurve == null) {
+        if (curves == null) {
             return Fail("Rate-quality curve interpolation failed (degenerate points)");
         }
 
+        var (refCurve, testCurve, method) = curves.Value;
         var meanDiff = (testCurve.Integrate(low, high) - refCurve.Integrate(low, high)) / (high - low);
         var midQuality = (low + high) / 2;
+        var gain = QualityGain(reference, test);
 
         return new BdRateResult {
             Success = true,
@@ -95,12 +127,14 @@ public static class BdRate {
             OverlapHighQuality = high,
             BitrateSavingPercent =
                 (Math.Pow(10, testCurve.Evaluate(midQuality) - refCurve.Evaluate(midQuality)) - 1) * 100,
-            QualityGainAtEqualBitrate = QualityGain(reference, test)
+            Interpolation = method,
+            QualityGainAtEqualBitrate = gain?.Value,
+            QualityGainInterpolation = gain?.Method
         };
     }
 
     /// <summary>Quality difference at equal bitrate, interpolating quality over log₁₀(rate).</summary>
-    private static double? QualityGain(
+    private static (double Value, string Method)? QualityGain(
         IReadOnlyList<RateQualityPoint> reference,
         IReadOnlyList<RateQualityPoint> test) {
         var refByRate = CleanByRate(reference);
@@ -117,15 +151,54 @@ public static class BdRate {
             return null;
         }
 
-        var refCurve = AkimaCurve.Fit(refByRate.Select(p => Math.Log10(p.BitrateBps)), refByRate.Select(p => p.Quality));
-        var testCurve = AkimaCurve.Fit(testByRate.Select(p => Math.Log10(p.BitrateBps)), testByRate.Select(p => p.Quality));
+        var curves = FitPair(
+            refByRate.Select(p => Math.Log10(p.BitrateBps)), refByRate.Select(p => p.Quality),
+            testByRate.Select(p => Math.Log10(p.BitrateBps)), testByRate.Select(p => p.Quality),
+            low,
+            high);
 
-        if (refCurve == null || testCurve == null) {
+        if (curves == null) {
             return null;
         }
 
+        var (refCurve, testCurve, method) = curves.Value;
         var mid = (low + high) / 2;
-        return testCurve.Evaluate(mid) - refCurve.Evaluate(mid);
+        return (testCurve.Evaluate(mid) - refCurve.Evaluate(mid), method);
+    }
+
+    /// <summary>
+    /// Both curves by Akima, or both by PCHIP when Akima's is not monotone over [low, high] on
+    /// either: the two sides of a difference are interpolated the same way.
+    /// </summary>
+    private static (HermiteCurve Reference, HermiteCurve Test, string Method)? FitPair(
+        IEnumerable<double> refX, IEnumerable<double> refY,
+        IEnumerable<double> testX, IEnumerable<double> testY,
+        double low,
+        double high) {
+        var rx = refX.ToArray();
+        var ry = refY.ToArray();
+        var tx = testX.ToArray();
+        var ty = testY.ToArray();
+
+        var refAkima = HermiteCurve.Akima(rx, ry);
+        var testAkima = HermiteCurve.Akima(tx, ty);
+        if (refAkima == null || testAkima == null) {
+            return null;
+        }
+
+        if (rx.Length == 2 && tx.Length == 2) {
+            return (refAkima, testAkima, BdRateInterpolation.Linear);
+        }
+
+        if (refAkima.IsIncreasingOver(low, high) && testAkima.IsIncreasingOver(low, high)) {
+            return (refAkima, testAkima, BdRateInterpolation.Akima);
+        }
+
+        var refPchip = HermiteCurve.Pchip(rx, ry);
+        var testPchip = HermiteCurve.Pchip(tx, ty);
+        return refPchip == null || testPchip == null
+            ? null
+            : (refPchip, testPchip, BdRateInterpolation.Pchip);
     }
 
     /// <summary>
@@ -155,71 +228,63 @@ public static class BdRate {
         new() { Success = false, ErrorMessage = message };
 
     /// <summary>
-    /// Akima (1970) interpolation: a cubic Hermite piece per interval, with the slope at each point
-    /// a weighted mean of the neighbouring secants. The end handling and the degenerate-weight
-    /// fallback follow SciPy's <c>Akima1DInterpolator</c>, which the Herglotz et al. reference
-    /// implementation uses, so results match it.
+    /// A piecewise cubic Hermite curve through every point: one cubic per interval, fixed by the
+    /// values and the slopes at its two ends. Akima and PCHIP differ only in how the slopes are
+    /// chosen. Both follow SciPy (<c>Akima1DInterpolator</c>, <c>PchipInterpolator</c>), which the
+    /// Herglotz et al. reference implementation uses, so results match it.
     /// </summary>
-    private sealed class AkimaCurve {
+    private sealed class HermiteCurve {
         private readonly double[] _x;
         private readonly double[] _y;
         private readonly double[] _slope;
         private readonly double[] _c2;
         private readonly double[] _c3;
 
-        private AkimaCurve(double[] x, double[] y, double[] slope, double[] c2, double[] c3) {
+        private HermiteCurve(double[] x, double[] y, double[] slope) {
             _x = x;
             _y = y;
             _slope = slope;
-            _c2 = c2;
-            _c3 = c3;
+            _c2 = new double[x.Length - 1];
+            _c3 = new double[x.Length - 1];
+            for (var i = 0; i < x.Length - 1; i++) {
+                var h = x[i + 1] - x[i];
+                var secant = (y[i + 1] - y[i]) / h;
+                _c2[i] = (3 * secant - 2 * slope[i] - slope[i + 1]) / h;
+                _c3[i] = (slope[i] + slope[i + 1] - 2 * secant) / (h * h);
+            }
         }
 
         /// <summary>
-        /// Interpolates through (x, y) with x strictly increasing; null when it is not. Two points
-        /// are joined by a straight line, which is what Akima's rule cannot be applied to.
+        /// Akima (1970): the slope at each point a weighted mean of the neighbouring secants. Null
+        /// unless x is strictly increasing. Two points are joined by a straight line, which is what
+        /// Akima's rule cannot be applied to.
         /// </summary>
-        public static AkimaCurve? Fit(IEnumerable<double> xs, IEnumerable<double> ys) {
-            var x = xs.ToArray();
-            var y = ys.ToArray();
-            var n = x.Length;
-            if (n < 2 || y.Length != n) {
+        public static HermiteCurve? Akima(double[] x, double[] y) {
+            var m = Secants(x, y);
+            if (m == null) {
                 return null;
             }
 
+            var n = x.Length;
             if (n == 2) {
-                var h = x[1] - x[0];
-                if (h <= 0) {
-                    return null;
-                }
-
-                var secant = (y[1] - y[0]) / h;
-                return new AkimaCurve(x, y, [secant, secant], [0], [0]);
+                return new HermiteCurve(x, y, [m[0], m[0]]);
             }
 
-            // Secants m[2..n], padded with two linearly extrapolated secants at each end.
-            var m = new double[n + 3];
-            for (var i = 0; i < n - 1; i++) {
-                var h = x[i + 1] - x[i];
-                if (h <= 0) {
-                    return null;
-                }
-
-                m[i + 2] = (y[i + 1] - y[i]) / h;
-            }
-
-            m[1] = 2 * m[2] - m[3];
-            m[0] = 2 * m[1] - m[2];
-            m[n + 1] = 2 * m[n] - m[n - 1];
-            m[n + 2] = 2 * m[n + 1] - m[n];
+            // Padded with two linearly extrapolated secants at each end.
+            var padded = new double[n + 3];
+            Array.Copy(m, 0, padded, 2, n - 1);
+            padded[1] = 2 * padded[2] - padded[3];
+            padded[0] = 2 * padded[1] - padded[2];
+            padded[n + 1] = 2 * padded[n] - padded[n - 1];
+            padded[n + 2] = 2 * padded[n + 1] - padded[n];
 
             // Each point's slope leans towards the side where the secants change least.
             var right = new double[n];
             var left = new double[n];
             var maxWeight = 0.0;
             for (var i = 0; i < n; i++) {
-                right[i] = Math.Abs(m[i + 3] - m[i + 2]);
-                left[i] = Math.Abs(m[i + 1] - m[i]);
+                right[i] = Math.Abs(padded[i + 3] - padded[i + 2]);
+                left[i] = Math.Abs(padded[i + 1] - padded[i]);
                 maxWeight = Math.Max(maxWeight, right[i] + left[i]);
             }
 
@@ -227,21 +292,110 @@ public static class BdRate {
             for (var i = 0; i < n; i++) {
                 var weight = right[i] + left[i];
                 slope[i] = weight > 1e-9 * maxWeight
-                    ? (right[i] * m[i + 1] + left[i] * m[i + 2]) / weight
-                    : (m[i + 3] + m[i]) / 2;
+                    ? (right[i] * padded[i + 1] + left[i] * padded[i + 2]) / weight
+                    : (padded[i + 3] + padded[i]) / 2;
             }
 
-            var c2 = new double[n - 1];
-            var c3 = new double[n - 1];
+            return new HermiteCurve(x, y, slope);
+        }
+
+        /// <summary>
+        /// PCHIP (Fritsch–Carlson): a zero slope where the secants change sign, otherwise their
+        /// weighted harmonic mean, which keeps every piece within the monotonicity of its points.
+        /// </summary>
+        public static HermiteCurve? Pchip(double[] x, double[] y) {
+            var m = Secants(x, y);
+            if (m == null) {
+                return null;
+            }
+
+            var n = x.Length;
+            if (n == 2) {
+                return new HermiteCurve(x, y, [m[0], m[0]]);
+            }
+
+            var slope = new double[n];
+            for (var i = 1; i < n - 1; i++) {
+                if (m[i - 1] * m[i] <= 0) {
+                    continue;
+                }
+
+                var hPrev = x[i] - x[i - 1];
+                var hNext = x[i + 1] - x[i];
+                var w1 = 2 * hNext + hPrev;
+                var w2 = hNext + 2 * hPrev;
+                slope[i] = (w1 + w2) / (w1 / m[i - 1] + w2 / m[i]);
+            }
+
+            slope[0] = EndSlope(x[1] - x[0], x[2] - x[1], m[0], m[1]);
+            slope[n - 1] = EndSlope(x[n - 1] - x[n - 2], x[n - 2] - x[n - 3], m[n - 2], m[n - 3]);
+            return new HermiteCurve(x, y, slope);
+
+            // A one-sided three-point estimate, held to the sign of its own secant and to at most
+            // three times it where the secants turn — SciPy's edge case.
+            static double EndSlope(double h0, double h1, double m0, double m1) {
+                var d = ((2 * h0 + h1) * m0 - h0 * m1) / (h0 + h1);
+                if (Math.Sign(d) != Math.Sign(m0)) {
+                    return 0;
+                }
+
+                if (Math.Sign(m0) != Math.Sign(m1) && Math.Abs(d) > 3 * Math.Abs(m0)) {
+                    return 3 * m0;
+                }
+
+                return d;
+            }
+        }
+
+        /// <summary>Secants between consecutive points; null unless x is strictly increasing.</summary>
+        private static double[]? Secants(double[] x, double[] y) {
+            var n = x.Length;
+            if (n < 2 || y.Length != n) {
+                return null;
+            }
+
+            var m = new double[n - 1];
             for (var i = 0; i < n - 1; i++) {
                 var h = x[i + 1] - x[i];
-                var secant = m[i + 2];
-                c2[i] = (3 * secant - 2 * slope[i] - slope[i + 1]) / h;
-                c3[i] = (slope[i] + slope[i + 1] - 2 * secant) / (h * h);
+                if (h <= 0) {
+                    return null;
+                }
+
+                m[i] = (y[i + 1] - y[i]) / h;
             }
 
-            return new AkimaCurve(x, y, slope, c2, c3);
+            return m;
         }
+
+        /// <summary>
+        /// Whether the curve never falls between two bounds: its derivative, a quadratic per piece,
+        /// is checked at both ends of each piece's part of the range and at its turning point.
+        /// </summary>
+        public bool IsIncreasingOver(double low, double high) {
+            for (var i = 0; i < _x.Length - 1; i++) {
+                var from = Math.Max(low, _x[i]) - _x[i];
+                var to = Math.Min(high, _x[i + 1]) - _x[i];
+                if (to <= from) {
+                    continue;
+                }
+
+                var lowest = Math.Min(Derivative(i, from), Derivative(i, to));
+                if (_c3[i] != 0) {
+                    var turn = -_c2[i] / (3 * _c3[i]);
+                    if (turn > from && turn < to) {
+                        lowest = Math.Min(lowest, Derivative(i, turn));
+                    }
+                }
+
+                if (lowest < 0) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private double Derivative(int i, double u) => _slope[i] + u * (2 * _c2[i] + 3 * u * _c3[i]);
 
         public double Evaluate(double x) {
             var i = Interval(x);
