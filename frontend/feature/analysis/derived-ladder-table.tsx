@@ -69,6 +69,12 @@ function placementFlag(variant: DerivedLadderVariant): RungFlag | null {
         title: `λ point at ${lambdaPoint} lies below the bitrate floor — raised to ${formatBitrate(variant.intervalLowBps)}.`,
         variant: "secondary",
       };
+    case "gap":
+      return {
+        label: "gap",
+        title: `Inserted at the geometric mean of a gap wider than ×2 between ${formatBitrate(variant.intervalHighBps)} and ${formatBitrate(variant.intervalLowBps)}, at the resolution and setting that predict best there.`,
+        variant: "outline",
+      };
     case "cambi":
       return {
         label: "cambi",

@@ -113,6 +113,13 @@ public sealed class LadderDerivation {
     /// </summary>
     private const double MinRungSpacing = 1.5;
 
+    /// <summary>
+    /// Widest step allowed between adjacent rungs; a wider one gets a rung inserted at its geometric
+    /// mean (<see cref="Placements.Gap"/>). Just above ×2 the halves come out at about ×1.41, a little
+    /// under <see cref="MinRungSpacing"/>, which governs only where λ places a rung.
+    /// </summary>
+    private const double MaxRungGap = 2.0;
+
     /// <summary>Adjacent rungs further apart than this are reported: one rung per resolution cannot fill the gap.</summary>
     private const double GapRatioWarning = 2.5;
     private const double GapQualityWarning = 20.0;
@@ -173,6 +180,12 @@ public sealed class LadderDerivation {
 
         /// <summary>Raised to the lowest rate whose predicted CAMBI stays within <see cref="MaxPredictedCambi"/>.</summary>
         public const string Cambi = "cambi";
+
+        /// <summary>
+        /// Not a resolution's λ point: inserted at the geometric mean of a gap wider than
+        /// ×<see cref="MaxRungGap"/> between the rungs either side.
+        /// </summary>
+        public const string Gap = "gap";
     }
 
     /// <summary>What the CAMBI limit did to a rung it applies to.</summary>
@@ -446,9 +459,83 @@ public sealed class LadderDerivation {
             return LadderPlan.Failed("No operating point survived selection");
         }
 
+        FillGaps(rungs, hulls, envelope, pooledHull, warnings);
         warnings.AddRange(GapWarnings(rungs));
 
         return new LadderPlan(null, lambda, lambdaRule, hulls, rungs, envelope, pooledHull, dropped, emptyWindows, warnings);
+    }
+
+    /// <summary>
+    /// Closes every gap wider than ×<see cref="MaxRungGap"/> between adjacent rungs: a rung goes in
+    /// at the geometric-mean bitrate, at the resolution and setting that predict the best decision
+    /// quality there, until no adjacent pair is further apart.
+    /// </summary>
+    /// <remarks>
+    /// One rung per resolution leaves holes wherever a resolution's window is narrow or lies under
+    /// the floor — Tatami's animation ladder went from 1.57 to 0.16 Mb/s in one step, so on 3G every
+    /// ABR rule sat on the bottom rung. An inserted rung may repeat a resolution the ladder already
+    /// has, at a different bitrate; that is how a real ladder covers a wide window. The insert is read
+    /// off the same per-setting curves as every other rung, so its prediction is as measured as theirs.
+    /// </remarks>
+    private static void FillGaps(
+        List<PlannedRung> rungs,
+        List<ResolutionHull> hulls,
+        Envelope envelope,
+        List<EncodeGridPoint> pooledHull,
+        List<string> warnings) {
+        for (var guard = 0; guard < 32; guard++) {
+            rungs.Sort((a, b) => b.BitrateBps.CompareTo(a.BitrateBps));
+
+            var gapAt = -1;
+            for (var i = 0; i + 1 < rungs.Count; i++) {
+                if (rungs[i].BitrateBps > rungs[i + 1].BitrateBps * MaxRungGap * (1 + RateTolerance)) {
+                    gapAt = i;
+                    break;
+                }
+            }
+
+            if (gapAt < 0) {
+                return;
+            }
+
+            var (upper, lower) = (rungs[gapAt], rungs[gapAt + 1]);
+            var target = Math.Sqrt((double)upper.BitrateBps * lower.BitrateBps);
+            var bitrate = ShipBps(target, lower.BitrateBps * 1.0001, upper.BitrateBps * 0.9999);
+
+            // Only a resolution whose curve was sampled across this rate can be read there.
+            var best = hulls
+                .Where(hull =>
+                    !FallsShort(bitrate, hull.Points[0].BitrateBps) &&
+                    !Exceeds(bitrate, hull.Points[^1].BitrateBps))
+                .Select(hull => (Hull: hull, Prediction: PredictAt(hull, bitrate)))
+                .MaxBy(candidate => candidate.Prediction.DecisionQuality);
+
+            if (best.Hull == null) {
+                warnings.Add(
+                    $"Gap between {upper.Hull.Label} and {lower.Hull.Label} left open: no resolution was sampled at {Mbps(bitrate)}.");
+                return;
+            }
+
+            var (hull, prediction) = best;
+            var window = envelope.Windows.TryGetValue(hull.Height, out var own)
+                ? own
+                : new EnvelopeWindow(hull.Height, hull.Label, lower.BitrateBps, upper.BitrateBps, false);
+
+            rungs.Add(new PlannedRung(
+                hull,
+                bitrate,
+                Placements.Gap,
+                prediction,
+                prediction.Vertex,
+                prediction.OnVertex ? LocalSlope(prediction.Curve, prediction.Vertex) : prediction.SegmentSlope,
+                false,
+                lower.BitrateBps,
+                upper.BitrateBps,
+                window,
+                HullDeficit(pooledHull, bitrate, prediction.DecisionQuality)));
+        }
+
+        warnings.Add("Gap filling stopped after 32 inserts.");
     }
 
     /// <summary>One end of a rung's admissible interval and the rule that set it.</summary>
@@ -964,16 +1051,29 @@ public sealed class LadderDerivation {
         var variants = new List<TranscodeVariant>();
         var derived = new List<DerivedLadderVariant>();
 
-        foreach (var rung in plan.Rungs.OrderByDescending(item => item.Hull.Height)) {
+        // A label names a rung's files, playlist and scores, so it must be unique. A resolution's
+        // λ-placed rung keeps the plain label; a gap rung repeating that resolution is named by its
+        // bitrate as well.
+        var labels = plan.Rungs
+            .OrderBy(rung => rung.Placement == Placements.Gap)
+            .ThenByDescending(rung => rung.BitrateBps)
+            .Aggregate(new Dictionary<PlannedRung, string>(), (assigned, rung) => {
+                var plain = rung.Hull.Label;
+                assigned[rung] = assigned.ContainsValue(plain) ? $"{plain}-{rung.BitrateBps / 1000}k" : plain;
+                return assigned;
+            });
+
+        foreach (var rung in plan.Rungs.OrderByDescending(item => item.BitrateBps)) {
             var bitrate = $"{rung.BitrateBps / 1000}k";
             var resolution = $"{rung.Hull.Width}:{rung.Hull.Height}";
             var prediction = rung.Prediction;
+            var label = labels[rung];
 
             // Each rung is encoded with the setting its prediction was read from.
             var tune = prediction.Setting == EncodeSettings.Default ? null : ownTune;
-            variants.Add(new TranscodeVariant(resolution, bitrate, rung.Hull.Label, tune));
+            variants.Add(new TranscodeVariant(resolution, bitrate, label, tune));
             derived.Add(new DerivedLadderVariant {
-                Label = rung.Hull.Label,
+                Label = label,
                 Resolution = resolution,
                 Bitrate = bitrate,
                 BitrateBps = rung.BitrateBps,
@@ -1025,13 +1125,12 @@ public sealed class LadderDerivation {
             });
         }
 
+        // Highest bitrate first. With one rung per resolution that is also highest resolution first;
+        // with a repeated resolution only bitrate orders the ladder.
         return (
-            variants.OrderByDescending(HeightOf).ToList(),
-            derived.OrderByDescending(variant => MediaFormatting.ParseResolution(variant.Resolution)?.Height ?? 0).ToList()
+            variants.OrderByDescending(variant => TranscodeProfile.ParseBitrateKbps(variant.Bitrate)).ToList(),
+            derived.OrderByDescending(variant => variant.BitrateBps).ToList()
         );
-
-        static int HeightOf(TranscodeVariant variant) =>
-            MediaFormatting.ParseResolution(variant.Resolution)?.Height ?? 0;
     }
 
     private static DerivedLadderDocument BuildDocument(
@@ -1176,6 +1275,7 @@ public sealed class LadderDerivation {
         Placements.Spacing => $"lowered to ×{MinRungSpacing} below the rung above",
         Placements.Floor => "raised to the bitrate floor",
         Placements.Cambi => $"raised until its predicted CAMBI stays within {MaxPredictedCambi:0.#}",
+        Placements.Gap => $"inserted at the geometric mean of a gap wider than ×{MaxRungGap:0.#}",
         _ => "at the λ point"
     };
 
