@@ -38,7 +38,7 @@ import {
   pickFastStartLevel,
   pickStartLevel,
   SEGMENT_SEC,
-  TARGET_BUFFER_SEC,
+  targetBufferFor,
   benchmarkRunToken,
   tagRunRequest,
   type RunRequestTag,
@@ -225,10 +225,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         return;
       }
 
+      // Fixed for the player's life: it remounts for every run, so this is the run's own profile.
+      const targetBufferSec = targetBufferFor(networkProfileRef.current?.());
+
       if (isHLSProvider(provider)) {
         // Vidstack `load="play"` already defers network; allow hls.js to fetch on attach.
         provider.config = {
-          ...createHlsConfig(),
+          ...createHlsConfig(targetBufferSec),
           autoStartLoad: true,
           // The adaptive profiles answer hls.js's own per-fragment question with the shared rules,
           // opening rung included; the fixed-quality control keeps the stock controller and is
@@ -238,7 +241,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
                 abrController: createRuleAbrController(
                   Hls.DefaultConfig.abrController,
                   abrAlgorithm,
-                  TARGET_BUFFER_SEC,
+                  targetBufferSec,
                   { fastStart },
                 ),
               }
@@ -263,7 +266,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       }
 
       if (isDASHProvider(provider)) {
-        provider.config = createDashSettings(abrAlgorithm);
+        provider.config = createDashSettings(abrAlgorithm, targetBufferSec);
         // Not `() => import("dashjs")`: see `loadDashLibrary` — that left Vidstack without a dash.js
         // instance while dash.js's auto-create played the stream with its own ABR. Vidstack's type
         // wants the constructor itself under `default`; its loader also accepts the namespace.
@@ -326,7 +329,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             driverRef.current = driveDash(
               dash,
               abrAlgorithm,
-              TARGET_BUFFER_SEC,
+              targetBufferSec,
               SEGMENT_SEC,
               { fastStart },
             );

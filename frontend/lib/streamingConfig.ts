@@ -7,6 +7,19 @@ import type { AbrAlgorithm } from "@/types/streaming";
  */
 export const TARGET_BUFFER_SEC = 30;
 
+/**
+ * Buffer target of the variable-network run, seconds: either player requests the next segment while
+ * less than this is buffered ahead. At 30 s a 4G link fills most of a 30-second clip before the drop
+ * to 3G reaches the playhead, so the change never shows on screen and recovery has nothing to
+ * measure; at 8 s the player holds little more than one segment ahead and has to ride the change out.
+ */
+export const VARIABLE_NETWORK_BUFFER_SEC = 8;
+
+/** The buffer target for a run under a network profile; null outside a benchmark run. */
+export function targetBufferFor(networkProfile: string | null | undefined): number {
+  return networkProfile === "variable" ? VARIABLE_NETWORK_BUFFER_SEC : TARGET_BUFFER_SEC;
+}
+
 /** Segment length the ladders are packaged at, used where a player cannot report it. */
 export const SEGMENT_SEC = 6;
 
@@ -122,19 +135,19 @@ export function tagRunRequest(url: string, tag: RunRequestTag | null): string {
 }
 
 /**
- * hls.js configuration, identical for every profile.
+ * hls.js configuration, identical for every profile but for the buffer target.
  *
  * Quality is selected by the rules in `lib/abr`, identically on both protocols, so hls.js's own ABR
  * contributes nothing beyond the throughput estimate the rules read back from it. The profile is
  * applied by the driver rather than here, which is why no algorithm is taken as an argument.
  */
-export function createHlsConfig(): Partial<Hls["config"]> {
+export function createHlsConfig(targetBufferSec = TARGET_BUFFER_SEC): Partial<Hls["config"]> {
   const baseConfig: Partial<Hls["config"]> = {
     debug: false,
     enableWorker: true,
     lowLatencyMode: false,
     autoStartLoad: false,
-    maxBufferLength: TARGET_BUFFER_SEC,
+    maxBufferLength: targetBufferSec,
     abrEwmaDefaultEstimate: INITIAL_BANDWIDTH_BPS,
     capLevelToPlayerSize: false,
     // With automatic selection on — which the rule-driven controller needs — hls.js would otherwise
@@ -166,7 +179,26 @@ export interface DashSettings {
   };
 }
 
-export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
+/**
+ * The dash.js buffer time that makes it request on the same condition as hls.js's maxBufferLength.
+ *
+ * hls.js requests the next segment while less than maxBufferLength is buffered, so it can end up one
+ * segment over. dash.js requests only while the buffer plus that segment stays under its target, and
+ * so never holds more than the target. Handed the same 8 s, DASH waited until under 2 s remained —
+ * below the panic rule's 4 s — and fell to the bottom rung with a quarter of the run stalled, while
+ * HLS played as before. One segment more makes both request below the same level.
+ *
+ * Only below the standard target: the profiles at 30 s were measured with dash.js holding at most
+ * the 30 s itself, and over clips of about 30 s the extra segment matters little there.
+ */
+function dashBufferTime(targetBufferSec: number): number {
+  return targetBufferSec < TARGET_BUFFER_SEC ? targetBufferSec + SEGMENT_SEC : targetBufferSec;
+}
+
+export function createDashSettings(
+  abrAlgorithm: AbrAlgorithm,
+  targetBufferSec = TARGET_BUFFER_SEC,
+): DashSettings {
   return {
     streaming: {
       // dash.js treats a segment that arrives within 10 ms (5 ms for audio) as served from the
@@ -196,10 +228,10 @@ export function createDashSettings(abrAlgorithm: AbrAlgorithm): DashSettings {
         fastSwitchEnabled: false,
         // dash.js keeps two targets: 18 s by default below the top rung and 30 s at it, where
         // hls.js fills the same maxBufferLength on every rung. Left at the default, the buffer rule
-        // — anchored to this same 30 s — could never see more than 18 s on DASH below the top rung,
-        // and read that as a buffer never full enough to climb.
-        bufferTimeDefault: TARGET_BUFFER_SEC,
-        bufferTimeAtTopQuality: TARGET_BUFFER_SEC,
+        // — anchored to this same target — could never see more than 18 s on DASH below the top
+        // rung, and read that as a buffer never full enough to climb.
+        bufferTimeDefault: dashBufferTime(targetBufferSec),
+        bufferTimeAtTopQuality: dashBufferTime(targetBufferSec),
       },
     },
   };
