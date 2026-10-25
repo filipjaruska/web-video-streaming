@@ -359,10 +359,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           const message =
             (detail as { message?: string })?.message ||
             (typeof detail === "string" ? detail : "Playback failed");
-          setError(String(message));
+          setError(message);
           // The player reports; the parent decides whether another protocol is worth trying. It
           // owns `streamingMethod` and knows whether a measurement is in flight.
-          onFatalError?.({ method: streamingMethod, message: String(message) });
+          onFatalError?.({ method: streamingMethod, message });
         }}
       >
         <MediaProvider>

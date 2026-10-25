@@ -31,6 +31,7 @@ export default defineConfig({
       "react/refs": "warn",
       "react/preserve-manual-memoization": "warn",
       "react/error-boundaries": "warn",
+      "typescript/no-unnecessary-type-conversion": "error",
     },
     options: {
       typeAware: true,
