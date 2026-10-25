@@ -32,6 +32,11 @@ export default defineConfig({
       "react/preserve-manual-memoization": "warn",
       "react/error-boundaries": "warn",
       "typescript/no-unnecessary-type-conversion": "error",
+      // hls.js's runtime build also exports Hls, Events and isSupported by name, but its typings
+      // only expose the default class, so the documented Hls.Events / Hls.isSupported() is the
+      // only form that type-checks. These rules read the runtime exports and misfire on it.
+      "import/no-named-as-default": "off",
+      "import/no-named-as-default-member": "off",
     },
     options: {
       typeAware: true,
