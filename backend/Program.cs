@@ -79,6 +79,9 @@ builder.Services.AddCors(options => {
         .WithExposedHeaders(HttpRangeController.VideoCodecHeader));
 });
 
+// Railway's deploy healthcheck: traffic moves to a new instance only once it can reach its database.
+builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();
+
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen();
@@ -105,6 +108,7 @@ if (app.Environment.IsProduction()) {
 
 app.UseAuthorization();
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 using (var scope = app.Services.CreateScope()) {
     DatabaseBootstrapper.EnsureSchema(
