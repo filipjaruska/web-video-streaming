@@ -102,7 +102,7 @@ export function toSamples(snapshots: StatsSnapshot[], runStartMs: number): Bench
         ]),
     ),
   )
-    .sort(([, a], [, b]) => a.bitrate - b.bitrate || a.height - b.height)
+    .toSorted(([, a], [, b]) => a.bitrate - b.bitrate || a.height - b.height)
     .map(([key]) => key);
 
   return snapshots.map((snapshot) => ({

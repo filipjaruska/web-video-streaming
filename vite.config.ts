@@ -43,6 +43,7 @@ export default defineConfig({
       "no-underscore-dangle": ["error", { allow: ["_tfinish", "_trequest", "_abandonRulesCheck"] }],
       "no-shadow": "error",
       "unicorn/consistent-function-scoping": "error",
+      "unicorn/no-array-sort": "error",
     },
     overrides: [
       {

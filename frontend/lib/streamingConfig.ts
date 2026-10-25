@@ -51,7 +51,7 @@ export function pickStartLevel<T>(
   bitrateOf: (level: T) => number,
 ): T | undefined {
   const budget = INITIAL_BANDWIDTH_BPS * START_BANDWIDTH_FRACTION;
-  const ascending = [...levels].sort((a, b) => bitrateOf(a) - bitrateOf(b));
+  const ascending = levels.toSorted((a, b) => bitrateOf(a) - bitrateOf(b));
   const fitting = ascending.filter((level) => bitrateOf(level) <= budget);
   return fitting.at(-1) ?? ascending[0];
 }

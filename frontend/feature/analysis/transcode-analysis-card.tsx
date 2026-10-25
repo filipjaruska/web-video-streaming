@@ -48,7 +48,7 @@ function labelHeight(label: string) {
 }
 
 function sortRenditionLabels(labels: string[]) {
-  return [...labels].sort((a, b) => labelHeight(b) - labelHeight(a));
+  return labels.toSorted((a, b) => labelHeight(b) - labelHeight(a));
 }
 
 function FormatSitiCharts({

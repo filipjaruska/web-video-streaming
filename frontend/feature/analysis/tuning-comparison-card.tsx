@@ -102,7 +102,7 @@ export function TuningComparisonCard({ tuning }: { tuning?: TuningComparisonDocu
     );
   }
 
-  const perResolution = Object.entries(tuning.bdRateByResolution ?? {}).sort(
+  const perResolution = Object.entries(tuning.bdRateByResolution ?? {}).toSorted(
     ([a], [b]) => Number.parseInt(b, 10) - Number.parseInt(a, 10),
   );
 

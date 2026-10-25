@@ -55,9 +55,9 @@ export function buildStages(
   transcodes: VideoTranscodeListItem[],
   gridSizes: { generic: number; animation: number },
 ): PipelineStage[] {
-  const ordered = transcodes
-    .slice()
-    .sort((a, b) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime());
+  const ordered = transcodes.toSorted(
+    (a, b) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime(),
+  );
 
   const byKind = (kind: string) => ordered.find((item) => item.ladderKind === kind);
   const staticRun = byKind("static");

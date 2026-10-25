@@ -36,8 +36,7 @@ function colorFor(kind: string): string {
  */
 function toCurve(points: LadderComparisonPoint[]) {
   return points
-    .slice()
-    .sort((a, b) => a.bitrateBps - b.bitrateBps)
+    .toSorted((a, b) => a.bitrateBps - b.bitrateBps)
     .map((point) => ({
       bitrateKbps: point.bitrateBps / 1000,
       vmaf: point.vmafHarmonicMean,

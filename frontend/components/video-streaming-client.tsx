@@ -132,7 +132,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
 
     return transcodes
       .filter((item) => item.status === "succeeded" && (item.hasHls || item.hasDash))
-      .sort((a, b) => rank(a.ladderKind) - rank(b.ladderKind))
+      .toSorted((a, b) => rank(a.ladderKind) - rank(b.ladderKind))
       .map((item) => ({
         transcodeId: item.id,
         ladderKind: item.ladderKind,

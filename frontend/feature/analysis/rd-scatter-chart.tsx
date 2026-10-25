@@ -193,8 +193,7 @@ export function RdScatterChart({
     () =>
       okPoints
         .filter((p) => p.onHull)
-        .slice()
-        .sort((a, b) => a.bitrateBps - b.bitrateBps)
+        .toSorted((a, b) => a.bitrateBps - b.bitrateBps)
         .map((p) => ({
           bitrateKbps: formatBitrateKbps(p.bitrateBps),
           vmaf: qualityOf(p, metric),

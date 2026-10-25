@@ -57,7 +57,7 @@ function ClipCell({ clip }: { clip: ClipResult }) {
 /** "1080p −8.1% · 720p −6.4%", highest resolution first; empty when there is nothing to show. */
 function formatPerResolution(values: Record<string, number> | null | undefined): string {
   return Object.entries(values ?? {})
-    .sort(([a], [b]) => Number.parseInt(b, 10) - Number.parseInt(a, 10))
+    .toSorted(([a], [b]) => Number.parseInt(b, 10) - Number.parseInt(a, 10))
     .map(([label, value]) => `${label} ${formatSigned(value)}%`)
     .join(" · ");
 }

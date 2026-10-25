@@ -237,7 +237,7 @@ function mediaTimeShare<K>(
     steps.push(step > 0 && step <= MAX_SAMPLE_STEP_SEC ? step : 0);
   }
 
-  const ordered = steps.filter((step) => step > 0).sort((a, b) => a - b);
+  const ordered = steps.filter((step) => step > 0).toSorted((a, b) => a - b);
   const typicalStep = ordered.length > 0 ? ordered[Math.floor(ordered.length / 2)] : 1;
 
   const seconds = new Map<K, number>();
@@ -489,7 +489,7 @@ export function describeResolutionShare(
   const parts = Object.entries(share ?? {})
     .map(([height, fraction]) => [Number(height), fraction] as const)
     .filter(([height, fraction]) => Number.isFinite(height) && fraction >= 0.005)
-    .sort((a, b) => b[0] - a[0])
+    .toSorted((a, b) => b[0] - a[0])
     .map(([height, fraction]) => `${height}p ${Math.round(fraction * 100)} %`);
 
   return parts.length > 0 ? parts.join(" · ") : "—";
@@ -500,7 +500,7 @@ export function encodeResolutionShare(
   share: Record<number | string, number> | null | undefined,
 ): string {
   return Object.entries(share ?? {})
-    .sort((a, b) => Number(b[0]) - Number(a[0]))
+    .toSorted((a, b) => Number(b[0]) - Number(a[0]))
     .map(([height, fraction]) => `${height}:${fraction.toFixed(4)}`)
     .join(";");
 }

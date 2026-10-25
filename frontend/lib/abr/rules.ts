@@ -79,7 +79,7 @@ const HYBRID_BOLA_OFF_FRACTION = 0.25;
 const PLACEHOLDER_SCAN_STEP_SEC = 0.25;
 
 function sorted(levels: AbrLevel[]): AbrLevel[] {
-  return [...levels].sort((a, b) => a.bitrateBps - b.bitrateBps);
+  return levels.toSorted((a, b) => a.bitrateBps - b.bitrateBps);
 }
 
 /**
