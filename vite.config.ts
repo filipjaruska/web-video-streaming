@@ -32,6 +32,7 @@ export default defineConfig({
       "react/preserve-manual-memoization": "error",
       "react/error-boundaries": "error",
       "react/no-unstable-nested-components": "error",
+      "react/exhaustive-effect-dependencies": "error",
       "typescript/no-unnecessary-type-conversion": "error",
       // hls.js's runtime build also exports Hls, Events and isSupported by name, but its typings
       // only expose the default class, so the documented Hls.Events / Hls.isSupported() is the

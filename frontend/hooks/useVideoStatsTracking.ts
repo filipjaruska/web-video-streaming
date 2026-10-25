@@ -76,6 +76,7 @@ export function useVideoStatsTracking({
       lastBandwidthMbps: 0,
     };
     bitrateStateRef.current = { ...EMPTY_BITRATE_STATE };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new protocol or video element is the trigger: tracking state starts over
   }, [streamingMethod, videoElement]);
 
   useEffect(() => {

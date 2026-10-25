@@ -211,6 +211,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
 
   useEffect(() => {
     resetStats();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the stream selection is the trigger: a new protocol, ABR or packaging run starts fresh stats
   }, [effectiveMethod, effectiveAbr, effectivePackagingRunId, resetStats]);
 
   // Don't mount until Best can resolve (avoids source → DASH remount races).
@@ -267,6 +268,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
   useEffect(() => {
     attemptedFallbackRef.current.clear();
     setFallbackNotice(null);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new clip or packaging run is the trigger: fallbacks tried for the old one no longer apply
   }, [routeId, effectivePackagingRunId]);
 
   const handleFatalError = useCallback(

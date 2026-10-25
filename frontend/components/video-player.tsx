@@ -201,6 +201,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       driverRef.current?.stop();
       driverRef.current = null;
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new source or ABR setup is the trigger: the player and its driver start over
   }, [src, abrAlgorithm, fastStart]);
 
   const onProviderChange = useCallback(
