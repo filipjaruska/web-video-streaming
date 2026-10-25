@@ -44,6 +44,9 @@ export default defineConfig({
       "no-shadow": "error",
       "unicorn/consistent-function-scoping": "error",
       "unicorn/no-array-sort": "error",
+      // tsconfig's noImplicitReturns covers this and understands exhaustive switches; the lint rule
+      // flags those and every effect that returns a cleanup on only some paths.
+      "typescript/consistent-return": "off",
     },
     overrides: [
       {
