@@ -37,6 +37,8 @@ export default defineConfig({
       // only form that type-checks. These rules read the runtime exports and misfire on it.
       "import/no-named-as-default": "off",
       "import/no-named-as-default-member": "off",
+      // Stylesheets are loaded by side-effect import; anything else should bind what it imports.
+      "import/no-unassigned-import": ["error", { allow: ["**/*.css"] }],
     },
     options: {
       typeAware: true,
