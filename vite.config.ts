@@ -40,9 +40,11 @@ export default defineConfig({
   fmt: {
     ignorePatterns: [...ignored, "**/pnpm-lock.yaml"],
   },
+  // Staged files under the ignore patterns above (e.g. backend/railway.json) reach these commands
+  // too; without the flag, a commit whose only matches are ignored fails.
   staged: {
-    "*.{ts,tsx,js,mjs,cjs}": "vp check --fix",
-    "*.{json,md,yml,yaml,css}": "vp fmt",
+    "*.{ts,tsx,js,mjs,cjs}": "vp check --fix --no-error-on-unmatched-pattern",
+    "*.{json,md,yml,yaml,css}": "vp fmt --no-error-on-unmatched-pattern",
     "*.cs": "dotnet format web-video-streaming.sln --include",
   },
   run: {
