@@ -92,14 +92,12 @@ function levelKey(snapshot: StatsSnapshot): string {
 export function toSamples(snapshots: StatsSnapshot[], runStartMs: number): BenchmarkSample[] {
   const levels = Array.from(
     new Map(
-      snapshots
-        .filter(
-          (snapshot) => typeof snapshot.quality?.height === "number" && snapshot.quality.height > 0,
-        )
-        .map((snapshot) => [
-          levelKey(snapshot),
-          { bitrate: snapshot.quality?.bitrate ?? 0, height: snapshot.quality?.height as number },
-        ]),
+      snapshots.flatMap((snapshot) => {
+        const height = snapshot.quality?.height;
+        return typeof height === "number" && height > 0
+          ? [[levelKey(snapshot), { bitrate: snapshot.quality?.bitrate ?? 0, height }] as const]
+          : [];
+      }),
     ),
   )
     .toSorted(([, a], [, b]) => a.bitrate - b.bitrate || a.height - b.height)

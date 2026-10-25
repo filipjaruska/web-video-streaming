@@ -31,9 +31,7 @@ function firstEvent<K extends BenchmarkEvent["kind"]>(
   events: BenchmarkEvent[],
   kind: K,
 ): Extract<BenchmarkEvent, { kind: K }> | undefined {
-  return events.find((event) => event.kind === kind) as
-    | Extract<BenchmarkEvent, { kind: K }>
-    | undefined;
+  return events.find((event): event is Extract<BenchmarkEvent, { kind: K }> => event.kind === kind);
 }
 
 /**
@@ -177,10 +175,11 @@ function timeWeightedBitrate(
       continue;
     }
 
+    const height = samples[i].height;
     const measured = ladder?.rungs
       ? rungOf(samples[i], ladder)?.bitrateBps
-      : samples[i].height
-        ? ladder?.bitrateByHeight?.[samples[i].height as number]
+      : height
+        ? ladder?.bitrateByHeight?.[height]
         : undefined;
     weighted += (measured ?? samples[i].bitrateBps) * dt;
     total += dt;

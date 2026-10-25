@@ -29,8 +29,8 @@ function ladderQualityOf(target: AnalysisTarget): LadderQuality | null {
     }
 
     const vmaf = series.summary.harmonicMean > 0 ? series.summary.harmonicMean : undefined;
-    const bitrateBps =
-      (series.summary.bitrateBps ?? 0) > 0 ? (series.summary.bitrateBps as number) : undefined;
+    const declaredBps = series.summary.bitrateBps;
+    const bitrateBps = declaredBps != null && declaredBps > 0 ? declaredBps : undefined;
 
     // By height for ladders with one rung per resolution; the highest-bitrate rung wins a height.
     if (vmaf !== undefined && !(bitrateByHeight[height] > (bitrateBps ?? 0))) {

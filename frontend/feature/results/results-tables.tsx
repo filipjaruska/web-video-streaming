@@ -88,13 +88,15 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
 
   const dynamicBdRates = clips
     .flatMap((clip) => clip.ladders)
-    .filter((ladder) => ladder.kind === "dynamic" && ladder.bdRatePercent != null)
-    .map((ladder) => ladder.bdRatePercent as number);
+    .flatMap((ladder) =>
+      ladder.kind === "dynamic" && ladder.bdRatePercent != null ? [ladder.bdRatePercent] : [],
+    );
 
   const animationBdRates = clips
     .flatMap((clip) => clip.ladders)
-    .filter((ladder) => ladder.kind === "animation" && ladder.bdRatePercent != null)
-    .map((ladder) => ladder.bdRatePercent as number);
+    .flatMap((ladder) =>
+      ladder.kind === "animation" && ladder.bdRatePercent != null ? [ladder.bdRatePercent] : [],
+    );
 
   const benchmarkRuns = clips.reduce(
     (sum, clip) => sum + clip.benchmarks.reduce((inner, agg) => inner + agg.runs, 0),
