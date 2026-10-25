@@ -39,6 +39,8 @@ export default defineConfig({
       "import/no-named-as-default-member": "off",
       // Stylesheets are loaded by side-effect import; anything else should bind what it imports.
       "import/no-unassigned-import": ["error", { allow: ["**/*.css"] }],
+      // Field names owned by dash.js (HTTPRequest timings) and hls.js (AbrController internals).
+      "no-underscore-dangle": ["error", { allow: ["_tfinish", "_trequest", "_abandonRulesCheck"] }],
     },
     options: {
       typeAware: true,
