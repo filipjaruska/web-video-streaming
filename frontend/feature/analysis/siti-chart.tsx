@@ -52,6 +52,13 @@ function stdDev(values: number[], average: number) {
   return Math.sqrt(variance);
 }
 
+function format(value: number) {
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: 4,
+    useGrouping: false,
+  });
+}
+
 function buildStatsFromSeries(data: SitiSeriesData): AnalysisTreeNode {
   const siAvg = data.si.reduce((sum, value) => sum + value, 0) / Math.max(data.si.length, 1);
   const tiAvg = data.ti.reduce((sum, value) => sum + value, 0) / Math.max(data.ti.length, 1);
@@ -59,12 +66,6 @@ function buildStatsFromSeries(data: SitiSeriesData): AnalysisTreeNode {
   const siMax = data.si.length ? Math.max(...data.si) : 0;
   const tiMin = data.ti.length ? Math.min(...data.ti) : 0;
   const tiMax = data.ti.length ? Math.max(...data.ti) : 0;
-
-  const format = (value: number) =>
-    value.toLocaleString("en-US", {
-      maximumFractionDigits: 4,
-      useGrouping: false,
-    });
 
   return {
     id: "siti",

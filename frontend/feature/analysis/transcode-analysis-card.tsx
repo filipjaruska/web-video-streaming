@@ -42,14 +42,13 @@ function sectionStatusBadge(status?: AnalysisSectionStatus) {
   }
 }
 
+function labelHeight(label: string) {
+  const match = label.match(/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
 function sortRenditionLabels(labels: string[]) {
-  return [...labels].sort((a, b) => {
-    const height = (label: string) => {
-      const match = label.match(/(\d+)/);
-      return match ? Number(match[1]) : 0;
-    };
-    return height(b) - height(a);
-  });
+  return [...labels].sort((a, b) => labelHeight(b) - labelHeight(a));
 }
 
 function FormatSitiCharts({

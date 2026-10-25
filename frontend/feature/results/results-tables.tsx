@@ -62,6 +62,10 @@ function formatPerResolution(values: Record<string, number> | null | undefined):
     .join(" · ");
 }
 
+function avg(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
 /**
  * The cross-clip view: every reported measurement per clip, in one place.
  *
@@ -92,9 +96,6 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
     .flatMap((clip) => clip.ladders)
     .filter((ladder) => ladder.kind === "animation" && ladder.bdRatePercent != null)
     .map((ladder) => ladder.bdRatePercent as number);
-
-  const avg = (values: number[]) =>
-    values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 
   const benchmarkRuns = clips.reduce(
     (sum, clip) => sum + clip.benchmarks.reduce((inner, agg) => inner + agg.runs, 0),

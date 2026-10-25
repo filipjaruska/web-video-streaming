@@ -76,6 +76,10 @@ export function describeCellFull(cell: BenchmarkCell, profile: NetworkProfile): 
   return `${profile}|${cell.ladderKind}|${describeCell(cell)}`;
 }
 
+function levelKey(snapshot: StatsSnapshot): string {
+  return `${snapshot.quality?.bitrate ?? 0}|${snapshot.quality?.height}`;
+}
+
 /**
  * Turns the raw per-second snapshots into benchmark samples.
  *
@@ -86,8 +90,6 @@ export function describeCellFull(cell: BenchmarkCell, profile: NetworkProfile): 
  * rungs of one resolution still counts.
  */
 export function toSamples(snapshots: StatsSnapshot[], runStartMs: number): BenchmarkSample[] {
-  const levelKey = (snapshot: StatsSnapshot) =>
-    `${snapshot.quality?.bitrate ?? 0}|${snapshot.quality?.height}`;
   const levels = Array.from(
     new Map(
       snapshots
