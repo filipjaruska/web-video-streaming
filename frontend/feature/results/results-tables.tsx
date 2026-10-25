@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Database } from "lucide-react";
@@ -106,82 +105,66 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
     (clip) => clip.status === "complete" || clip.status === "partial",
   ).length;
 
-  const contentRows = React.useMemo(
-    () =>
-      clips.map((clip) => [
-        clip.title,
-        clip.content?.meanSi ?? "",
-        clip.content?.meanTi ?? "",
-        clip.content?.duplicateFrameShare ?? "",
-        clip.content?.sourceCambi ?? "",
-        clip.content?.durationSec ?? "",
-        clip.content?.frames ?? "",
-      ]),
-    [clips],
+  const contentRows = clips.map((clip) => [
+    clip.title,
+    clip.content?.meanSi ?? "",
+    clip.content?.meanTi ?? "",
+    clip.content?.duplicateFrameShare ?? "",
+    clip.content?.sourceCambi ?? "",
+    clip.content?.durationSec ?? "",
+    clip.content?.frames ?? "",
+  ]);
+
+  const ladderRows = clips.flatMap((clip) =>
+    clip.ladders.map((ladder) => [
+      clip.title,
+      ladder.kind,
+      ladder.bdRatePercent ?? "",
+      ladder.bdRateHighBandPercent ?? "",
+      ladder.overlapLowVmaf ?? "",
+      ladder.overlapHighVmaf ?? "",
+      ladder.bitrateSavingPercent ?? "",
+      ladder.vmafGainAtEqualBitrate ?? "",
+      ladder.error ?? "",
+    ]),
   );
 
-  const ladderRows = React.useMemo(
-    () =>
-      clips.flatMap((clip) =>
-        clip.ladders.map((ladder) => [
-          clip.title,
-          ladder.kind,
-          ladder.bdRatePercent ?? "",
-          ladder.bdRateHighBandPercent ?? "",
-          ladder.overlapLowVmaf ?? "",
-          ladder.overlapHighVmaf ?? "",
-          ladder.bitrateSavingPercent ?? "",
-          ladder.vmafGainAtEqualBitrate ?? "",
-          ladder.error ?? "",
-        ]),
-      ),
-    [clips],
-  );
+  const tuningRows = clips.map((clip) => [
+    clip.title,
+    clip.tuning?.tune ?? "",
+    clip.tuning?.pairs ?? "",
+    clip.tuning?.meanVmafDelta ?? "",
+    clip.tuning?.meanCambiDelta ?? "",
+    clip.tuning?.bdRatePercent ?? "",
+    formatPerResolution(clip.tuning?.bdRateByResolution),
+  ]);
 
-  const tuningRows = React.useMemo(
-    () =>
-      clips.map((clip) => [
-        clip.title,
-        clip.tuning?.tune ?? "",
-        clip.tuning?.pairs ?? "",
-        clip.tuning?.meanVmafDelta ?? "",
-        clip.tuning?.meanCambiDelta ?? "",
-        clip.tuning?.bdRatePercent ?? "",
-        formatPerResolution(clip.tuning?.bdRateByResolution),
-      ]),
-    [clips],
-  );
-
-  const playbackRows = React.useMemo(
-    () =>
-      clips.flatMap((clip) =>
-        clip.benchmarks.map((agg) => [
-          clip.title,
-          agg.networkProfile,
-          agg.ladderKind,
-          agg.protocol,
-          agg.abrAlgorithm,
-          agg.runs,
-          agg.startupMsMean,
-          agg.startupMsStdDev,
-          agg.bufferingRatioMean,
-          agg.bufferingRatioStdDev,
-          agg.qualitySwitchesMean,
-          agg.oscillationsMean,
-          agg.timeWeightedBitrateBpsMean,
-          agg.topRungShareMean ?? "",
-          agg.timeWeightedVmafMean ?? "",
-          agg.timeWeightedVmafStdDev ?? "",
-          encodeResolutionShare(agg.resolutionShareMean),
-          agg.sessionMsMean ?? "",
-          agg.sessionMsStdDev ?? "",
-          agg.avgBufferSecMean ?? "",
-          agg.avgThroughputBpsMean ?? "",
-          agg.droppedFrameRatioMean ?? "",
-          agg.recoveryMsMean ?? "",
-        ]),
-      ),
-    [clips],
+  const playbackRows = clips.flatMap((clip) =>
+    clip.benchmarks.map((agg) => [
+      clip.title,
+      agg.networkProfile,
+      agg.ladderKind,
+      agg.protocol,
+      agg.abrAlgorithm,
+      agg.runs,
+      agg.startupMsMean,
+      agg.startupMsStdDev,
+      agg.bufferingRatioMean,
+      agg.bufferingRatioStdDev,
+      agg.qualitySwitchesMean,
+      agg.oscillationsMean,
+      agg.timeWeightedBitrateBpsMean,
+      agg.topRungShareMean ?? "",
+      agg.timeWeightedVmafMean ?? "",
+      agg.timeWeightedVmafStdDev ?? "",
+      encodeResolutionShare(agg.resolutionShareMean),
+      agg.sessionMsMean ?? "",
+      agg.sessionMsStdDev ?? "",
+      agg.avgBufferSecMean ?? "",
+      agg.avgThroughputBpsMean ?? "",
+      agg.droppedFrameRatioMean ?? "",
+      agg.recoveryMsMean ?? "",
+    ]),
   );
 
   const hasPlayback = playbackRows.length > 0;

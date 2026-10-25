@@ -102,18 +102,8 @@ export function AnalysisTargetTabs({
     packagedWithVmaf.find((t) => t.label.includes("(active)")) ??
     packagedWithVmaf[0];
 
-  const vmafEntries = useMemo(
-    () => collectVmafEntries(selectedTranscode?.series.vmafByFormat),
-    [selectedTranscode],
-  );
-
-  const formats = useMemo(() => {
-    const set = new Set<FormatKey>();
-    for (const entry of vmafEntries) {
-      set.add(entry.format);
-    }
-    return Array.from(set);
-  }, [vmafEntries]);
+  const vmafEntries = collectVmafEntries(selectedTranscode?.series.vmafByFormat);
+  const formats = Array.from(new Set(vmafEntries.map((entry) => entry.format)));
 
   const [selectedFormat, setSelectedFormat] = useState<FormatKey | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);

@@ -29,7 +29,7 @@ export default defineConfig({
       // and measurement path, so these stay visible without blocking commits.
       "react/set-state-in-effect": "warn",
       "react/refs": "warn",
-      "react/preserve-manual-memoization": "warn",
+      "react/preserve-manual-memoization": "error",
       "react/error-boundaries": "error",
       "react/no-unstable-nested-components": "error",
       "typescript/no-unnecessary-type-conversion": "error",
