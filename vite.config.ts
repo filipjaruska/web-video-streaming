@@ -25,9 +25,10 @@ export default defineConfig({
       "react/react-in-jsx-scope": "off",
       // Thumbnails are served by the API; next/image would route them through Vercel's optimizer.
       "nextjs/no-img-element": "off",
-      // React Compiler rules. The compiler isn't enabled, and the flagged code is the playback
-      // and measurement path, so these stay visible without blocking commits.
-      "react/set-state-in-effect": "warn",
+      // Fetch-on-mount, resets on a new source and playback-selection syncing are deliberate here.
+      // Removing them means a data-fetching library or rewriting the playback path, and without
+      // the React Compiler the rule would push ordinary new effects into suppressions too.
+      "react/set-state-in-effect": "off",
       "react/refs": "error",
       "react/preserve-manual-memoization": "error",
       "react/error-boundaries": "error",
