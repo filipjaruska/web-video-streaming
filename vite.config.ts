@@ -18,7 +18,7 @@ export default defineConfig({
     plugins: ["typescript", "unicorn", "oxc", "react", "nextjs", "import", "vitest"],
     categories: {
       correctness: "error",
-      suspicious: "warn",
+      suspicious: "error",
     },
     rules: {
       // The automatic JSX runtime makes the React import unnecessary.
