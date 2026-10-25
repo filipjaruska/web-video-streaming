@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - name: Format, lint and type check
+        run: vp check
+
+      - name: Unit tests
+        run: vp run frontend#test
+
+      - name: Build
+        run: vp run frontend#build
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: backend/global.json
+
+      - name: Restore
+        run: dotnet restore web-video-streaming.sln
+
+      - name: Build
+        run: dotnet build web-video-streaming.sln --no-restore -c Release
+
+      - name: Format check
+        run: dotnet format web-video-streaming.sln --no-restore --verify-no-changes
