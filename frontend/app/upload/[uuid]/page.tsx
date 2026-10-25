@@ -17,20 +17,15 @@ export const metadata: Metadata = {
 
 export default async function UploadPage({ params }: UploadPageProps) {
   const { uuid } = await params;
+  const session = await getUploadSession(getApiUrl(), uuid).catch(() => notFound());
 
-  try {
-    const session = await getUploadSession(getApiUrl(), uuid);
-
-    return (
-      <PageShell
-        title={session.video.title ?? "Upload session"}
-        description="This session page persists on the backend so users can return to it across refreshes and devices."
-      >
-        <Separator className="mb-6" />
-        <UploadSessionPage initialSession={session} />
-      </PageShell>
-    );
-  } catch {
-    notFound();
-  }
+  return (
+    <PageShell
+      title={session.video.title ?? "Upload session"}
+      description="This session page persists on the backend so users can return to it across refreshes and devices."
+    >
+      <Separator className="mb-6" />
+      <UploadSessionPage initialSession={session} />
+    </PageShell>
+  );
 }
