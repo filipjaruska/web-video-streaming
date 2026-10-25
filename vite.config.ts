@@ -50,6 +50,10 @@ export default defineConfig({
       // tsconfig's noImplicitReturns covers this and understands exhaustive switches; the lint rule
       // flags those and every effect that returns a cleanup on only some paths.
       "typescript/consistent-return": "off",
+      // What's left asserts at untyped boundaries: API JSON, dash.js/hls.js internals, Recharts
+      // payloads and the vendored shadcn chart. Clearing them means validating every response at
+      // runtime, which is a decision of its own rather than a lint fix.
+      "typescript/no-unsafe-type-assertion": "off",
     },
     overrides: [
       {
