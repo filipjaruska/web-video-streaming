@@ -451,17 +451,17 @@ export function summarize(values: number[]): { mean: number; stdDev: number } {
     return { mean: 0, stdDev: 0 };
   }
 
-  const mean = usable.reduce((sum, value) => sum + value, 0) / usable.length;
+  const average = usable.reduce((sum, value) => sum + value, 0) / usable.length;
   if (usable.length < 2) {
-    return { mean, stdDev: 0 };
+    return { mean: average, stdDev: 0 };
   }
 
   // Sample standard deviation (n−1): these repetitions are a sample of possible runs, not the
   // entire population of them.
   const variance =
-    usable.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (usable.length - 1);
+    usable.reduce((sum, value) => sum + (value - average) ** 2, 0) / (usable.length - 1);
 
-  return { mean, stdDev: Math.sqrt(variance) };
+  return { mean: average, stdDev: Math.sqrt(variance) };
 }
 
 /** Mean of several runs' resolution shares; a height one run never played counts as zero for it. */

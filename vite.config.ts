@@ -41,6 +41,7 @@ export default defineConfig({
       "import/no-unassigned-import": ["error", { allow: ["**/*.css"] }],
       // Field names owned by dash.js (HTTPRequest timings) and hls.js (AbrController internals).
       "no-underscore-dangle": ["error", { allow: ["_tfinish", "_trequest", "_abandonRulesCheck"] }],
+      "no-shadow": "error",
     },
     options: {
       typeAware: true,

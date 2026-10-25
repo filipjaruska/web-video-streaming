@@ -288,11 +288,11 @@ export function SitiChart({
             flushPendingSeek();
           }
         });
-        hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+        hls.on(Hls.Events.LEVEL_LOADED, (_event, level) => {
           if (cancelled) {
             return;
           }
-          const total = data.details?.totalduration;
+          const total = level.details?.totalduration;
           if (typeof total === "number" && total > 0) {
             setMediaDuration(total);
           } else {
@@ -300,8 +300,8 @@ export function SitiChart({
           }
           flushPendingSeek();
         });
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (!data.fatal || cancelled) {
+        hls.on(Hls.Events.ERROR, (_event, error) => {
+          if (!error.fatal || cancelled) {
             return;
           }
           setPreviewError(
