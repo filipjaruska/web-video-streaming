@@ -1,7 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { CartesianGrid, ReferenceArea, Scatter, ScatterChart, XAxis, YAxis, ZAxis } from "recharts";
+import {
+  CartesianGrid,
+  ReferenceArea,
+  Scatter,
+  ScatterChart,
+  XAxis,
+  YAxis,
+  ZAxis,
+  type TooltipContentProps,
+} from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { MetricTile, MetricTileGrid, toneForGain, toneForSaving } from "@/components/metric-tiles";
@@ -235,30 +244,7 @@ export function LadderComparisonCard({ comparison }: { comparison?: LadderCompar
                     )}
                     <ChartTooltip
                       cursor={{ stroke: "var(--border)", strokeDasharray: "3 3" }}
-                      content={({ active, payload }) => {
-                        if (!active || !payload?.length) {
-                          return null;
-                        }
-                        const raw = payload[0]?.payload as {
-                          label?: string;
-                          bitrateKbps?: number;
-                          vmaf?: number;
-                          cambi?: number;
-                        };
-                        return (
-                          <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
-                            <div className="font-medium text-foreground">{raw.label ?? "rung"}</div>
-                            <div className="text-muted-foreground">
-                              {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF {formatNumber(raw.vmaf)}
-                            </div>
-                            {raw.cambi != null && (
-                              <div className="text-muted-foreground">
-                                CAMBI {formatNumber(raw.cambi)}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }}
+                      content={RungTooltip}
                     />
                     <Scatter
                       name="Static"
@@ -306,5 +292,29 @@ function LegendSwatch({ color, label }: { color: string; label: string }) {
       <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: color }} />
       {label}
     </span>
+  );
+}
+
+// Module-level so Recharts, which mounts `content` as a component, keeps one stable type.
+function RungTooltip({ active, payload }: TooltipContentProps) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+  const raw = payload[0]?.payload as {
+    label?: string;
+    bitrateKbps?: number;
+    vmaf?: number;
+    cambi?: number;
+  };
+  return (
+    <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
+      <div className="font-medium text-foreground">{raw.label ?? "rung"}</div>
+      <div className="text-muted-foreground">
+        {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF {formatNumber(raw.vmaf)}
+      </div>
+      {raw.cambi != null && (
+        <div className="text-muted-foreground">CAMBI {formatNumber(raw.cambi)}</div>
+      )}
+    </div>
   );
 }

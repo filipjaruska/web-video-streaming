@@ -1,7 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+  type TooltipContentProps,
+} from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
@@ -216,26 +225,7 @@ export function TuningComparisonCard({ tuning }: { tuning?: TuningComparisonDocu
                   <ReferenceLine y={0} stroke="var(--border)" />
                   <ChartTooltip
                     cursor={{ fill: "var(--muted)", fillOpacity: 0.3 }}
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload?.length) {
-                        return null;
-                      }
-                      const raw = payload[0]?.payload as {
-                        vmafDelta?: number;
-                        cambiDelta?: number | null;
-                      };
-                      return (
-                        <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
-                          <div className="font-medium text-foreground">{label}</div>
-                          <div className="text-muted-foreground">
-                            ΔVMAF {formatSigned(raw.vmafDelta, 3)}
-                          </div>
-                          <div className="text-muted-foreground">
-                            ΔCAMBI {formatSigned(raw.cambiDelta, 3)}
-                          </div>
-                        </div>
-                      );
-                    }}
+                    content={DeltaTooltip}
                   />
                   <Bar dataKey="vmafDelta" radius={2}>
                     {chartData.map((entry, index) => (
@@ -324,5 +314,23 @@ function TuneEffectsCard() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// Module-level so Recharts, which mounts `content` as a component, keeps one stable type.
+function DeltaTooltip({ active, payload, label }: TooltipContentProps) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+  const raw = payload[0]?.payload as {
+    vmafDelta?: number;
+    cambiDelta?: number | null;
+  };
+  return (
+    <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
+      <div className="font-medium text-foreground">{label}</div>
+      <div className="text-muted-foreground">ΔVMAF {formatSigned(raw.vmafDelta, 3)}</div>
+      <div className="text-muted-foreground">ΔCAMBI {formatSigned(raw.cambiDelta, 3)}</div>
+    </div>
   );
 }

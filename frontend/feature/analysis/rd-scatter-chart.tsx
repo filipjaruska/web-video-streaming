@@ -1,7 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { CartesianGrid, ReferenceLine, Scatter, ScatterChart, XAxis, YAxis, ZAxis } from "recharts";
+import {
+  CartesianGrid,
+  ReferenceLine,
+  Scatter,
+  ScatterChart,
+  XAxis,
+  YAxis,
+  ZAxis,
+  type TooltipContentProps,
+} from "recharts";
 import type { DerivedLadderDocument, EncodeGridPoint } from "@/lib/videoAnalysisApi";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
@@ -84,6 +93,25 @@ function StarMarker(props: {
   );
 }
 
+/** Scatter shape for derived rungs. Recharts hands each symbol its Scatter's own `fill`. */
+function DerivedStar({ cx, cy, fill }: { cx?: number; cy?: number; fill?: string }) {
+  return (
+    <StarMarker
+      cx={cx}
+      cy={cy}
+      fill={fill}
+      size={14}
+      stroke="var(--chart-star-stroke)"
+      strokeWidth={1.6}
+    />
+  );
+}
+
+/** Scatter shape that draws only the connecting line. */
+function NoMarker() {
+  return <g />;
+}
+
 function RdLegend({
   heights,
   showDerived,
@@ -139,6 +167,31 @@ function RdLegend({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Module-level so Recharts, which mounts `content` as a component, keeps one stable type.
+function PointTooltip({ active, payload }: TooltipContentProps) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+  const raw = payload[0]?.payload as {
+    bitrateKbps?: number;
+    vmaf?: number;
+    label?: string;
+    crf?: number;
+    derived?: boolean;
+  };
+  return (
+    <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
+      <div className="font-medium text-foreground">
+        {raw.label ?? "point"}
+        {raw.derived ? " · derived" : raw.crf != null ? ` · CRF ${raw.crf}` : ""}
+      </div>
+      <div className="text-muted-foreground">
+        {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF {raw.vmaf?.toFixed(2)}
+      </div>
     </div>
   );
 }
@@ -421,29 +474,7 @@ export function RdScatterChart({
                 ))}
                 <ChartTooltip
                   cursor={{ stroke: "var(--border)", strokeDasharray: "3 3" }}
-                  content={({ active, payload }) => {
-                    if (!active || !payload?.length) {
-                      return null;
-                    }
-                    const raw = payload[0]?.payload as {
-                      bitrateKbps?: number;
-                      vmaf?: number;
-                      label?: string;
-                      crf?: number;
-                      derived?: boolean;
-                    };
-                    return (
-                      <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
-                        <div className="font-medium text-foreground">
-                          {raw.label ?? "point"}
-                          {raw.derived ? " · derived" : raw.crf != null ? ` · CRF ${raw.crf}` : ""}
-                        </div>
-                        <div className="text-muted-foreground">
-                          {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF {raw.vmaf?.toFixed(2)}
-                        </div>
-                      </div>
-                    );
-                  }}
+                  content={PointTooltip}
                 />
                 {/* Drawn first so the markers sit on top of it. */}
                 {hullPoints.length > 1 && (
@@ -454,7 +485,7 @@ export function RdScatterChart({
                     data={hullPoints}
                     line={{ stroke: "var(--foreground)", strokeWidth: 1.75 }}
                     lineType="joint"
-                    shape={() => <g />}
+                    shape={NoMarker}
                     isAnimationActive={false}
                   />
                 )}
@@ -488,16 +519,7 @@ export function RdScatterChart({
                       legendType="none"
                       data={points.map((p) => ({ ...p, derived: true }))}
                       fill={`var(--color-${key})`}
-                      shape={(props) => (
-                        <StarMarker
-                          cx={props.cx}
-                          cy={props.cy}
-                          fill={`var(--color-${key})`}
-                          size={14}
-                          stroke="var(--chart-star-stroke)"
-                          strokeWidth={1.6}
-                        />
-                      )}
+                      shape={DerivedStar}
                       isAnimationActive={false}
                     />
                   );
