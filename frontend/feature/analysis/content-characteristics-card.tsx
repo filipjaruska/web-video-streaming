@@ -1,13 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricTile, MetricTileGrid } from "@/components/metric-tiles";
 import { formatNumber, formatPercent } from "@/lib/analysisFormat";
 import type { AnalysisSeriesDocument } from "@/lib/videoAnalysisApi";
@@ -77,9 +71,7 @@ export function ContentCharacteristicsCard({
             title="Frame-to-frame difference energy. Held frames drive this toward zero."
           />
           <MetricTile
-            value={
-              duplicateShare != null ? formatPercent(duplicateShare) : "—"
-            }
+            value={duplicateShare != null ? formatPercent(duplicateShare) : "—"}
             label='Duplicate frames ("on twos")'
             title={
               duplicateShare != null
@@ -100,8 +92,8 @@ export function ContentCharacteristicsCard({
 
         {duplicateShare == null && (
           <p className="mt-4 text-xs text-muted-foreground">
-            Duplicate-frame share was not recorded for this analysis run. It is derived from the
-            TI series, so re-running the analysis will populate it.
+            Duplicate-frame share was not recorded for this analysis run. It is derived from the TI
+            series, so re-running the analysis will populate it.
           </p>
         )}
       </CardContent>

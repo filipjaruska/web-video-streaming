@@ -1,15 +1,15 @@
-import type { ReactNode } from "react"
-import { Button } from "@/components/ui/button"
+import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 
 interface PageShellProps {
-  title: string
-  description?: string
-  children: ReactNode
-  breadcrumb?: ReactNode
+  title: string;
+  description?: string;
+  children: ReactNode;
+  breadcrumb?: ReactNode;
   /** Optional header action — rendered once as a shadcn Button on the right */
-  actionLabel?: string
+  actionLabel?: string;
   /** Custom header action (takes precedence over actionLabel) */
-  action?: ReactNode
+  action?: ReactNode;
 }
 
 export function PageShell({
@@ -29,14 +29,15 @@ export function PageShell({
             <h1 className="text-3xl font-semibold mb-2 tracking-tight">{title}</h1>
             {description && <p className="text-muted-foreground">{description}</p>}
           </div>
-          {action ?? (actionLabel && (
-            <Button type="button" className="shrink-0 self-center">
-              {actionLabel}
-            </Button>
-          ))}
+          {action ??
+            (actionLabel && (
+              <Button type="button" className="shrink-0 self-center">
+                {actionLabel}
+              </Button>
+            ))}
         </header>
         {children}
       </div>
     </div>
-  )
+  );
 }

@@ -22,16 +22,8 @@ import {
   type MediaProviderChangeEvent,
   type MediaProviderSetupEvent,
 } from "@vidstack/react";
-import {
-  DefaultVideoLayout,
-  defaultLayoutIcons,
-} from "@vidstack/react/player/layouts/default";
-import type {
-  AbrAlgorithm,
-  StreamingMethod,
-  CurrentStats,
-  PlaybackEvent,
-} from "@/types/streaming";
+import { DefaultVideoLayout, defaultLayoutIcons } from "@vidstack/react/player/layouts/default";
+import type { AbrAlgorithm, StreamingMethod, CurrentStats, PlaybackEvent } from "@/types/streaming";
 import {
   createHlsConfig,
   createDashSettings,
@@ -126,9 +118,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   ref,
 ) {
   const playerRef = useRef<MediaPlayerInstance>(null);
-  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
-    null,
-  );
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const [hlsInstance, setHlsInstance] = useState<Hls | null>(null);
   const [dashInstance, setDashInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -214,10 +204,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   }, [src, abrAlgorithm, fastStart]);
 
   const onProviderChange = useCallback(
-    (
-      provider: MediaProviderAdapter | null,
-      _nativeEvent: MediaProviderChangeEvent,
-    ) => {
+    (provider: MediaProviderAdapter | null, _nativeEvent: MediaProviderChangeEvent) => {
       if (!provider) {
         setVideoElement(null);
         setHlsInstance(null);
@@ -270,7 +257,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         // Not `() => import("dashjs")`: see `loadDashLibrary` — that left Vidstack without a dash.js
         // instance while dash.js's auto-create played the stream with its own ABR. Vidstack's type
         // wants the constructor itself under `default`; its loader also accepts the namespace.
-        provider.library = loadDashLibrary as unknown as typeof provider.library;
+        provider.library = loadDashLibrary;
         provider.onInstance((dash) => {
           setDashInstance(dash);
 
@@ -278,9 +265,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           // without this, picking a quality from the player's own menu would throw.
           const legacy = dash as unknown as {
             setQualityFor?: unknown;
-            setRepresentationForTypeByIndex?: (type: string, index: number, forceReplace?: boolean) => void;
+            setRepresentationForTypeByIndex?: (
+              type: string,
+              index: number,
+              forceReplace?: boolean,
+            ) => void;
           };
-          if (typeof legacy.setQualityFor !== "function" && legacy.setRepresentationForTypeByIndex) {
+          if (
+            typeof legacy.setQualityFor !== "function" &&
+            legacy.setRepresentationForTypeByIndex
+          ) {
             legacy.setQualityFor = (type: string, index: number, forceReplace?: boolean) =>
               legacy.setRepresentationForTypeByIndex?.(type, index, forceReplace);
           }
@@ -319,20 +313,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               levels,
               (level) => (level.bandwidth ?? 0) + audio,
             );
-            dash.setRepresentationForTypeByIndex?.(
-              "video",
-              startAt?.index ?? 0,
-              true,
-            );
+            dash.setRepresentationForTypeByIndex?.("video", startAt?.index ?? 0, true);
 
             driverRef.current?.stop();
-            driverRef.current = driveDash(
-              dash,
-              abrAlgorithm,
-              targetBufferSec,
-              SEGMENT_SEC,
-              { fastStart },
-            );
+            driverRef.current = driveDash(dash, abrAlgorithm, targetBufferSec, SEGMENT_SEC, {
+              fastStart,
+            });
           };
 
           dash.on?.("streamInitialized", start);
@@ -343,10 +329,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   );
 
   const onProviderSetup = useCallback(
-    (
-      provider: MediaProviderAdapter,
-      _nativeEvent: MediaProviderSetupEvent,
-    ) => {
+    (provider: MediaProviderAdapter, _nativeEvent: MediaProviderSetupEvent) => {
       if (isVideoProvider(provider) || isHLSProvider(provider) || isDASHProvider(provider)) {
         setVideoElement(provider.video);
       }

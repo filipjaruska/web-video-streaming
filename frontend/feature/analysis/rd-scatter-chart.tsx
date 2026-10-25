@@ -1,31 +1,10 @@
 "use client";
 
 import * as React from "react";
-import {
-  CartesianGrid,
-  ReferenceLine,
-  Scatter,
-  ScatterChart,
-  XAxis,
-  YAxis,
-  ZAxis,
-} from "recharts";
-import type {
-  DerivedLadderDocument,
-  EncodeGridPoint,
-} from "@/lib/videoAnalysisApi";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  type ChartConfig,
-} from "@/components/ui/chart";
+import { CartesianGrid, ReferenceLine, Scatter, ScatterChart, XAxis, YAxis, ZAxis } from "recharts";
+import type { DerivedLadderDocument, EncodeGridPoint } from "@/lib/videoAnalysisApi";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
 
@@ -51,7 +30,7 @@ const chartConfig = {
 
 function heightKey(height: number): HeightKey {
   const match = HEIGHT_KEYS.find((h) => h === height);
-  return match ? (`h${match}` as HeightKey) : "h540";
+  return match ? `h${match}` : "h540";
 }
 
 function formatBitrateKbps(bps: number) {
@@ -65,9 +44,7 @@ type QualityMetric = "harmonic" | "mean";
  * Plotting the arithmetic mean instead would draw hull vertices that appear not to be on a hull.
  */
 function qualityOf(point: EncodeGridPoint, metric: QualityMetric) {
-  return metric === "harmonic"
-    ? (point.vmafHarmonicMean ?? point.vmafMean)
-    : point.vmafMean;
+  return metric === "harmonic" ? (point.vmafHarmonicMean ?? point.vmafMean) : point.vmafMean;
 }
 
 function StarMarker(props: {
@@ -90,7 +67,7 @@ function StarMarker(props: {
   const points: string[] = [];
   for (let i = 0; i < 5; i++) {
     const outer = ((i * 72 - 90) * Math.PI) / 180;
-    const inner = (((i * 72 - 90) + 36) * Math.PI) / 180;
+    const inner = ((i * 72 - 90 + 36) * Math.PI) / 180;
     points.push(
       `${cx + r * Math.cos(outer)},${cy + r * Math.sin(outer)}`,
       `${cx + r * 0.45 * Math.cos(inner)},${cy + r * 0.45 * Math.sin(inner)}`,
@@ -137,13 +114,7 @@ function RdLegend({
       )}
       {showDerived && (
         <div className="flex items-center gap-1.5">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            className="shrink-0"
-            aria-hidden
-          >
+          <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0" aria-hidden>
             <StarMarker
               cx={7}
               cy={7}
@@ -241,19 +212,20 @@ export function RdScatterChart({
       map.set(point.height, list);
     }
     // Always highest → lowest so series + colors stay consistent.
-    return HEIGHT_KEYS.filter((h) => map.has(h)).map(
-      (h) => [h, map.get(h)!] as const,
-    );
+    return HEIGHT_KEYS.filter((h) => map.has(h)).map((h) => [h, map.get(h)!] as const);
   }, [okPoints]);
 
   const derivedByHeight = React.useMemo(() => {
     if (!derivedLadder?.variants?.length) {
-      return new Map<number, Array<{
-        bitrateKbps: number;
-        vmaf: number;
-        label: string;
-        height: number;
-      }>>();
+      return new Map<
+        number,
+        Array<{
+          bitrateKbps: number;
+          vmaf: number;
+          label: string;
+          height: number;
+        }>
+      >();
     }
 
     const map = new Map<
@@ -299,14 +271,10 @@ export function RdScatterChart({
       point.bitrateBps,
       Number((point.bitrateBps / 1000).toFixed(3)),
       point.error ? "" : Number(point.vmafMean.toFixed(6)),
-      point.vmafHarmonicMean != null
-        ? Number(point.vmafHarmonicMean.toFixed(6))
-        : "",
+      point.vmafHarmonicMean != null ? Number(point.vmafHarmonicMean.toFixed(6)) : "",
       point.vmafMin != null ? Number(point.vmafMin.toFixed(6)) : "",
       point.vmafNegMean != null ? Number(point.vmafNegMean.toFixed(6)) : "",
-      point.vmafNegHarmonicMean != null
-        ? Number(point.vmafNegHarmonicMean.toFixed(6))
-        : "",
+      point.vmafNegHarmonicMean != null ? Number(point.vmafNegHarmonicMean.toFixed(6)) : "",
       point.cambi != null ? Number(point.cambi.toFixed(6)) : "",
       point.onHull ? 1 : 0,
       point.error ?? "",
@@ -325,15 +293,11 @@ export function RdScatterChart({
           variant.crf ?? "",
           variant.bitrateBps,
           Number((variant.bitrateBps / 1000).toFixed(3)),
-          variant.predictedVmaf != null
-            ? Number(variant.predictedVmaf.toFixed(6))
-            : "",
+          variant.predictedVmaf != null ? Number(variant.predictedVmaf.toFixed(6)) : "",
           variant.predictedVmafHarmonic != null
             ? Number(variant.predictedVmafHarmonic.toFixed(6))
             : "",
-          variant.predictedVmafMin != null
-            ? Number(variant.predictedVmafMin.toFixed(6))
-            : "",
+          variant.predictedVmafMin != null ? Number(variant.predictedVmafMin.toFixed(6)) : "",
           "",
           "",
           "",
@@ -353,10 +317,7 @@ export function RdScatterChart({
     );
   }
 
-  const yMin = Math.max(
-    0,
-    Math.min(...okPoints.map((p) => qualityOf(p, metric))) - 5,
-  );
+  const yMin = Math.max(0, Math.min(...okPoints.map((p) => qualityOf(p, metric))) - 5);
   const presentHeights = byHeight.map(([h]) => h);
   const showDerived = derivedByHeight.size > 0;
 
@@ -367,9 +328,9 @@ export function RdScatterChart({
           <div className="space-y-1.5">
             <CardTitle className="text-base">{title}</CardTitle>
             <CardDescription>
-              Measured bitrate vs VMAF per resolution×CRF sample. The line traces
-              the convex hull across all resolutions; stars mark the derived
-              ladder&apos;s operating points (same colors as their resolution).
+              Measured bitrate vs VMAF per resolution×CRF sample. The line traces the convex hull
+              across all resolutions; stars mark the derived ladder&apos;s operating points (same
+              colors as their resolution).
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -390,10 +351,7 @@ export function RdScatterChart({
               ))}
             </div>
             <ExportCsvButton
-              filename={slugFilename([
-                "rd-encode-grid",
-                derivedLadder?.name ?? "",
-              ])}
+              filename={slugFilename(["rd-encode-grid", derivedLadder?.name ?? ""])}
               headers={[
                 "kind",
                 "label",
@@ -479,15 +437,10 @@ export function RdScatterChart({
                       <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
                         <div className="font-medium text-foreground">
                           {raw.label ?? "point"}
-                          {raw.derived
-                            ? " · derived"
-                            : raw.crf != null
-                              ? ` · CRF ${raw.crf}`
-                              : ""}
+                          {raw.derived ? " · derived" : raw.crf != null ? ` · CRF ${raw.crf}` : ""}
                         </div>
                         <div className="text-muted-foreground">
-                          {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF{" "}
-                          {raw.vmaf?.toFixed(2)}
+                          {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF {raw.vmaf?.toFixed(2)}
                         </div>
                       </div>
                     );
@@ -526,32 +479,30 @@ export function RdScatterChart({
                     />
                   );
                 })}
-                {HEIGHT_KEYS.filter((h) => derivedByHeight.has(h)).map(
-                  (height) => {
-                    const key = heightKey(height);
-                    const points = derivedByHeight.get(height)!;
-                    return (
-                      <Scatter
-                        key={`derived-${height}`}
-                        name={`${key}-derived`}
-                        legendType="none"
-                        data={points.map((p) => ({ ...p, derived: true }))}
-                        fill={`var(--color-${key})`}
-                        shape={(props) => (
-                          <StarMarker
-                            cx={props.cx}
-                            cy={props.cy}
-                            fill={`var(--color-${key})`}
-                            size={14}
-                            stroke="var(--chart-star-stroke)"
-                            strokeWidth={1.6}
-                          />
-                        )}
-                        isAnimationActive={false}
-                      />
-                    );
-                  },
-                )}
+                {HEIGHT_KEYS.filter((h) => derivedByHeight.has(h)).map((height) => {
+                  const key = heightKey(height);
+                  const points = derivedByHeight.get(height)!;
+                  return (
+                    <Scatter
+                      key={`derived-${height}`}
+                      name={`${key}-derived`}
+                      legendType="none"
+                      data={points.map((p) => ({ ...p, derived: true }))}
+                      fill={`var(--color-${key})`}
+                      shape={(props) => (
+                        <StarMarker
+                          cx={props.cx}
+                          cy={props.cy}
+                          fill={`var(--color-${key})`}
+                          size={14}
+                          stroke="var(--chart-star-stroke)"
+                          strokeWidth={1.6}
+                        />
+                      )}
+                      isAnimationActive={false}
+                    />
+                  );
+                })}
               </ScatterChart>
             </ChartContainer>
           ) : null}

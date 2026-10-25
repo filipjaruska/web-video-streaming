@@ -5,9 +5,7 @@ import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 
 function YesNo({ value }: { value: boolean }) {
-  return (
-    <Badge variant={value ? "secondary" : "outline"}>{value ? "yes" : "no"}</Badge>
-  );
+  return <Badge variant={value ? "secondary" : "outline"}>{value ? "yes" : "no"}</Badge>;
 }
 
 /**
@@ -21,9 +19,7 @@ export function BrowserCapabilities() {
   const capabilities = usePlaybackCapabilities();
 
   if (!capabilities) {
-    return (
-      <p className="text-sm text-muted-foreground">Probing this browser…</p>
-    );
+    return <p className="text-sm text-muted-foreground">Probing this browser…</p>;
   }
 
   const rows: Array<{ label: string; value: boolean; note: string }> = [

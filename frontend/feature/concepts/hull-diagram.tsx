@@ -60,15 +60,12 @@ function quality(rung: Rung, x: number): number {
  * so setting that equal to λ and rearranging gives x directly, with no search.
  */
 function operatingPoint(rung: Rung): { x: number; y: number } {
-  const x =
-    rung.offset +
-    Math.log((rung.rate * (rung.ceiling - Y_MIN + 12)) / LAMBDA) / rung.rate;
+  const x = rung.offset + Math.log((rung.rate * (rung.ceiling - Y_MIN + 12)) / LAMBDA) / rung.rate;
   return { x, y: quality(rung, x) };
 }
 
 const toX = (x: number) => PAD.left + ((x - X_MIN) / (X_MAX - X_MIN)) * PLOT_W;
-const toY = (y: number) =>
-  PAD.top + PLOT_H - ((y - Y_MIN) / (Y_MAX - Y_MIN)) * PLOT_H;
+const toY = (y: number) => PAD.top + PLOT_H - ((y - Y_MIN) / (Y_MAX - Y_MIN)) * PLOT_H;
 
 function curvePath(rung: Rung): string {
   const points: string[] = [];

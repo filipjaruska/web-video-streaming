@@ -90,7 +90,9 @@ function mean(values: number[]): number {
  * does not pull it toward the empty buffer that caused it — that is what the buffering ratio is for.
  */
 function averageBuffer(samples: BenchmarkSample[], startupMs: number): number {
-  return mean(samples.filter((sample) => sample.atMs >= startupMs).map((sample) => sample.bufferSec));
+  return mean(
+    samples.filter((sample) => sample.atMs >= startupMs).map((sample) => sample.bufferSec),
+  );
 }
 
 /**
@@ -205,11 +207,17 @@ function resolutionShare(samples: BenchmarkSample[], startupMs: number): Record<
  * {@link resolutionShare} for ladders that may repeat a resolution. Null when a played sample cannot
  * be placed on a rung, since a share over part of the run would describe nobody's session.
  */
-function rungShare(samples: BenchmarkSample[], startupMs: number, ladder: LadderQuality): Map<string, number> | null {
+function rungShare(
+  samples: BenchmarkSample[],
+  startupMs: number,
+  ladder: LadderQuality,
+): Map<string, number> | null {
   const unplaced = samples.some(
     (sample) => sample.atMs >= startupMs && (sample.height ?? 0) > 0 && !rungOf(sample, ladder),
   );
-  return unplaced ? null : mediaTimeShare(samples, startupMs, (sample) => rungOf(sample, ladder)!.label);
+  return unplaced
+    ? null
+    : mediaTimeShare(samples, startupMs, (sample) => rungOf(sample, ladder)!.label);
 }
 
 /** Media-time share of the playing samples by a key, as described on {@link resolutionShare}. */
@@ -314,7 +322,9 @@ function topRungShare(
 
   if (ladder.rungs) {
     const top = ladder.rungs.reduce((best, rung) =>
-      (rung.declaredBps ?? rung.bitrateBps ?? 0) > (best.declaredBps ?? best.bitrateBps ?? 0) ? rung : best,
+      (rung.declaredBps ?? rung.bitrateBps ?? 0) > (best.declaredBps ?? best.bitrateBps ?? 0)
+        ? rung
+        : best,
     );
     return byRung ? (byRung.get(top.label) ?? 0) : null;
   }

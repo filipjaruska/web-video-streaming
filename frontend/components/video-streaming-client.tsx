@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  StreamingMethod,
-  AbrAlgorithm,
-  PlaybackEvent,
-  VideoQuality,
-} from "@/types/streaming";
+import type { StreamingMethod, AbrAlgorithm, PlaybackEvent, VideoQuality } from "@/types/streaming";
 import { SOURCE_RUN_ID, isSourceRun } from "@/types/streaming";
 import { StreamingControls } from "@/components/streaming-controls";
 import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
@@ -52,12 +47,8 @@ function StatTile({
         {label}
       </div>
       <div className="font-mono text-lg font-semibold tracking-tight">{value}</div>
-      {detail && (
-        <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
-      )}
-      {typeof progress === "number" && (
-        <Progress value={progress} className="mt-2 h-1.5" />
-      )}
+      {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
+      {typeof progress === "number" && <Progress value={progress} className="mt-2 h-1.5" />}
     </div>
   );
 }
@@ -76,13 +67,11 @@ function deliveryForLadder(
 
 export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
   const apiUrl = getPublicApiUrl();
-  const { transcodes, activeTranscodeId, loading: transcodesLoading } =
-    useVideoTranscodes(routeId);
+  const { transcodes, activeTranscodeId, loading: transcodesLoading } = useVideoTranscodes(routeId);
   const { tracks: subtitleTracks } = useVideoSubtitles(routeId);
 
   const [bestMode, setBestMode] = useState(true);
-  const [streamingMethod, setStreamingMethod] =
-    useState<StreamingMethod>("source");
+  const [streamingMethod, setStreamingMethod] = useState<StreamingMethod>("source");
   const [abrAlgorithm, setAbrAlgorithm] = useState<AbrAlgorithm>("hybrid");
   const [packagingRunId, setPackagingRunId] = useState<string | null>(null);
   const [runNonce, setRunNonce] = useState(0);
@@ -166,9 +155,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
       prev === bestSettings.packagingRunId ? prev : bestSettings.packagingRunId,
     );
     setStreamingMethod((prev) =>
-      prev === bestSettings.streamingMethod
-        ? prev
-        : bestSettings.streamingMethod,
+      prev === bestSettings.streamingMethod ? prev : bestSettings.streamingMethod,
     );
     setAbrAlgorithm((prev) =>
       prev === bestSettings.abrAlgorithm ? prev : bestSettings.abrAlgorithm,
@@ -217,10 +204,8 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
     }
   }, [bestMode, packagingRunId, transcodes, streamingMethod]);
 
-  const effectiveMethod =
-    bestMode && bestSettings ? bestSettings.streamingMethod : streamingMethod;
-  const effectiveAbr =
-    bestMode && bestSettings ? bestSettings.abrAlgorithm : abrAlgorithm;
+  const effectiveMethod = bestMode && bestSettings ? bestSettings.streamingMethod : streamingMethod;
+  const effectiveAbr = bestMode && bestSettings ? bestSettings.abrAlgorithm : abrAlgorithm;
   const effectivePackagingRunId =
     bestMode && bestSettings ? bestSettings.packagingRunId : packagingRunId;
 
@@ -309,19 +294,10 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
         `${method.toUpperCase()} failed to play in this browser — retrying over ${other.toUpperCase()}.`,
       );
     },
-    [
-      benchmarkProgress.running,
-      bestMode,
-      effectivePackagingRunId,
-      effectiveAbr,
-      transcodes,
-    ],
+    [benchmarkProgress.running, bestMode, effectivePackagingRunId, effectiveAbr, transcodes],
   );
 
-  const bufferProgress = Math.min(
-    100,
-    Math.max(0, (stats.current.bufferLevel / 30) * 100),
-  );
+  const bufferProgress = Math.min(100, Math.max(0, (stats.current.bufferLevel / 30) * 100));
 
   const playerTranscodeId =
     effectiveMethod === "source" || isSourceRun(effectivePackagingRunId)
@@ -410,7 +386,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
               <StatTile
                 emphasize
                 label="Throughput"
-                value={`${stats.current.bandwidth.toFixed(2)}`}
+                value={stats.current.bandwidth.toFixed(2)}
                 detail="Mb/s"
               />
               <StatTile
@@ -427,17 +403,11 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
               Session averages
             </h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-              <StatTile
-                label="Most played"
-                value={stats.average.avgQuality?.label || "—"}
-              />
-              <StatTile
-                label="Buffer"
-                value={`${stats.average.avgBufferLevel.toFixed(1)}s`}
-              />
+              <StatTile label="Most played" value={stats.average.avgQuality?.label || "—"} />
+              <StatTile label="Buffer" value={`${stats.average.avgBufferLevel.toFixed(1)}s`} />
               <StatTile
                 label="Throughput"
-                value={`${stats.average.avgBandwidth.toFixed(2)}`}
+                value={stats.average.avgBandwidth.toFixed(2)}
                 detail="Mb/s"
               />
               <StatTile
@@ -449,10 +419,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
                 value={String(stats.average.totalRebufferingEvents)}
                 detail={`${stats.average.totalRebufferingDuration.toFixed(1)}s`}
               />
-              <StatTile
-                label="Played"
-                value={formatTime(stats.average.totalPlaybackTime)}
-              />
+              <StatTile label="Played" value={formatTime(stats.average.totalPlaybackTime)} />
             </div>
           </div>
         </CardContent>

@@ -12,9 +12,7 @@ export async function isActionAuthRequired(): Promise<boolean> {
   return getExpectedPassword() !== undefined;
 }
 
-export async function verifyActionPassword(
-  password: string,
-): Promise<{ ok: boolean }> {
+export async function verifyActionPassword(password: string): Promise<{ ok: boolean }> {
   const expected = getExpectedPassword();
   if (!expected) {
     return { ok: true };

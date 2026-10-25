@@ -11,13 +11,7 @@ import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
 import { formatTargetStatus } from "@/lib/analysisLabels";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -122,8 +116,7 @@ function FormatBox({
   videoSrc?: string;
 }) {
   const hasTree = (section.children?.length ?? 0) > 0;
-  const hasSiti =
-    !!sitiByRendition && Object.keys(sitiByRendition).length > 0;
+  const hasSiti = !!sitiByRendition && Object.keys(sitiByRendition).length > 0;
 
   return (
     <div className="rounded-md border">
@@ -133,17 +126,13 @@ function FormatBox({
       </div>
       <div className="px-3 py-2">
         {section.meta?.error && (
-          <p className="mb-2 text-sm text-muted-foreground">
-            {section.meta.error}
-          </p>
+          <p className="mb-2 text-sm text-muted-foreground">{section.meta.error}</p>
         )}
         {hasTree ? (
           <AnalysisTree nodes={section.children!} defaultOpen />
         ) : (
           !section.meta?.error && (
-            <p className="text-sm text-muted-foreground">
-              No analysis data for this format yet.
-            </p>
+            <p className="text-sm text-muted-foreground">No analysis data for this format yet.</p>
           )
         )}
         {hasSiti && (
@@ -177,8 +166,7 @@ export function TranscodeAnalysisCard({
     { section: hls, siti: sitiByFormat?.hls },
     { section: dash, siti: sitiByFormat?.dash },
   ].filter(
-    (box): box is { section: AnalysisTreeNode; siti: typeof box.siti } =>
-      box.section != null,
+    (box): box is { section: AnalysisTreeNode; siti: typeof box.siti } => box.section != null,
   );
 
   return (
@@ -191,8 +179,8 @@ export function TranscodeAnalysisCard({
               {isActive ? " · active" : ""}
             </CardTitle>
             <CardDescription>
-              {createdLabel}. Probe metadata and per-format SI/TI from the
-              packaged HLS and DASH outputs.
+              {createdLabel}. Probe metadata and per-format SI/TI from the packaged HLS and DASH
+              outputs.
             </CardDescription>
           </div>
           <Badge variant="outline">{formatTargetStatus(target.status)}</Badge>

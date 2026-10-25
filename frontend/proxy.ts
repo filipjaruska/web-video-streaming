@@ -15,8 +15,7 @@ function getCountryCode(request: NextRequest): string | null {
 
 export function proxy(request: NextRequest) {
   const hostname = request.nextUrl.hostname;
-  const isLocalhost =
-    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 
   if (process.env.NODE_ENV !== "production" || isLocalhost) {
     return NextResponse.next();
@@ -38,7 +37,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],
 };

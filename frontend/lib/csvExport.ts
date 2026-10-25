@@ -5,21 +5,15 @@ export function csvEscape(value: CsvCell): string {
   if (value == null) {
     return "";
   }
-  const text = typeof value === "number"
-    ? Number.isFinite(value)
-      ? String(value)
-      : ""
-    : String(value);
+  const text =
+    typeof value === "number" ? (Number.isFinite(value) ? String(value) : "") : String(value);
   if (/[",\r\n]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }
   return text;
 }
 
-export function rowsToCsv(
-  headers: string[],
-  rows: CsvCell[][],
-): string {
+export function rowsToCsv(headers: string[], rows: CsvCell[][]): string {
   const lines = [
     headers.map(csvEscape).join(","),
     ...rows.map((row) => row.map(csvEscape).join(",")),

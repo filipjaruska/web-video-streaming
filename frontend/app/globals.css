@@ -130,40 +130,16 @@
     @apply text-foreground min-h-screen;
     background-color: var(--background);
     background-image:
-      radial-gradient(
-        ellipse 80% 50% at 50% -20%,
-        oklch(0.7 0.08 295 / 0.12),
-        transparent
-      ),
-      radial-gradient(
-        ellipse 60% 40% at 100% 100%,
-        oklch(0.65 0.06 280 / 0.08),
-        transparent
-      ),
-      radial-gradient(
-        ellipse 50% 30% at 0% 80%,
-        oklch(0.7 0.05 310 / 0.06),
-        transparent
-      );
+      radial-gradient(ellipse 80% 50% at 50% -20%, oklch(0.7 0.08 295 / 0.12), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 100%, oklch(0.65 0.06 280 / 0.08), transparent),
+      radial-gradient(ellipse 50% 30% at 0% 80%, oklch(0.7 0.05 310 / 0.06), transparent);
     background-attachment: fixed;
   }
   .dark body {
     background-image:
-      radial-gradient(
-        ellipse 80% 50% at 50% -20%,
-        oklch(0.4 0.1 295 / 0.25),
-        transparent
-      ),
-      radial-gradient(
-        ellipse 60% 40% at 100% 100%,
-        oklch(0.35 0.08 280 / 0.15),
-        transparent
-      ),
-      radial-gradient(
-        ellipse 50% 30% at 0% 80%,
-        oklch(0.35 0.06 310 / 0.12),
-        transparent
-      );
+      radial-gradient(ellipse 80% 50% at 50% -20%, oklch(0.4 0.1 295 / 0.25), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 100%, oklch(0.35 0.08 280 / 0.15), transparent),
+      radial-gradient(ellipse 50% 30% at 0% 80%, oklch(0.35 0.06 310 / 0.12), transparent);
   }
 
   /* Watch page: keep native video controls readable on the chrome strip */

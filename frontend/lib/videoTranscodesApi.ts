@@ -75,9 +75,10 @@ function pickDeliveryForLadder(
     if (item.hasHls && capabilities.mseHls) {
       return {
         method: "hls",
-        reason: capabilities.managedMediaSource && !capabilities.mediaSource
-          ? "HLS via hls.js — ManagedMediaSource"
-          : "HLS via hls.js — MSE available",
+        reason:
+          capabilities.managedMediaSource && !capabilities.mediaSource
+            ? "HLS via hls.js — ManagedMediaSource"
+            : "HLS via hls.js — MSE available",
       };
     }
 

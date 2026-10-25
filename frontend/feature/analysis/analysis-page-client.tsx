@@ -3,11 +3,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnalysisTargetTabs } from "@/feature/analysis/analysis-target-tabs";
-import {
-  DEFAULT_ANALYSIS_TAB,
-  isAnalysisTab,
-  type AnalysisTab,
-} from "@/lib/analysisTabs";
+import { DEFAULT_ANALYSIS_TAB, isAnalysisTab, type AnalysisTab } from "@/lib/analysisTabs";
 import { useVideoAnalysis } from "@/hooks/useVideoAnalysis";
 import { useVideoTranscodes } from "@/hooks/useVideoTranscodes";
 import { Button } from "@/components/ui/button";
@@ -61,9 +57,7 @@ export function AnalysisPageClient({
         </Button>
       </div>
 
-      {loading && !data && (
-        <p className="text-sm text-muted-foreground">Loading analysis…</p>
-      )}
+      {loading && !data && <p className="text-sm text-muted-foreground">Loading analysis…</p>}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 

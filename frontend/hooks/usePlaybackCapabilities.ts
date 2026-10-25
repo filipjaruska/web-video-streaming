@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  detectPlaybackCapabilities,
-  type PlaybackCapabilities,
-} from "@/lib/playbackCapabilities";
+import { detectPlaybackCapabilities, type PlaybackCapabilities } from "@/lib/playbackCapabilities";
 
 /**
  * Probes the browser once, after mount.
@@ -15,9 +12,7 @@ import {
  * after.
  */
 export function usePlaybackCapabilities(): PlaybackCapabilities | null {
-  const [capabilities, setCapabilities] = useState<PlaybackCapabilities | null>(
-    null,
-  );
+  const [capabilities, setCapabilities] = useState<PlaybackCapabilities | null>(null);
 
   useEffect(() => {
     setCapabilities(detectPlaybackCapabilities());

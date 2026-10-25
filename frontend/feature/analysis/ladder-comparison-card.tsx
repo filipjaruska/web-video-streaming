@@ -1,41 +1,15 @@
 "use client";
 
 import * as React from "react";
-import {
-  CartesianGrid,
-  ReferenceArea,
-  Scatter,
-  ScatterChart,
-  XAxis,
-  YAxis,
-  ZAxis,
-} from "recharts";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  type ChartConfig,
-} from "@/components/ui/chart";
-import {
-  MetricTile,
-  MetricTileGrid,
-  toneForGain,
-  toneForSaving,
-} from "@/components/metric-tiles";
+import { CartesianGrid, ReferenceArea, Scatter, ScatterChart, XAxis, YAxis, ZAxis } from "recharts";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
+import { MetricTile, MetricTileGrid, toneForGain, toneForSaving } from "@/components/metric-tiles";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
 import { formatNumber, formatSigned, ladderLabel } from "@/lib/analysisFormat";
 import { useChartSize } from "@/feature/analysis/use-chart-size";
-import type {
-  LadderComparisonDocument,
-  LadderComparisonPoint,
-} from "@/lib/videoAnalysisApi";
+import type { LadderComparisonDocument, LadderComparisonPoint } from "@/lib/videoAnalysisApi";
 
 const chartConfig = {
   static: { label: "Static", color: "var(--foreground)" },
@@ -79,15 +53,8 @@ function toCurve(points: LadderComparisonPoint[]) {
  * percentage cannot show *where* a ladder wins — and the shaded band makes the quality range the
  * integral actually covers visible rather than a footnote.
  */
-export function LadderComparisonCard({
-  comparison,
-}: {
-  comparison?: LadderComparisonDocument;
-}) {
-  const staticCurve = React.useMemo(
-    () => toCurve(comparison?.staticPoints ?? []),
-    [comparison],
-  );
+export function LadderComparisonCard({ comparison }: { comparison?: LadderComparisonDocument }) {
+  const staticCurve = React.useMemo(() => toCurve(comparison?.staticPoints ?? []), [comparison]);
 
   const ladderCurves = React.useMemo(
     () =>
@@ -128,7 +95,7 @@ export function LadderComparisonCard({
     return rows;
   }, [comparison]);
 
-  const { ref: chartRef, size: chartSize } = useChartSize<HTMLDivElement>();
+  const { ref: chartRef, size: chartSize } = useChartSize();
 
   if (!comparison || comparison.ladders.length === 0) {
     return null;
@@ -150,13 +117,11 @@ export function LadderComparisonCard({
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1.5">
-            <CardTitle className="text-base">
-              Derived ladders vs static (BD-rate)
-            </CardTitle>
+            <CardTitle className="text-base">Derived ladders vs static (BD-rate)</CardTitle>
             <CardDescription>
-              Measured on the packaged renditions of each ladder against the static baseline, at
-              the bitrates actually achieved rather than the ones requested. Negative BD-rate
-              means that ladder delivers the same quality for fewer bits.
+              Measured on the packaged renditions of each ladder against the static baseline, at the
+              bitrates actually achieved rather than the ones requested. Negative BD-rate means that
+              ladder delivers the same quality for fewer bits.
             </CardDescription>
           </div>
           {exportRows.length > 0 && (
@@ -228,9 +193,9 @@ export function LadderComparisonCard({
           <div className="space-y-2">
             <h4 className="text-sm font-medium">Rate–quality curves</h4>
             <p className="text-xs text-muted-foreground">
-              Each point is one packaged rendition. The shaded band is the quality range BD-rate
-              was integrated over — outside it the curves do not overlap, so no comparison is
-              defined there.
+              Each point is one packaged rendition. The shaded band is the quality range BD-rate was
+              integrated over — outside it the curves do not overlap, so no comparison is defined
+              there.
             </p>
             <div ref={chartRef} className="h-80 w-full min-h-80 min-w-0">
               {chartSize ? (
@@ -283,12 +248,9 @@ export function LadderComparisonCard({
                         };
                         return (
                           <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
-                            <div className="font-medium text-foreground">
-                              {raw.label ?? "rung"}
-                            </div>
+                            <div className="font-medium text-foreground">{raw.label ?? "rung"}</div>
                             <div className="text-muted-foreground">
-                              {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF{" "}
-                              {formatNumber(raw.vmaf)}
+                              {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF {formatNumber(raw.vmaf)}
                             </div>
                             {raw.cambi != null && (
                               <div className="text-muted-foreground">
@@ -342,10 +304,7 @@ export function LadderComparisonCard({
 function LegendSwatch({ color, label }: { color: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span
-        className="inline-block h-2 w-4 rounded-sm"
-        style={{ backgroundColor: color }}
-      />
+      <span className="inline-block h-2 w-4 rounded-sm" style={{ backgroundColor: color }} />
       {label}
     </span>
   );

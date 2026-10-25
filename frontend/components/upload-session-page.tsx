@@ -18,10 +18,7 @@ import {
   isResumableUploadSession,
   setStoredUploadSessionId,
 } from "@/lib/uploadSessionStorage";
-import {
-  formatDurationShort,
-  formatElapsedClock,
-} from "@/lib/formatDuration";
+import { formatDurationShort, formatElapsedClock } from "@/lib/formatDuration";
 import {
   type UploadSessionResponse,
   getUploadSession,
@@ -193,7 +190,8 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
           <CardHeader>
             <CardTitle>Upload details</CardTitle>
             <CardDescription>
-              Save metadata, then upload a source file. Transcoding starts automatically after upload.
+              Save metadata, then upload a source file. Transcoding starts automatically after
+              upload.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -265,14 +263,14 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
         <Card>
           <CardHeader>
             <CardTitle>Session status</CardTitle>
-            <CardDescription>
-              Upload and transcode progress for this session.
-            </CardDescription>
+            <CardDescription>Upload and transcode progress for this session.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <Badge variant={statusTone}>{session.session.status}</Badge>
-              <span className="text-sm text-muted-foreground">{session.session.progressPercent}% complete</span>
+              <span className="text-sm text-muted-foreground">
+                {session.session.progressPercent}% complete
+              </span>
             </div>
 
             {session.session.currentStep && (
@@ -341,9 +339,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
         <Card>
           <CardHeader>
             <CardTitle>Thumbnail preview</CardTitle>
-            <CardDescription>
-              Generated after transcoding finishes.
-            </CardDescription>
+            <CardDescription>Generated after transcoding finishes.</CardDescription>
           </CardHeader>
           <CardContent>
             {session.video.thumbnailUrl ? (

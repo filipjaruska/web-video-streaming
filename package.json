@@ -1,0 +1,11 @@
+{
+  "name": "web-video-streaming",
+  "private": true,
+  "scripts": {
+    "prepare": "vp config"
+  },
+  "devDependencies": {
+    "vite-plus": "^1.4.0"
+  },
+  "packageManager": "pnpm@12.15.0"
+}

@@ -7,13 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useActionAuth } from "@/components/action-auth-provider";
@@ -117,12 +111,8 @@ export function EditorTable({ videos }: { videos: VideoListItem[] }) {
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-1.5">
-                <CardTitle className="text-base">
-                  {video.title || video.fileName}
-                </CardTitle>
-                <CardDescription className="font-mono text-xs">
-                  {video.routeId}
-                </CardDescription>
+                <CardTitle className="text-base">{video.title || video.fileName}</CardTitle>
+                <CardDescription className="font-mono text-xs">{video.routeId}</CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {video.hasHls && <Badge variant="secondary">HLS</Badge>}
@@ -144,9 +134,7 @@ export function EditorTable({ videos }: { videos: VideoListItem[] }) {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor={`description-${video.routeId}`}>
-                    Description
-                  </Label>
+                  <Label htmlFor={`description-${video.routeId}`}>Description</Label>
                   <Textarea
                     id={`description-${video.routeId}`}
                     value={description}
@@ -156,11 +144,7 @@ export function EditorTable({ videos }: { videos: VideoListItem[] }) {
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => void save(video.routeId)}
-                  >
+                  <Button size="sm" disabled={busy} onClick={() => void save(video.routeId)}>
                     Save
                   </Button>
                   <Button

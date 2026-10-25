@@ -1,10 +1,6 @@
 import type { LadderKind } from "@/lib/analysisFormat";
 
-export type AnalysisSectionStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed";
+export type AnalysisSectionStatus = "pending" | "running" | "completed" | "failed";
 
 export interface AnalysisTreeNodeMeta {
   source?: string;

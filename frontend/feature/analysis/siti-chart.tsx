@@ -2,27 +2,18 @@
 
 import * as React from "react";
 import Hls from "hls.js";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts";
 import type { AnalysisTreeNode, SitiSeriesData } from "@/lib/videoAnalysisApi";
-import { buildSeriesPoints, downsampleSeries, scaleSeriesToDuration } from "@/lib/analysisDownsample";
+import {
+  buildSeriesPoints,
+  downsampleSeries,
+  scaleSeriesToDuration,
+} from "@/lib/analysisDownsample";
 import { formatSeconds } from "@/lib/analysisLabels";
 import { slugFilename } from "@/lib/csvExport";
 import { Badge } from "@/components/ui/badge";
 import { ExportCsvButton } from "@/components/export-csv-button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartContainer,
   ChartLegend,
@@ -57,19 +48,13 @@ function stdDev(values: number[], average: number) {
   if (values.length === 0) {
     return 0;
   }
-  const variance =
-    values.reduce((sum, value) => sum + (value - average) ** 2, 0) /
-    values.length;
+  const variance = values.reduce((sum, value) => sum + (value - average) ** 2, 0) / values.length;
   return Math.sqrt(variance);
 }
 
 function buildStatsFromSeries(data: SitiSeriesData): AnalysisTreeNode {
-  const siAvg =
-    data.si.reduce((sum, value) => sum + value, 0) /
-    Math.max(data.si.length, 1);
-  const tiAvg =
-    data.ti.reduce((sum, value) => sum + value, 0) /
-    Math.max(data.ti.length, 1);
+  const siAvg = data.si.reduce((sum, value) => sum + value, 0) / Math.max(data.si.length, 1);
+  const tiAvg = data.ti.reduce((sum, value) => sum + value, 0) / Math.max(data.ti.length, 1);
   const siMin = data.si.length ? Math.min(...data.si) : 0;
   const siMax = data.si.length ? Math.max(...data.si) : 0;
   const tiMin = data.ti.length ? Math.min(...data.ti) : 0;
@@ -118,26 +103,17 @@ interface SitiChartProps {
 }
 
 function SitiStatsList({ node }: { node: AnalysisTreeNode }) {
-  const rows =
-    node.children && node.children.length > 0 ? node.children : null;
+  const rows = node.children && node.children.length > 0 ? node.children : null;
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-sm font-medium">
         <span>{node.label}</span>
-        {node.meta?.status === "failed" && (
-          <Badge variant="destructive">Failed</Badge>
-        )}
-        {node.meta?.status === "running" && (
-          <Badge variant="secondary">Running</Badge>
-        )}
-        {node.meta?.status === "pending" && (
-          <Badge variant="outline">Pending</Badge>
-        )}
+        {node.meta?.status === "failed" && <Badge variant="destructive">Failed</Badge>}
+        {node.meta?.status === "running" && <Badge variant="secondary">Running</Badge>}
+        {node.meta?.status === "pending" && <Badge variant="outline">Pending</Badge>}
       </div>
-      {node.meta?.error && (
-        <p className="text-sm text-destructive">{node.meta.error}</p>
-      )}
+      {node.meta?.error && <p className="text-sm text-destructive">{node.meta.error}</p>}
       {rows && (
         <div>
           {rows.map((row) => (
@@ -171,14 +147,9 @@ export function SitiChart({
       return [];
     }
     const raw = buildSeriesPoints(data);
-    return mediaDuration != null
-      ? scaleSeriesToDuration(raw, mediaDuration)
-      : raw;
+    return mediaDuration != null ? scaleSeriesToDuration(raw, mediaDuration) : raw;
   }, [data, hasSeries, mediaDuration]);
-  const chartData = React.useMemo(
-    () => downsampleSeries(points, 1500),
-    [points],
-  );
+  const chartData = React.useMemo(() => downsampleSeries(points, 1500), [points]);
   const statsNode = React.useMemo(() => {
     if (stats) {
       return stats;
@@ -220,18 +191,14 @@ export function SitiChart({
             ? video.duration
             : undefined;
 
-      const chartMax =
-        chartMaxTime != null && chartMaxTime > 0 ? chartMaxTime : undefined;
+      const chartMax = chartMaxTime != null && chartMaxTime > 0 ? chartMaxTime : undefined;
 
       // Map chart X → media time. When SI/TI pts are missing, scaleSeriesToDuration has already
       // stretched frame indexes to the duration; the proportional map covers any residual mismatch.
       let seekTime = chartTimeSec;
       if (duration != null && chartMax != null) {
-        const timelinesAgree =
-          Math.abs(chartMax - duration) / Math.max(duration, 0.001) < 0.25;
-        seekTime = timelinesAgree
-          ? chartTimeSec
-          : (chartTimeSec / chartMax) * duration;
+        const timelinesAgree = Math.abs(chartMax - duration) / Math.max(duration, 0.001) < 0.25;
+        seekTime = timelinesAgree ? chartTimeSec : (chartTimeSec / chartMax) * duration;
         seekTime = Math.min(Math.max(0, seekTime), duration);
       } else if (chartMax != null) {
         seekTime = Math.min(Math.max(0, chartTimeSec), chartMax);
@@ -504,10 +471,7 @@ export function SitiChart({
                     return;
                   }
                   const pending = pendingSeekRef.current;
-                  if (
-                    pending != null &&
-                    Math.abs(video.currentTime - pending) > 1.25
-                  ) {
+                  if (pending != null && Math.abs(video.currentTime - pending) > 1.25) {
                     try {
                       hlsRef.current?.startLoad(pending);
                       video.currentTime = pending;
@@ -549,41 +513,13 @@ export function SitiChart({
                 onClick={canScrub ? handleClick : undefined}
               >
                 <defs>
-                  <linearGradient
-                    id={`fillSi-${gradientId}`}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor="var(--color-si)"
-                      stopOpacity={0.35}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--color-si)"
-                      stopOpacity={0.02}
-                    />
+                  <linearGradient id={`fillSi-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--color-si)" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="var(--color-si)" stopOpacity={0.02} />
                   </linearGradient>
-                  <linearGradient
-                    id={`fillTi-${gradientId}`}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor="var(--color-ti)"
-                      stopOpacity={0.28}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--color-ti)"
-                      stopOpacity={0.02}
-                    />
+                  <linearGradient id={`fillTi-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--color-ti)" stopOpacity={0.28} />
+                    <stop offset="95%" stopColor="var(--color-ti)" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -646,9 +582,7 @@ export function SitiChart({
           </div>
         ) : (
           !statsNode && (
-            <p className="text-sm text-muted-foreground">
-              No SI/TI data available yet.
-            </p>
+            <p className="text-sm text-muted-foreground">No SI/TI data available yet.</p>
           )
         )}
       </CardContent>

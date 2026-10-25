@@ -11,10 +11,7 @@ export interface VmafPoint {
   vmaf: number;
 }
 
-export function downsampleSeries(
-  points: SeriesPoint[],
-  maxPoints = 1500,
-): SeriesPoint[] {
+export function downsampleSeries(points: SeriesPoint[], maxPoints = 1500): SeriesPoint[] {
   if (points.length <= maxPoints) {
     return points;
   }
@@ -30,10 +27,7 @@ export function downsampleSeries(
   return result;
 }
 
-export function downsampleVmafSeries(
-  points: VmafPoint[],
-  maxPoints = 1500,
-): VmafPoint[] {
+export function downsampleVmafSeries(points: VmafPoint[], maxPoints = 1500): VmafPoint[] {
   if (points.length <= maxPoints) {
     return points;
   }
@@ -66,32 +60,21 @@ export function buildSeriesPoints(data: {
   const looksLikeFrameIndex =
     hasAlignedTimes &&
     count > 2 &&
-    Math.abs(times![0]!) < 1 &&
-    Math.abs(times![count - 1]! - (count - 1)) <= Math.max(2, count * 0.01);
+    Math.abs(times[0]) < 1 &&
+    Math.abs(times[count - 1] - (count - 1)) <= Math.max(2, count * 0.01);
 
   return data.si.map((si, index) => ({
     frame: index,
     timeSec:
-      hasAlignedTimes && !looksLikeFrameIndex
-        ? times![index]!
-        : count <= 1
-          ? 0
-          : index / (count - 1),
+      hasAlignedTimes && !looksLikeFrameIndex ? times[index] : count <= 1 ? 0 : index / (count - 1),
     si,
     ti: data.ti[index] ?? 0,
   }));
 }
 
 /** When SI/TI times are normalized 0..1 (no pts), scale onto real media duration. */
-export function scaleSeriesToDuration(
-  points: SeriesPoint[],
-  durationSec: number,
-): SeriesPoint[] {
-  if (
-    points.length === 0 ||
-    !Number.isFinite(durationSec) ||
-    durationSec <= 0
-  ) {
+export function scaleSeriesToDuration(points: SeriesPoint[], durationSec: number): SeriesPoint[] {
+  if (points.length === 0 || !Number.isFinite(durationSec) || durationSec <= 0) {
     return points;
   }
 
@@ -116,10 +99,7 @@ export function scaleSeriesToDuration(
   }));
 }
 
-export function buildVmafPoints(data: {
-  scores: number[];
-  timeSec?: number[];
-}): VmafPoint[] {
+export function buildVmafPoints(data: { scores: number[]; timeSec?: number[] }): VmafPoint[] {
   return data.scores.map((vmaf, index) => ({
     frame: index,
     timeSec: data.timeSec?.[index] ?? index,

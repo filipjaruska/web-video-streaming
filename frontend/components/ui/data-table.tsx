@@ -26,10 +26,7 @@ export function DataTable({
             {headers.map((header, index) => (
               <th
                 key={index}
-                className={cn(
-                  "py-2 font-medium",
-                  index < headers.length - 1 && "pr-3",
-                )}
+                className={cn("py-2 font-medium", index < headers.length - 1 && "pr-3")}
               >
                 {header}
               </th>
@@ -49,11 +46,7 @@ export function DataRow({
   children: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <tr className={cn("border-b border-border/50 last:border-b-0", className)}>
-      {children}
-    </tr>
-  );
+  return <tr className={cn("border-b border-border/50 last:border-b-0", className)}>{children}</tr>;
 }
 
 /**
@@ -76,12 +69,7 @@ export function DataCell({
   return (
     <td
       title={title}
-      className={cn(
-        "py-1.5",
-        !last && "pr-3",
-        mono && "font-mono text-xs",
-        className,
-      )}
+      className={cn("py-1.5", !last && "pr-3", mono && "font-mono text-xs", className)}
     >
       {children}
     </td>

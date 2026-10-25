@@ -1,8 +1,4 @@
-import type {
-  AnalysisTarget,
-  FormatVmafSeries,
-  VmafSeriesData,
-} from "@/lib/videoAnalysisApi";
+import type { AnalysisTarget, FormatVmafSeries, VmafSeriesData } from "@/lib/videoAnalysisApi";
 
 export type FormatKey = "hls" | "dash";
 

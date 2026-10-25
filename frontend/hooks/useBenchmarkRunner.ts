@@ -153,9 +153,12 @@ export function useBenchmarkRunner({
       // transitions below record it changing.
       if (profile === "variable") {
         try {
-          await fetch(`${apiUrl}/api/benchmarks/runs/${benchmarkRunToken(nonceRef.current)}/start`, {
-            method: "POST",
-          });
+          await fetch(
+            `${apiUrl}/api/benchmarks/runs/${benchmarkRunToken(nonceRef.current)}/start`,
+            {
+              method: "POST",
+            },
+          );
         } catch {
           // Unreachable here means unreachable for playback too, which the run reports itself.
         }
@@ -180,7 +183,8 @@ export function useBenchmarkRunner({
               }, phase.fromMs),
             )
           : [];
-      const clearTransitions = () => transitionTimers.forEach((timer) => window.clearTimeout(timer));
+      const clearTransitions = () =>
+        transitionTimers.forEach((timer) => window.clearTimeout(timer));
 
       // Adaptive sources defer loading until playback is requested, and the handle may not be
       // attached the instant the nonce changes, so play() is retried until the first frame lands.
@@ -252,11 +256,12 @@ export function useBenchmarkRunner({
         metrics,
         trace,
         failed: !!errored || offTop,
-        errorMessage: errored && "message" in errored
-          ? errored.message
-          : offTop
-            ? `baseline off the top rung: ${(metrics.topRungShare! * 100).toFixed(1)} % on top`
-            : undefined,
+        errorMessage:
+          errored && "message" in errored
+            ? errored.message
+            : offTop
+              ? `baseline off the top rung: ${(metrics.topRungShare! * 100).toFixed(1)} % on top`
+              : undefined,
       };
     },
     [apiUrl, applyCell, getSnapshots, playerRef, resetStats],

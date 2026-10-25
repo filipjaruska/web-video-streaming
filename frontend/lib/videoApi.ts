@@ -57,9 +57,7 @@ export interface UpdateUploadSessionVideoRequest {
   description: string;
 }
 
-export async function createUploadSession(
-  apiUrl: string,
-): Promise<UploadSessionResponse> {
+export async function createUploadSession(apiUrl: string): Promise<UploadSessionResponse> {
   const res = await fetch(`${apiUrl}/api/uploadSessions`, {
     method: "POST",
   });
@@ -156,10 +154,7 @@ export async function updateVideo(
   return res.json() as Promise<UpdateVideoResponse>;
 }
 
-export async function deleteVideo(
-  apiUrl: string,
-  routeId: string,
-): Promise<void> {
+export async function deleteVideo(apiUrl: string, routeId: string): Promise<void> {
   const res = await fetch(`${apiUrl}/api/videos/${routeId}`, {
     method: "DELETE",
   });

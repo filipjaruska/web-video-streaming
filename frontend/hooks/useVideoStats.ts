@@ -136,10 +136,7 @@ export function useVideoStats() {
 /**
  * Calculate running averages from all collected snapshots
  */
-function calculateAverages(
-  snapshots: StatsSnapshot[],
-  currentStats: CurrentStats,
-): AverageStats {
+function calculateAverages(snapshots: StatsSnapshot[], currentStats: CurrentStats): AverageStats {
   if (snapshots.length === 0) {
     return {
       avgQuality: null,
@@ -152,16 +149,13 @@ function calculateAverages(
     };
   }
 
-  const avgBufferLevel =
-    snapshots.reduce((sum, s) => sum + s.bufferLevel, 0) / snapshots.length;
+  const avgBufferLevel = snapshots.reduce((sum, s) => sum + s.bufferLevel, 0) / snapshots.length;
 
-  const avgBandwidth =
-    snapshots.reduce((sum, s) => sum + s.bandwidth, 0) / snapshots.length;
+  const avgBandwidth = snapshots.reduce((sum, s) => sum + s.bandwidth, 0) / snapshots.length;
 
   const totalDropped = currentStats.droppedFrames;
   const totalFrames = currentStats.totalFrames;
-  const avgDroppedFramesRate =
-    totalFrames > 0 ? (totalDropped / totalFrames) * 100 : 0;
+  const avgDroppedFramesRate = totalFrames > 0 ? (totalDropped / totalFrames) * 100 : 0;
 
   const avgQuality = calculateAverageQuality(snapshots);
 
@@ -179,13 +173,8 @@ function calculateAverages(
 /**
  * Calculate the average quality level weighted by time spent at each quality
  */
-function calculateAverageQuality(
-  snapshots: StatsSnapshot[],
-): VideoQuality | null {
-  const qualityMap = new Map<
-    string,
-    { quality: VideoQuality; count: number }
-  >();
+function calculateAverageQuality(snapshots: StatsSnapshot[]): VideoQuality | null {
+  const qualityMap = new Map<string, { quality: VideoQuality; count: number }>();
 
   for (const snapshot of snapshots) {
     if (snapshot.quality) {

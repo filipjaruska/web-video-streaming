@@ -86,11 +86,14 @@ export function describeCellFull(cell: BenchmarkCell, profile: NetworkProfile): 
  * rungs of one resolution still counts.
  */
 export function toSamples(snapshots: StatsSnapshot[], runStartMs: number): BenchmarkSample[] {
-  const levelKey = (snapshot: StatsSnapshot) => `${snapshot.quality?.bitrate ?? 0}|${snapshot.quality?.height}`;
+  const levelKey = (snapshot: StatsSnapshot) =>
+    `${snapshot.quality?.bitrate ?? 0}|${snapshot.quality?.height}`;
   const levels = Array.from(
     new Map(
       snapshots
-        .filter((snapshot) => typeof snapshot.quality?.height === "number" && snapshot.quality.height > 0)
+        .filter(
+          (snapshot) => typeof snapshot.quality?.height === "number" && snapshot.quality.height > 0,
+        )
         .map((snapshot) => [
           levelKey(snapshot),
           { bitrate: snapshot.quality?.bitrate ?? 0, height: snapshot.quality?.height as number },

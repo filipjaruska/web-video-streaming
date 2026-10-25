@@ -10,9 +10,7 @@ export function formatDurationShort(totalSeconds: number): string {
   const remSeconds = seconds % 60;
 
   if (hours <= 0) {
-    return remSeconds >= 30 && minutes < 59
-      ? `~${minutes + 1}m`
-      : `~${Math.max(1, minutes)}m`;
+    return remSeconds >= 30 && minutes < 59 ? `~${minutes + 1}m` : `~${Math.max(1, minutes)}m`;
   }
 
   return `~${hours}h ${minutes.toString().padStart(2, "0")}m`;

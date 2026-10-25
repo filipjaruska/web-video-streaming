@@ -28,12 +28,7 @@ export const metadata: Metadata = {
   description: CONCEPTS_COPY.description,
 };
 
-const ABR_ALGORITHMS: AbrAlgorithm[] = [
-  "throughput",
-  "buffer",
-  "hybrid",
-  "baseline",
-];
+const ABR_ALGORITHMS: AbrAlgorithm[] = ["throughput", "buffer", "hybrid", "baseline"];
 
 /**
  * The fixed baseline ladder, mirroring `TranscodeProfile.Default` on the backend: Apple's HLS
@@ -71,10 +66,7 @@ function Section({
         {children}
         {link && (
           <p>
-            <Link
-              href={link.href}
-              className="text-foreground underline underline-offset-4"
-            >
+            <Link href={link.href} className="text-foreground underline underline-offset-4">
               {link.label} →
             </Link>
           </p>
@@ -121,20 +113,17 @@ export default async function ConceptsPage() {
       <Separator className="mb-6" />
 
       <div className="grid gap-4 @min-[1400px]/page:grid-cols-2">
-        <Section
-          title="Spatial and temporal information (SI / TI)"
-          link={analysis("content")}
-        >
+        <Section title="Spatial and temporal information (SI / TI)" link={analysis("content")}>
           <p>
             Two numbers from ITU-T P.910 that describe how hard a clip is to encode before anything
-            encodes it. SI measures edge energy within a frame; TI measures how much changes
-            between consecutive frames. Live action tends to sit high on both — texture everywhere,
-            camera noise, constant motion.
+            encodes it. SI measures edge energy within a frame; TI measures how much changes between
+            consecutive frames. Live action tends to sit high on both — texture everywhere, camera
+            noise, constant motion.
           </p>
           <p>
             Animation does not. Flat cel-shaded areas keep SI low, and frames held still keep TI
-            near zero. That gap is the entire premise: a ladder derived from live-action
-            assumptions will overpay for content that was never that expensive.
+            near zero. That gap is the entire premise: a ladder derived from live-action assumptions
+            will overpay for content that was never that expensive.
           </p>
         </Section>
 
@@ -146,8 +135,8 @@ export default async function ConceptsPage() {
             better than its runtime suggests.
           </p>
           <p>
-            It falls out of the TI series for free — a duplicate frame has zero temporal
-            information — so it costs nothing extra to measure.
+            It falls out of the TI series for free — a duplicate frame has zero temporal information
+            — so it costs nothing extra to measure.
           </p>
         </Section>
 
@@ -155,14 +144,14 @@ export default async function ConceptsPage() {
           <p>
             A ladder is the set of quality rungs a player can choose between: each is a resolution
             paired with a bitrate. Generic ladders are fixed tables, identical for every title,
-            which is convenient and — for anything that compresses unusually well or unusually
-            badly — wrong.
+            which is convenient and — for anything that compresses unusually well or unusually badly
+            — wrong.
           </p>
           <p>
-            This is the static baseline every measurement is compared against: the H.264 ladder
-            from Apple&apos;s HLS authoring specification, one rung per resolution. Apple offers it
-            as initial targets for typical content, to be adjusted to the content — the same six
-            rungs for every clip, regardless of what the clip contains:
+            This is the static baseline every measurement is compared against: the H.264 ladder from
+            Apple&apos;s HLS authoring specification, one rung per resolution. Apple offers it as
+            initial targets for typical content, to be adjusted to the content — the same six rungs
+            for every clip, regardless of what the clip contains:
           </p>
           <DataTable headers={["Rung", "Resolution", "Bitrate"]}>
             {STATIC_LADDER.map((rung) => (
@@ -174,8 +163,8 @@ export default async function ConceptsPage() {
             ))}
           </DataTable>
           <p>
-            The other two ladders are derived per clip — same resolutions, but the bitrates come
-            out of measurement rather than a table, and a rung can be dropped entirely if a lower
+            The other two ladders are derived per clip — same resolutions, but the bitrates come out
+            of measurement rather than a table, and a rung can be dropped entirely if a lower
             resolution already beats it at that bitrate. All three are packaged and kept, so the
             same source can be replayed on any of them without re-processing.
           </p>
@@ -183,16 +172,16 @@ export default async function ConceptsPage() {
 
         <Section title="Convex hull and λ" link={analysis("ladder")}>
           <p>
-            Each resolution has its own rate–quality curve, measured by encoding the clip at a
-            sweep of CRF values and scoring every result. Plotted against log-bitrate the curves
-            are concave: quality rises quickly, then saturates.
+            Each resolution has its own rate–quality curve, measured by encoding the clip at a sweep
+            of CRF values and scoring every result. Plotted against log-bitrate the curves are
+            concave: quality rises quickly, then saturates.
           </p>
           <HullDiagram />
           <p>
-            λ is the primary control, and in log-rate space it has a directly readable meaning:
-            keep buying bits while doubling the bitrate still returns at least λ points of quality,
-            and stop once it does not. Driving selection off a fixed quality target instead inverts
-            this — on hard content the target is only reachable far past the point of diminishing
+            λ is the primary control, and in log-rate space it has a directly readable meaning: keep
+            buying bits while doubling the bitrate still returns at least λ points of quality, and
+            stop once it does not. Driving selection off a fixed quality target instead inverts this
+            — on hard content the target is only reachable far past the point of diminishing
             returns, and the ladder dutifully pays for it.
           </p>
           <p>
@@ -247,8 +236,8 @@ export default async function ConceptsPage() {
           <p>
             Here they carry <em>identical encoded content</em> — the same ladders, the same
             renditions, differing only in packaging and manifest. That is what makes any measured
-            difference between them attributable to delivery rather than to encoding, and what
-            makes it safe to pick whichever a given browser handles best.
+            difference between them attributable to delivery rather than to encoding, and what makes
+            it safe to pick whichever a given browser handles best.
           </p>
         </Section>
 
@@ -288,10 +277,10 @@ export default async function ConceptsPage() {
         <Section title="Your browser">
           <p>
             Best mode probes these capabilities and picks a protocol accordingly, rather than
-            hardcoding one. The answers below are from the browser you are reading this in. It
-            also starts differently from the measured profiles: it opens on the top rung and holds
-            it until the first segment is in, instead of starting from a fixed estimate that the
-            panic rule immediately overrides on an empty buffer.
+            hardcoding one. The answers below are from the browser you are reading this in. It also
+            starts differently from the measured profiles: it opens on the top rung and holds it
+            until the first segment is in, instead of starting from a fixed estimate that the panic
+            rule immediately overrides on an empty buffer.
           </p>
           <BrowserCapabilities />
         </Section>

@@ -9,14 +9,7 @@
  * Treated as a stable API: the concepts page deep-links into individual tabs, so renaming an id
  * silently breaks those links. Add ids rather than reusing them.
  */
-export const ANALYSIS_TABS = [
-  "content",
-  "ladder",
-  "tuning",
-  "cost",
-  "delivery",
-  "raw",
-] as const;
+export const ANALYSIS_TABS = ["content", "ladder", "tuning", "cost", "delivery", "raw"] as const;
 
 export type AnalysisTab = (typeof ANALYSIS_TABS)[number];
 

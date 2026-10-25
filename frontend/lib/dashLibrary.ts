@@ -36,8 +36,8 @@ export async function loadDashLibrary(): Promise<{ default: DashNamespace }> {
     scope.dashjs = { skipAutoCreate: true };
   }
 
-  const module = (await import("dashjs")) as unknown as Record<string, unknown>;
-  const namespace = [module.default, module, scope.dashjs].find(isDashNamespace);
+  const imported = (await import("dashjs")) as unknown as Record<string, unknown>;
+  const namespace = [imported.default, imported, scope.dashjs].find(isDashNamespace);
 
   if (!namespace) {
     throw new Error("dash.js loaded without a MediaPlayer export");

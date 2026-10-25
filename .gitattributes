@@ -1,0 +1,2 @@
+# Check out LF everywhere: Oxfmt writes LF, and git hooks run under sh, which chokes on CRLF.
+* text=auto eol=lf

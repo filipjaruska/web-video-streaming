@@ -33,11 +33,12 @@ export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
  * so a change reaches responses already in flight. The client uses this copy only to record when
  * each change happened.
  */
-export const VARIABLE_NETWORK_SCHEDULE: ReadonlyArray<{ fromMs: number; profile: ShapedProfile }> = [
-  { fromMs: 0, profile: "fourG" },
-  { fromMs: 5_000, profile: "threeG" },
-  { fromMs: 18_000, profile: "fourG" },
-];
+export const VARIABLE_NETWORK_SCHEDULE: ReadonlyArray<{ fromMs: number; profile: ShapedProfile }> =
+  [
+    { fromMs: 0, profile: "fourG" },
+    { fromMs: 5_000, profile: "threeG" },
+    { fromMs: 18_000, profile: "fourG" },
+  ];
 
 /**
  * The rate each profile declares, bits per second — what the server holds the link to. Null where
@@ -95,9 +96,9 @@ export function toServerProfile(profile: NetworkProfile): string {
 
 /** Unknown values fall back to `standard` rather than throwing — a label is not worth a crash. */
 export function fromServerProfile(value: string): NetworkProfile {
-  const match = (
-    Object.entries(SERVER_PROFILE_NAMES) as Array<[NetworkProfile, string]>
-  ).find(([, name]) => name.toLowerCase() === value?.toLowerCase());
+  const match = (Object.entries(SERVER_PROFILE_NAMES) as Array<[NetworkProfile, string]>).find(
+    ([, name]) => name.toLowerCase() === value?.toLowerCase(),
+  );
 
   return match?.[0] ?? "standard";
 }

@@ -1,35 +1,12 @@
 "use client";
 
 import * as React from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  type ChartConfig,
-} from "@/components/ui/chart";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
-import {
-  MetricTile,
-  MetricTileGrid,
-  toneForGain,
-  toneForSaving,
-} from "@/components/metric-tiles";
+import { MetricTile, MetricTileGrid, toneForGain, toneForSaving } from "@/components/metric-tiles";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
 import { formatBitrate, formatNumber, formatSigned } from "@/lib/analysisFormat";
@@ -67,12 +44,8 @@ const chartConfig = {
  * ladders choose different bitrates by construction, so holding the rung constant while varying
  * the tune is impossible there.
  */
-export function TuningComparisonCard({
-  tuning,
-}: {
-  tuning?: TuningComparisonDocument;
-}) {
-  const pairs = tuning?.pairs ?? [];
+export function TuningComparisonCard({ tuning }: { tuning?: TuningComparisonDocument }) {
+  const pairs = React.useMemo(() => tuning?.pairs ?? [], [tuning]);
 
   const chartData = React.useMemo(
     () =>
@@ -98,25 +71,21 @@ export function TuningComparisonCard({
         pair.vmafDelta,
         pair.baseCambi ?? "",
         pair.tunedCambi ?? "",
-        pair.baseCambi != null && pair.tunedCambi != null
-          ? pair.tunedCambi - pair.baseCambi
-          : "",
+        pair.baseCambi != null && pair.tunedCambi != null ? pair.tunedCambi - pair.baseCambi : "",
         pair.baseBitrateBps,
         pair.tunedBitrateBps,
       ]),
     [pairs],
   );
 
-  const { ref: chartRef, size: chartSize } = useChartSize<HTMLDivElement>();
+  const { ref: chartRef, size: chartSize } = useChartSize();
 
   if (!tuning || tuning.error || pairs.length === 0) {
     return (
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">
-              Codec tuning for animated content
-            </CardTitle>
+            <CardTitle className="text-base">Codec tuning for animated content</CardTitle>
             <CardDescription>
               Isolates the effect of x264 codec tuning by holding the source, resolution and CRF
               constant and varying only the encoder settings.
@@ -124,8 +93,7 @@ export function TuningComparisonCard({
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              {tuning?.error ??
-                "The animation-tuned encode grid has not run for this video yet."}
+              {tuning?.error ?? "The animation-tuned encode grid has not run for this video yet."}
             </p>
           </CardContent>
         </Card>
@@ -144,9 +112,7 @@ export function TuningComparisonCard({
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1.5">
-              <CardTitle className="text-base">
-                Codec tuning for animated content
-              </CardTitle>
+              <CardTitle className="text-base">Codec tuning for animated content</CardTitle>
               <CardDescription>
                 Isolates the effect of x264 codec tuning by holding the source, resolution and CRF
                 constant and varying only the encoder settings.
@@ -169,11 +135,7 @@ export function TuningComparisonCard({
               title="CAMBI measures banding on flat gradients — the artifact class VMAF scarcely registers and animation is most prone to."
             />
             <MetricTile
-              value={
-                tuning.bdRatePercent != null
-                  ? `${formatSigned(tuning.bdRatePercent)}%`
-                  : "—"
-              }
+              value={tuning.bdRatePercent != null ? `${formatSigned(tuning.bdRatePercent)}%` : "—"}
               label="BD-rate vs default (mean over resolutions)"
               tone={toneForSaving(tuning.bdRatePercent)}
             />
@@ -189,14 +151,13 @@ export function TuningComparisonCard({
             </div>
           )}
           <p className="text-sm text-muted-foreground">
-            Measured with{" "}
-            <code className="font-mono text-xs">-tune {tuning.tune}</code>
+            Measured with <code className="font-mono text-xs">-tune {tuning.tune}</code>
             {tuning.decimate ? " + mpdecimate" : ""}. BD-rate is computed over the whole curve
             rather than per sample, because a ΔVMAF at fixed CRF says nothing about the bitrate it
             was bought at — the same CRF lands on a different bitrate once the tune changes. Each
             resolution is fitted on its own and the results averaged: one curve pooled across
-            resolutions would fold the choice of resolution into what is meant to be a comparison
-            of encoder settings.
+            resolutions would fold the choice of resolution into what is meant to be a comparison of
+            encoder settings.
           </p>
         </CardContent>
       </Card>
@@ -207,9 +168,9 @@ export function TuningComparisonCard({
             <div className="space-y-1.5">
               <CardTitle className="text-base">ΔVMAF per matched sample</CardTitle>
               <CardDescription>
-                Tuned minus default at identical resolution and CRF. Bars above zero are a gain
-                from tuning; bars below are a regression, which is a known risk — psy-RD can
-                improve perceived sharpness at the cost of the objective score.
+                Tuned minus default at identical resolution and CRF. Bars above zero are a gain from
+                tuning; bars below are a regression, which is a known risk — psy-RD can improve
+                perceived sharpness at the cost of the objective score.
               </CardDescription>
             </div>
             <ExportCsvButton
@@ -238,10 +199,7 @@ export function TuningComparisonCard({
                 config={chartConfig}
                 className="aspect-auto h-full w-full min-h-0 min-w-0"
               >
-                <BarChart
-                  data={chartData}
-                  margin={{ top: 8, right: 12, bottom: 48, left: 8 }}
-                >
+                <BarChart data={chartData} margin={{ top: 8, right: 12, bottom: 48, left: 8 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis
                     dataKey="name"
@@ -253,12 +211,7 @@ export function TuningComparisonCard({
                     height={56}
                     tick={{ fontSize: 10 }}
                   />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    width={48}
-                  />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} width={48} />
                   {/* Without a zero line a signed bar chart cannot be read at all. */}
                   <ReferenceLine y={0} stroke="var(--border)" />
                   <ChartTooltip
@@ -288,11 +241,7 @@ export function TuningComparisonCard({
                     {chartData.map((entry, index) => (
                       <Cell
                         key={index}
-                        fill={
-                          entry.vmafDelta >= 0
-                            ? "var(--chart-2)"
-                            : "var(--chart-4)"
-                        }
+                        fill={entry.vmafDelta >= 0 ? "var(--chart-2)" : "var(--chart-4)"}
                       />
                     ))}
                   </Bar>
@@ -305,9 +254,7 @@ export function TuningComparisonCard({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            Matched samples (resolution × CRF)
-          </CardTitle>
+          <CardTitle className="text-base">Matched samples (resolution × CRF)</CardTitle>
           <CardDescription>
             Every grid sample present in both the default and the tuned sweep, so the only
             difference is the encoder configuration. ΔCAMBI is inverted relative to ΔVMAF: a

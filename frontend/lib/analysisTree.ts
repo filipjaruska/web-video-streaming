@@ -1,10 +1,6 @@
 import type { AnalysisTreeNode } from "@/lib/videoAnalysisApi";
 
-const deprecatedNodeIds = new Set([
-  "general.encoded_date",
-  "general.tagged_date",
-  "siti.frames",
-]);
+const deprecatedNodeIds = new Set(["general.encoded_date", "general.tagged_date", "siti.frames"]);
 
 function isDeprecated(node: AnalysisTreeNode): boolean {
   if (deprecatedNodeIds.has(node.id)) {
@@ -35,9 +31,7 @@ function normalizeNode(node: AnalysisTreeNode): AnalysisTreeNode | null {
   };
 }
 
-export function normalizeAnalysisTreeNodes(
-  nodes: AnalysisTreeNode[],
-): AnalysisTreeNode[] {
+export function normalizeAnalysisTreeNodes(nodes: AnalysisTreeNode[]): AnalysisTreeNode[] {
   return nodes
     .map((node) => normalizeNode(node))
     .filter((node): node is AnalysisTreeNode => node != null);

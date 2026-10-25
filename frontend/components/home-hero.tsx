@@ -34,15 +34,13 @@ export function HomeHero() {
   return (
     <section className="mb-10 space-y-6">
       <div className="max-w-3xl space-y-3">
-        <h2 className="text-xl font-semibold tracking-tight">
-          What this measures
-        </h2>
+        <h2 className="text-xl font-semibold tracking-tight">What this measures</h2>
         <p className="text-sm text-muted-foreground">
-          Streaming ladders are usually derived from live-action assumptions. Animation breaks
-          those assumptions: flat cel-shaded areas, sharp edges and frames held on twos compress
-          very differently, so a generic ladder tends to overpay. This harness packages the same
-          source three ways, delivers each over both HLS and DASH under interchangeable ABR rules,
-          and measures what actually changed — in encoded quality and in playback behaviour.
+          Streaming ladders are usually derived from live-action assumptions. Animation breaks those
+          assumptions: flat cel-shaded areas, sharp edges and frames held on twos compress very
+          differently, so a generic ladder tends to overpay. This harness packages the same source
+          three ways, delivers each over both HLS and DASH under interchangeable ABR rules, and
+          measures what actually changed — in encoded quality and in playback behaviour.
         </p>
       </div>
 

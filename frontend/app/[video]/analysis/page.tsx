@@ -20,9 +20,7 @@ type AnalysisPageProps = {
   searchParams: Promise<{ tab?: string }>;
 };
 
-export async function generateMetadata({
-  params,
-}: AnalysisPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: AnalysisPageProps): Promise<Metadata> {
   const { video } = await params;
 
   try {
@@ -45,10 +43,7 @@ export async function generateMetadata({
   };
 }
 
-export default async function AnalysisPage({
-  params,
-  searchParams,
-}: AnalysisPageProps) {
+export default async function AnalysisPage({ params, searchParams }: AnalysisPageProps) {
   const { video } = await params;
   const { tab } = await searchParams;
 

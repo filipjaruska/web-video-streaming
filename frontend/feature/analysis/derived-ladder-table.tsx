@@ -6,18 +6,8 @@ import type {
   DerivedLadderVariant,
   LadderSensitivityEntry,
 } from "@/lib/videoAnalysisApi";
-import {
-  formatBitrate,
-  formatNumber,
-  formatResolution,
-} from "@/lib/analysisFormat";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { formatBitrate, formatNumber, formatResolution } from "@/lib/analysisFormat";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
 import { ExportCsvButton } from "@/components/export-csv-button";
@@ -269,9 +259,7 @@ export function DerivedLadderTable({
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1.5">
-            <CardTitle className="text-base">
-              Derived ladder ({ladder.name})
-            </CardTitle>
+            <CardTitle className="text-base">Derived ladder ({ladder.name})</CardTitle>
             <CardDescription>
               {caption}
               {notes.length > 0 ? ` ${notes.join(" ")}` : ""}

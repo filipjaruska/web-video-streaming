@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  getVideoAnalysis,
-  type VideoAnalysisResponse,
-} from "@/lib/videoAnalysisApi";
+import { getVideoAnalysis, type VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 import { getPublicApiUrl } from "@/lib/env";
 
 function hasRunningSections(response: VideoAnalysisResponse) {
@@ -20,9 +17,7 @@ function hasRunningSections(response: VideoAnalysisResponse) {
     }
 
     return target.tree.children.some(
-      (section) =>
-        section.meta?.status === "running" ||
-        section.meta?.status === "pending",
+      (section) => section.meta?.status === "running" || section.meta?.status === "pending",
     );
   });
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { computeMetrics, summarize } from "./metrics";
 import type { BenchmarkEvent, BenchmarkSample, BenchmarkTrace, LadderQuality } from "./types";
@@ -134,9 +134,7 @@ describe("recovery", () => {
       { kind: "startup", atMs: 0 },
       { kind: "networkTransition", atMs: 2000, profile: "threeG" },
     ];
-    return computeMetrics(
-      trace([...before, ...after], events, 2000 + rungsAfter.length * 1000),
-    );
+    return computeMetrics(trace([...before, ...after], events, 2000 + rungsAfter.length * 1000));
   };
 
   it("times a drop followed by a sustained return", () => {

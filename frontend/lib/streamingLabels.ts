@@ -81,10 +81,7 @@ export function getStreamingMethodTitle(method: StreamingMethod): string {
 /**
  * Get active method display name
  */
-export function getActiveMethodName(
-  method: StreamingMethod,
-  algorithm?: AbrAlgorithm,
-): string {
+export function getActiveMethodName(method: StreamingMethod, algorithm?: AbrAlgorithm): string {
   if (method === "source") {
     return "Source (original)";
   }

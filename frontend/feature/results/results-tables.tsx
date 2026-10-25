@@ -4,31 +4,16 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Database } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
-import {
-  MetricTile,
-  MetricTileGrid,
-  toneForSaving,
-} from "@/components/metric-tiles";
+import { MetricTile, MetricTileGrid, toneForSaving } from "@/components/metric-tiles";
 import { useActionAuth } from "@/components/action-auth-provider";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
 import { getPublicApiUrl } from "@/lib/env";
-import {
-  formatNumber,
-  formatPercent,
-  formatSigned,
-  ladderLabel,
-} from "@/lib/analysisFormat";
+import { formatNumber, formatPercent, formatSigned, ladderLabel } from "@/lib/analysisFormat";
 import {
   NETWORK_PROFILE_LABELS,
   NETWORK_PROFILE_RATE_BPS,
@@ -60,10 +45,7 @@ function ClipCell({ clip }: { clip: ClipResult }) {
   return (
     <DataCell mono={false}>
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href={`/${clip.routeId}/analysis`}
-          className="underline-offset-4 hover:underline"
-        >
+        <Link href={`/${clip.routeId}/analysis`} className="underline-offset-4 hover:underline">
           {clip.title}
         </Link>
         {statusBadge(clip.status, clip.errors)}
@@ -108,19 +90,14 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
 
   const animationBdRates = clips
     .flatMap((clip) => clip.ladders)
-    .filter(
-      (ladder) => ladder.kind === "animation" && ladder.bdRatePercent != null,
-    )
+    .filter((ladder) => ladder.kind === "animation" && ladder.bdRatePercent != null)
     .map((ladder) => ladder.bdRatePercent as number);
 
   const avg = (values: number[]) =>
-    values.length
-      ? values.reduce((sum, value) => sum + value, 0) / values.length
-      : null;
+    values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 
   const benchmarkRuns = clips.reduce(
-    (sum, clip) =>
-      sum + clip.benchmarks.reduce((inner, agg) => inner + agg.runs, 0),
+    (sum, clip) => sum + clip.benchmarks.reduce((inner, agg) => inner + agg.runs, 0),
     0,
   );
 
@@ -217,20 +194,12 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
         <MetricTileGrid columns={4} className="flex-1">
           <MetricTile value={`${analysed}/${clips.length}`} label="Clips analysed" />
           <MetricTile
-            value={
-              avg(dynamicBdRates) != null
-                ? `${formatSigned(avg(dynamicBdRates))}%`
-                : "—"
-            }
+            value={avg(dynamicBdRates) != null ? `${formatSigned(avg(dynamicBdRates))}%` : "—"}
             label="Mean BD-rate · dynamic"
             tone={toneForSaving(avg(dynamicBdRates))}
           />
           <MetricTile
-            value={
-              avg(animationBdRates) != null
-                ? `${formatSigned(avg(animationBdRates))}%`
-                : "—"
-            }
+            value={avg(animationBdRates) != null ? `${formatSigned(avg(animationBdRates))}%` : "—"}
             label="Mean BD-rate · animation"
             tone={toneForSaving(avg(animationBdRates))}
           />
@@ -253,8 +222,8 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
             <div className="space-y-1.5">
               <CardTitle className="text-base">Content characteristics</CardTitle>
               <CardDescription>
-                Measured on each source before encoding. Low SI and TI are what make a clip
-                cheaper to encode than the generic ladder assumes.
+                Measured on each source before encoding. Low SI and TI are what make a clip cheaper
+                to encode than the generic ladder assumes.
               </CardDescription>
             </div>
             <ExportCsvButton
@@ -274,14 +243,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
         </CardHeader>
         <CardContent>
           <DataTable
-            headers={[
-              "Clip",
-              "Mean SI",
-              "Mean TI",
-              "Duplicate frames",
-              "Source CAMBI",
-              "Duration",
-            ]}
+            headers={["Clip", "Mean SI", "Mean TI", "Duplicate frames", "Source CAMBI", "Duration"]}
           >
             {clips.map((clip) => (
               <DataRow key={clip.routeId}>
@@ -311,8 +273,8 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
             <div className="space-y-1.5">
               <CardTitle className="text-base">Ladder efficiency</CardTitle>
               <CardDescription>
-                BD-rate of each derived ladder against that clip&apos;s static baseline, measured
-                on the packaged renditions. Negative means equal quality for fewer bits.
+                BD-rate of each derived ladder against that clip&apos;s static baseline, measured on
+                the packaged renditions. Negative means equal quality for fewer bits.
               </CardDescription>
             </div>
             <ExportCsvButton
@@ -382,9 +344,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                         ? `${formatSigned(ladder.bitrateSavingPercent)}%`
                         : "—"}
                     </DataCell>
-                    <DataCell last>
-                      {formatSigned(ladder.vmafGainAtEqualBitrate)}
-                    </DataCell>
+                    <DataCell last>{formatSigned(ladder.vmafGainAtEqualBitrate)}</DataCell>
                   </DataRow>
                 )),
               )}
@@ -400,8 +360,8 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
               <CardTitle className="text-base">Codec tuning</CardTitle>
               <CardDescription>
                 Default x264 against <code className="font-mono text-xs">--tune animation</code>,
-                joined on the grid samples the two sweeps share. ΔCAMBI is inverted — negative
-                means less banding.
+                joined on the grid samples the two sweeps share. ΔCAMBI is inverted — negative means
+                less banding.
               </CardDescription>
             </div>
             <ExportCsvButton
@@ -440,8 +400,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 <DataCell>{formatSigned(clip.tuning?.meanCambiDelta, 3)}</DataCell>
                 <DataCell
                   title={
-                    clip.tuning?.error ??
-                    "Mean of BD-rates fitted separately at each resolution."
+                    clip.tuning?.error ?? "Mean of BD-rates fitted separately at each resolution."
                   }
                 >
                   {clip.tuning?.bdRatePercent != null
@@ -471,8 +430,9 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
               {mismatchedPlayback > 0 && (
                 <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
                   {mismatchedPlayback} configuration{mismatchedPlayback === 1 ? " was" : "s were"}{" "}
-                  measured well above the network profile{mismatchedPlayback === 1 ? " it is" : "s they are"}{" "}
-                  recorded under (highlighted throughput) — the link was not shaped as labelled.
+                  measured well above the network profile
+                  {mismatchedPlayback === 1 ? " it is" : "s they are"} recorded under (highlighted
+                  throughput) — the link was not shaped as labelled.
                 </p>
               )}
             </div>
@@ -537,9 +497,7 @@ export function ResultsTables({ clips }: { clips: ClipResult[] }) {
                 clip.benchmarks.map((agg, index) => (
                   <DataRow key={`${clip.routeId}-${index}`}>
                     <ClipCell clip={clip} />
-                    <DataCell mono={false}>
-                      {NETWORK_PROFILE_LABELS[profileOf(agg)]}
-                    </DataCell>
+                    <DataCell mono={false}>{NETWORK_PROFILE_LABELS[profileOf(agg)]}</DataCell>
                     <DataCell mono={false}>{ladderLabel(agg.ladderKind)}</DataCell>
                     <DataCell className="uppercase">{agg.protocol}</DataCell>
                     <DataCell>

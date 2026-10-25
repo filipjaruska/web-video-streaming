@@ -25,10 +25,7 @@ export function uploadSessionButtonLabel(
       return "Queued";
     case "Processing": {
       const step = shortenProcessingStep(currentStep) ?? "Processing";
-      if (
-        typeof estimatedRemainingSeconds === "number" &&
-        estimatedRemainingSeconds > 0
-      ) {
+      if (typeof estimatedRemainingSeconds === "number" && estimatedRemainingSeconds > 0) {
         return `${step} · ${formatDurationShort(estimatedRemainingSeconds)}`;
       }
       return step;

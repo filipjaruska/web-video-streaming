@@ -1,11 +1,6 @@
 import { useEffect, useRef } from "react";
 import type Hls from "hls.js";
-import type {
-  StreamingMethod,
-  CurrentStats,
-  PlaybackEvent,
-  VideoQuality,
-} from "@/types/streaming";
+import type { StreamingMethod, CurrentStats, PlaybackEvent, VideoQuality } from "@/types/streaming";
 import { formatQualityLabel } from "@/hooks/useVideoStats";
 import { dashAudioBandwidth } from "@/lib/abr/driver";
 
@@ -149,7 +144,10 @@ export function useVideoStatsTracking({
     // dash.js raises this as the playhead enters a segment of another representation, the first one
     // included; the frame height alone cannot tell apart two rungs of one resolution.
     renderedDashIdsRef.current = [];
-    const handleDashRendered = (event: { mediaType?: string; newRepresentation?: { id?: string } }) => {
+    const handleDashRendered = (event: {
+      mediaType?: string;
+      newRepresentation?: { id?: string };
+    }) => {
       const id = event.newRepresentation?.id;
       if (event.mediaType !== "video" || id == null) return;
       const rendered = renderedDashIdsRef.current.filter((seen) => seen !== id);
@@ -254,8 +252,7 @@ function collectDashStats(
     if (dash.getAverageThroughput) {
       const throughput = dash.getAverageThroughput("video");
       if (throughput && throughput > 0) {
-        stats.bandwidth =
-          throughput > 100000 ? throughput / 1000000 : throughput / 1000;
+        stats.bandwidth = throughput > 100000 ? throughput / 1000000 : throughput / 1000;
         foundBandwidth = true;
       }
     }
@@ -366,10 +363,7 @@ function furthestBufferedEnd(video: HTMLVideoElement): number {
   return buffered.length > 0 ? buffered.end(buffered.length - 1) : 0;
 }
 
-function ensureSourceBitrate(
-  video: HTMLVideoElement,
-  state: HttpRangeBitrateState,
-) {
+function ensureSourceBitrate(video: HTMLVideoElement, state: HttpRangeBitrateState) {
   const mediaUrl = video.currentSrc || video.src;
   if (!mediaUrl) return;
 
@@ -416,10 +410,7 @@ function ensureSourceBitrate(
     });
 }
 
-function collectDroppedFramesStats(
-  video: HTMLVideoElement,
-  stats: Partial<CurrentStats>,
-) {
+function collectDroppedFramesStats(video: HTMLVideoElement, stats: Partial<CurrentStats>) {
   if ((video as any).getVideoPlaybackQuality) {
     const playbackQuality = (video as any).getVideoPlaybackQuality();
     stats.droppedFrames = playbackQuality.droppedVideoFrames || 0;
@@ -432,15 +423,12 @@ function getBufferLevel(video: HTMLVideoElement): number {
     if (video.buffered.length > 0) {
       const currentTime = video.currentTime;
       for (let i = 0; i < video.buffered.length; i++) {
-        if (
-          video.buffered.start(i) <= currentTime &&
-          currentTime <= video.buffered.end(i)
-        ) {
+        if (video.buffered.start(i) <= currentTime && currentTime <= video.buffered.end(i)) {
           return video.buffered.end(i) - currentTime;
         }
       }
     }
-  } catch (e) {
+  } catch {
     // Ignore
   }
   return 0;
@@ -459,7 +447,7 @@ function getHlsQuality(hls: Hls): VideoQuality | null {
         codec: level.videoCodec || level.attrs?.CODECS,
       };
     }
-  } catch (e) {
+  } catch {
     // Ignore
   }
   return null;
@@ -499,9 +487,7 @@ export function getDashQuality(
           height: currentRep.height,
           bitrate: (currentRep.bandwidth || currentRep.bitrate || 0) + dashAudioBandwidth(dash),
           label: formatQualityLabel(currentRep.width, currentRep.height),
-          codec:
-            currentRep.codecs ||
-            currentRep.mimeType?.split('codecs="')[1]?.split('"')[0],
+          codec: currentRep.codecs || currentRep.mimeType?.split('codecs="')[1]?.split('"')[0],
         };
       }
     }
@@ -509,11 +495,7 @@ export function getDashQuality(
     if (dash.getBitrateInfoListFor && dash.getQualityFor) {
       const bitrateList = dash.getBitrateInfoListFor("video");
       const currentQuality = dash.getQualityFor("video");
-      if (
-        bitrateList &&
-        currentQuality !== undefined &&
-        bitrateList[currentQuality]
-      ) {
+      if (bitrateList && currentQuality !== undefined && bitrateList[currentQuality]) {
         const quality = bitrateList[currentQuality];
         return {
           width: quality.width,

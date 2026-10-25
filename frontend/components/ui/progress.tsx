@@ -1,14 +1,14 @@
-"use client"
+"use client";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 type ProgressProps = {
-  value: number
-  className?: string
-}
+  value: number;
+  className?: string;
+};
 
 function Progress({ value, className }: ProgressProps) {
-  const clampedValue = Math.min(100, Math.max(0, value))
+  const clampedValue = Math.min(100, Math.max(0, value));
 
   return (
     <div
@@ -24,7 +24,7 @@ function Progress({ value, className }: ProgressProps) {
         style={{ width: `${clampedValue}%` }}
       />
     </div>
-  )
+  );
 }
 
-export { Progress }
+export { Progress };

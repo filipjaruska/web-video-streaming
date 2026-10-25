@@ -19,9 +19,7 @@ type VideoPageProps = {
   params: Promise<{ video: string }>;
 };
 
-export async function generateMetadata({
-  params,
-}: VideoPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: VideoPageProps): Promise<Metadata> {
   const { video } = await params;
 
   try {

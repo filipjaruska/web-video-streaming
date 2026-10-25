@@ -75,11 +75,7 @@ function StreamingControlsComponent({
       <CardContent className="space-y-4 pt-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Switch
-              id="best-mode"
-              checked={bestMode}
-              onCheckedChange={onBestModeChange}
-            />
+            <Switch id="best-mode" checked={bestMode} onCheckedChange={onBestModeChange} />
             <div>
               <Label htmlFor="best-mode" className="cursor-pointer">
                 Best mode
@@ -93,9 +89,7 @@ function StreamingControlsComponent({
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant={bestMode ? "default" : "outline"}>
-              {bestMode ? "Best" : "Manual"}
-            </Badge>
+            <Badge variant={bestMode ? "default" : "outline"}>{bestMode ? "Best" : "Manual"}</Badge>
             {sourceSelected ? (
               <Badge variant="secondary">Source</Badge>
             ) : selectedTranscode ? (
@@ -118,11 +112,7 @@ function StreamingControlsComponent({
                 : "None"}
             </Badge>
             {bestMode && bestReason && (
-              <Badge
-                variant="outline"
-                title={bestReason}
-                className="max-w-88 truncate font-normal"
-              >
+              <Badge variant="outline" title={bestReason} className="max-w-88 truncate font-normal">
                 {bestReason}
               </Badge>
             )}
@@ -141,20 +131,15 @@ function StreamingControlsComponent({
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue
-                      placeholder={
-                        transcodesLoading ? "Loading…" : "Select packaging run"
-                      }
+                      placeholder={transcodesLoading ? "Loading…" : "Select packaging run"}
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={SOURCE_RUN_ID}>
-                      Source (original)
-                    </SelectItem>
+                    <SelectItem value={SOURCE_RUN_ID}>Source (original)</SelectItem>
                     {succeeded.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
                         {item.label}
-                        {item.isActive ? " (active)" : ""} ·{" "}
-                        {formatShortDate(item.createdAtUtc)}
+                        {item.isActive ? " (active)" : ""} · {formatShortDate(item.createdAtUtc)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -165,9 +150,7 @@ function StreamingControlsComponent({
                 <Label>Delivery</Label>
                 <Select
                   value={streamingMethod}
-                  onValueChange={(value) =>
-                    onStreamingMethodChange(value as StreamingMethod)
-                  }
+                  onValueChange={(value) => onStreamingMethodChange(value as StreamingMethod)}
                   disabled={bestMode || sourceSelected}
                 >
                   <SelectTrigger className="w-full">
@@ -196,9 +179,7 @@ function StreamingControlsComponent({
                 <Label>ABR algorithm</Label>
                 <Select
                   value={isAdaptive ? abrAlgorithm : "none"}
-                  onValueChange={(value) =>
-                    onAbrAlgorithmChange(value as AbrAlgorithm)
-                  }
+                  onValueChange={(value) => onAbrAlgorithmChange(value as AbrAlgorithm)}
                   disabled={bestMode || !isAdaptive}
                 >
                   <SelectTrigger className="w-full">
@@ -208,12 +189,8 @@ function StreamingControlsComponent({
                     {isAdaptive ? (
                       <>
                         <SelectItem value="hybrid">Hybrid</SelectItem>
-                        <SelectItem value="throughput">
-                          Throughput-Based
-                        </SelectItem>
-                        <SelectItem value="buffer">
-                          Buffer-Based (BOLA)
-                        </SelectItem>
+                        <SelectItem value="throughput">Throughput-Based</SelectItem>
+                        <SelectItem value="buffer">Buffer-Based (BOLA)</SelectItem>
                         <SelectItem value="baseline">Non-Adaptive</SelectItem>
                       </>
                     ) : (

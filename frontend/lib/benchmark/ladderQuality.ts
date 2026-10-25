@@ -13,7 +13,10 @@ function ladderQualityOf(target: AnalysisTarget): LadderQuality | null {
   // What the players report a level's bitrate as, per rung — the key that tells apart two rungs
   // of one resolution.
   const declared = new Map(
-    (target.series.packagingIntegrity?.rungs ?? []).map((rung) => [rung.label, rung.hlsBandwidthBps]),
+    (target.series.packagingIntegrity?.rungs ?? []).map((rung) => [
+      rung.label,
+      rung.hlsBandwidthBps,
+    ]),
   );
 
   const vmafByHeight: Record<number, number> = {};
@@ -26,7 +29,8 @@ function ladderQualityOf(target: AnalysisTarget): LadderQuality | null {
     }
 
     const vmaf = series.summary.harmonicMean > 0 ? series.summary.harmonicMean : undefined;
-    const bitrateBps = (series.summary.bitrateBps ?? 0) > 0 ? (series.summary.bitrateBps as number) : undefined;
+    const bitrateBps =
+      (series.summary.bitrateBps ?? 0) > 0 ? (series.summary.bitrateBps as number) : undefined;
 
     // By height for ladders with one rung per resolution; the highest-bitrate rung wins a height.
     if (vmaf !== undefined && !(bitrateByHeight[height] > (bitrateBps ?? 0))) {

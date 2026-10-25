@@ -5,11 +5,7 @@ const DEFAULT_SITE_URL = "http://localhost:3000";
 
 /** Server-side API base (private URL preferred). */
 export function getApiUrl(): string {
-  return (
-    process.env.API_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    DEFAULT_API_URL
-  );
+  return process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL;
 }
 
 /** Browser-facing API base for streaming URLs. */

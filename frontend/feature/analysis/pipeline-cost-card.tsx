@@ -1,13 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
 import { MetricTile, MetricTileGrid } from "@/components/metric-tiles";
 import { ExportCsvButton } from "@/components/export-csv-button";
@@ -63,10 +57,7 @@ export function buildStages(
 ): PipelineStage[] {
   const ordered = transcodes
     .slice()
-    .sort(
-      (a, b) =>
-        new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime(),
-    );
+    .sort((a, b) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime());
 
   const byKind = (kind: string) => ordered.find((item) => item.ladderKind === kind);
   const staticRun = byKind("static");
@@ -128,24 +119,17 @@ export function PipelineCostCard({
   gridSizes: { generic: number; animation: number };
   sourceDurationSec?: number | null;
 }) {
-  const stages = React.useMemo(
-    () => buildStages(transcodes, gridSizes),
-    [transcodes, gridSizes],
-  );
+  const stages = React.useMemo(() => buildStages(transcodes, gridSizes), [transcodes, gridSizes]);
 
   const measured = stages.filter((stage) => stage.seconds != null);
   const total = measured.reduce((sum, stage) => sum + (stage.seconds ?? 0), 0);
 
-  const adaptiveOnly = stages
-    .slice(1)
-    .reduce((sum, stage) => sum + (stage.seconds ?? 0), 0);
+  const adaptiveOnly = stages.slice(1).reduce((sum, stage) => sum + (stage.seconds ?? 0), 0);
 
   const staticOnly = stages[0]?.seconds ?? null;
 
   const realtimeFactor =
-    sourceDurationSec && sourceDurationSec > 0 && total > 0
-      ? total / sourceDurationSec
-      : null;
+    sourceDurationSec && sourceDurationSec > 0 && total > 0 ? total / sourceDurationSec : null;
 
   const overheadFactor =
     staticOnly && staticOnly > 0 && adaptiveOnly > 0
@@ -163,8 +147,8 @@ export function PipelineCostCard({
         <CardHeader>
           <CardTitle className="text-base">Pipeline cost</CardTitle>
           <CardDescription>
-            Derived from packaging-run timestamps. Runs processed before these were recorded do
-            not carry them, so re-processing this video will populate this view.
+            Derived from packaging-run timestamps. Runs processed before these were recorded do not
+            carry them, so re-processing this video will populate this view.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -178,9 +162,9 @@ export function PipelineCostCard({
           <div className="space-y-1.5">
             <CardTitle className="text-base">Pipeline cost</CardTitle>
             <CardDescription>
-              Derived from packaging-run timestamps. The pipeline runs strictly in sequence, so
-              the gap between one run finishing and the next beginning is the encode grid and
-              derivation that produced it.
+              Derived from packaging-run timestamps. The pipeline runs strictly in sequence, so the
+              gap between one run finishing and the next beginning is the encode grid and derivation
+              that produced it.
             </CardDescription>
           </div>
           <ExportCsvButton
@@ -204,9 +188,7 @@ export function PipelineCostCard({
             title="Total processing divided by what the static ladder alone would have cost."
           />
           <MetricTile
-            value={
-              realtimeFactor != null ? `${realtimeFactor.toFixed(1)}×` : "—"
-            }
+            value={realtimeFactor != null ? `${realtimeFactor.toFixed(1)}×` : "—"}
             label="Of clip duration"
             title="Total processing time relative to the length of the source clip."
           />

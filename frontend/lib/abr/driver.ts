@@ -140,7 +140,9 @@ function createDecider(
           opening = false;
         } else if (options.fastStart && performance.now() - startedAt >= FAST_START_TIMEOUT_MS) {
           opening = false;
-          const lowest = levels.reduce((low, level) => (level.bitrateBps < low.bitrateBps ? level : low));
+          const lowest = levels.reduce((low, level) =>
+            level.bitrateBps < low.bitrateBps ? level : low,
+          );
           return { index: lowest.index, immediate: lowest.index !== state.currentIndex };
         } else {
           return hold;
@@ -185,7 +187,10 @@ function bufferAhead(media: HTMLMediaElement | null | undefined): number {
   for (let i = 0; i < buffered.length; i++) {
     // Without the tolerance the whole buffer read as empty until playback started: the opening rung
     // was held while hls.js fetched the entire clip back to back, and the run never left it.
-    if (currentTime >= buffered.start(i) - BUFFER_HOLE_TOLERANCE_SEC && currentTime <= buffered.end(i)) {
+    if (
+      currentTime >= buffered.start(i) - BUFFER_HOLE_TOLERANCE_SEC &&
+      currentTime <= buffered.end(i)
+    ) {
       return buffered.end(i) - currentTime;
     }
   }
@@ -211,7 +216,9 @@ function hlsReader(hls: Hls): StateReader {
     readSegmentSec: () => SEGMENT_SEC,
     readRemainingSec: () => {
       const media = hls.media;
-      return media && Number.isFinite(media.duration) ? media.duration - media.currentTime : Infinity;
+      return media && Number.isFinite(media.duration)
+        ? media.duration - media.currentTime
+        : Infinity;
     },
   };
 }
@@ -265,11 +272,11 @@ export function createRuleAbrController(
         }, FAST_START_TIMEOUT_MS);
       }
 
-      return this.decider.opening() ?? (Reflect.get(Base.prototype, "firstAutoLevel", this) as number);
+      return this.decider.opening() ?? Reflect.get(Base.prototype, "firstAutoLevel", this);
     }
 
     get nextAutoLevel(): number {
-      return this.decider.next()?.index ?? (Reflect.get(Base.prototype, "nextAutoLevel", this) as number);
+      return this.decider.next()?.index ?? Reflect.get(Base.prototype, "nextAutoLevel", this);
     }
 
     set nextAutoLevel(level: number) {
@@ -303,7 +310,10 @@ interface DashPlayerLike {
 /** Declared bandwidth of the audio track a DASH video rung is played with; 0 when there is none. */
 export function dashAudioBandwidth(player: DashPlayerLike): number {
   const audio = player.getRepresentationsByType?.("audio") ?? [];
-  return audio.reduce((highest, representation) => Math.max(highest, representation.bandwidth ?? 0), 0);
+  return audio.reduce(
+    (highest, representation) => Math.max(highest, representation.bandwidth ?? 0),
+    0,
+  );
 }
 
 export function driveDash(
@@ -325,7 +335,8 @@ export function driveDash(
       return representations()
         .map((representation, position) => ({
           index: representation.index ?? position,
-          bitrateBps: (representation.bandwidth ?? 0) > 0 ? (representation.bandwidth ?? 0) + audio : 0,
+          bitrateBps:
+            (representation.bandwidth ?? 0) > 0 ? (representation.bandwidth ?? 0) + audio : 0,
           height: representation.height ?? 0,
         }))
         .filter((level) => level.bitrateBps > 0);

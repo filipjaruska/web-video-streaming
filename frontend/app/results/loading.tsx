@@ -16,10 +16,7 @@ export default function Loading() {
           ))}
         </div>
         {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={index}
-            className="h-56 animate-pulse rounded-xl border bg-muted/40"
-          />
+          <div key={index} className="h-56 animate-pulse rounded-xl border bg-muted/40" />
         ))}
       </div>
     </PageShell>

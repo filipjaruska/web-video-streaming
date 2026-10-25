@@ -9,11 +9,7 @@ export type StreamingMethod = "source" | "hls" | "dash";
  */
 export type PlaybackEventKind =
   /** First frame rendered. Everything before it is startup, not rebuffering. */
-  | "startup"
-  | "rebufferStart"
-  | "rebufferEnd"
-  | "ended"
-  | "error";
+  "startup" | "rebufferStart" | "rebufferEnd" | "ended" | "error";
 
 export interface PlaybackEvent {
   kind: PlaybackEventKind;

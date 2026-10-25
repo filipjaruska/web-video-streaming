@@ -1,0 +1,2 @@
+# --relative: dotnet format --include silently skips absolute paths.
+vp staged --relative

@@ -65,9 +65,7 @@ export interface VideoBenchmarksResponse {
 }
 
 /** Server enum name to the frontend's profile id, for labelling. */
-export function profileOf(aggregate: {
-  networkProfile: string;
-}): NetworkProfile {
+export function profileOf(aggregate: { networkProfile: string }): NetworkProfile {
   return fromServerProfile(aggregate.networkProfile);
 }
 

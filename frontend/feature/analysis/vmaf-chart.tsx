@@ -1,29 +1,14 @@
 "use client";
 
 import * as React from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { VmafSeriesData, VmafSummary } from "@/lib/videoAnalysisApi";
-import {
-  buildVmafPoints,
-  downsampleVmafSeries,
-} from "@/lib/analysisDownsample";
+import { buildVmafPoints, downsampleVmafSeries } from "@/lib/analysisDownsample";
 import { formatSeconds } from "@/lib/analysisLabels";
 import { slugFilename } from "@/lib/csvExport";
 import { Badge } from "@/components/ui/badge";
 import { ExportCsvButton } from "@/components/export-csv-button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartContainer,
   ChartTooltip,
@@ -69,10 +54,7 @@ function SummaryTable({ summary }: { summary: VmafSummary }) {
     { label: "Model", value: summary.model ?? "—" },
     {
       label: "Ladder resolution",
-      value:
-        summary.width && summary.height
-          ? `${summary.width}×${summary.height}`
-          : "—",
+      value: summary.width && summary.height ? `${summary.width}×${summary.height}` : "—",
     },
     // Measured first, target second, and both labelled for what they are: the gap between the two
     // is what a content-adaptive ladder is about, so the two must never be confused.
@@ -105,14 +87,8 @@ interface VmafChartProps {
 
 export function VmafChart({ data, label, format }: VmafChartProps) {
   const hasSeries = data.scores.length > 0;
-  const points = React.useMemo(
-    () => (hasSeries ? buildVmafPoints(data) : []),
-    [data, hasSeries],
-  );
-  const chartData = React.useMemo(
-    () => downsampleVmafSeries(points, 1500),
-    [points],
-  );
+  const points = React.useMemo(() => (hasSeries ? buildVmafPoints(data) : []), [data, hasSeries]);
+  const chartData = React.useMemo(() => downsampleVmafSeries(points, 1500), [points]);
   const gradientId = React.useId().replace(/:/g, "");
 
   const exportRows = React.useMemo(
@@ -134,15 +110,13 @@ export function VmafChart({ data, label, format }: VmafChartProps) {
               <CardTitle className="text-base">
                 {format.toUpperCase()} · {label}
               </CardTitle>
-              <Badge variant="outline">
-                mean {formatScore(data.summary.mean)}
-              </Badge>
+              <Badge variant="outline">mean {formatScore(data.summary.mean)}</Badge>
             </div>
             <CardDescription>
               Full-reference VMAF vs source (RD point: bitrate × mean VMAF). Rate–quality is
               reported against the <em>measured</em> bitrate: x264 undershoots its target on
-              compressible content, which is exactly the headroom a content-adaptive ladder is
-              built to claim, so comparing targets would compare assumptions rather than results.
+              compressible content, which is exactly the headroom a content-adaptive ladder is built
+              to claim, so comparing targets would compare assumptions rather than results.
             </CardDescription>
           </div>
           {hasSeries && (
@@ -160,29 +134,12 @@ export function VmafChart({ data, label, format }: VmafChartProps) {
         {hasSeries ? (
           <div className="space-y-3">
             <h3 className="text-sm font-medium">VMAF over frames</h3>
-            <ChartContainer
-              config={chartConfig}
-              className="aspect-auto h-[240px] w-full"
-            >
+            <ChartContainer config={chartConfig} className="aspect-auto h-[240px] w-full">
               <AreaChart data={chartData}>
                 <defs>
-                  <linearGradient
-                    id={`fillVmaf-${gradientId}`}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor="var(--color-vmaf)"
-                      stopOpacity={0.35}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--color-vmaf)"
-                      stopOpacity={0.02}
-                    />
+                  <linearGradient id={`fillVmaf-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--color-vmaf)" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="var(--color-vmaf)" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} />
@@ -196,12 +153,7 @@ export function VmafChart({ data, label, format }: VmafChartProps) {
                   minTickGap={32}
                   tickFormatter={(value) => formatSeconds(Number(value))}
                 />
-                <YAxis
-                  domain={[0, 100]}
-                  tickLine={false}
-                  axisLine={false}
-                  width={40}
-                />
+                <YAxis domain={[0, 100]} tickLine={false} axisLine={false} width={40} />
                 <ChartTooltip
                   content={
                     <ChartTooltipContent

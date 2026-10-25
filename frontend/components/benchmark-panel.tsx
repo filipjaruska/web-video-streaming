@@ -2,13 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -246,10 +240,12 @@ export function BenchmarkPanel({
         Number(result.metrics.avgThroughputBps.toFixed(0)),
         Number(result.metrics.droppedFrameRatio.toFixed(6)),
         result.metrics.topRungShare != null ? Number(result.metrics.topRungShare.toFixed(4)) : "",
-        result.metrics.timeWeightedVmaf != null ? Number(result.metrics.timeWeightedVmaf.toFixed(3)) : "",
+        result.metrics.timeWeightedVmaf != null
+          ? Number(result.metrics.timeWeightedVmaf.toFixed(3))
+          : "",
         encodeResolutionShare(result.metrics.resolutionShare),
         result.metrics.recoveryMs ?? "",
-        result.failed ? result.errorMessage ?? "failed" : "",
+        result.failed ? (result.errorMessage ?? "failed") : "",
       ]),
     [results],
   );
@@ -263,14 +259,14 @@ export function BenchmarkPanel({
           <div className="space-y-1.5">
             <CardTitle className="text-base">Playback benchmark</CardTitle>
             <CardDescription>
-              Plays every chosen protocol and ABR rule against every chosen ladder, three
-              times each, and records startup, session time, buffering, switching and which
-              resolution was on screen for how much of the clip — weighted by each rung&apos;s
-              measured VMAF into the quality actually delivered. Every run requests its files
-              under a fresh URL, so nothing is served from the browser cache. The network
-              profile is applied by the server to every request of a run — bandwidth,
-              round-trip delay and packet loss — and the variable one switches 4G → 3G → 4G
-              on its own, mid-download included. The throughput column shows what the link actually delivered.
+              Plays every chosen protocol and ABR rule against every chosen ladder, three times
+              each, and records startup, session time, buffering, switching and which resolution was
+              on screen for how much of the clip — weighted by each rung&apos;s measured VMAF into
+              the quality actually delivered. Every run requests its files under a fresh URL, so
+              nothing is served from the browser cache. The network profile is applied by the server
+              to every request of a run — bandwidth, round-trip delay and packet loss — and the
+              variable one switches 4G → 3G → 4G on its own, mid-download included. The throughput
+              column shows what the link actually delivered.
             </CardDescription>
           </div>
           {results.length > 0 && (
@@ -407,8 +403,8 @@ export function BenchmarkPanel({
               </span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Leave this tab focused. Browsers throttle timers and media in background
-              tabs, which would be recorded as rebuffering that never happened.
+              Leave this tab focused. Browsers throttle timers and media in background tabs, which
+              would be recorded as rebuffering that never happened.
             </p>
           </div>
         )}
@@ -416,8 +412,8 @@ export function BenchmarkPanel({
         {mismatched.length > 0 && (
           <div className="space-y-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
             <p className="font-medium">
-              The link was faster than the network profile these runs are recorded under, so they
-              do not describe that network.
+              The link was faster than the network profile these runs are recorded under, so they do
+              not describe that network.
             </p>
             <ul className="space-y-0.5 pl-4 font-mono">
               {mismatched.map((row) => (
@@ -429,8 +425,8 @@ export function BenchmarkPanel({
               ))}
             </ul>
             <p className="text-muted-foreground">
-              The server applies the profile, so the shaping did not happen — check that the
-              backend these runs went to has been deployed with network shaping.
+              The server applies the profile, so the shaping did not happen — check that the backend
+              these runs went to has been deployed with network shaping.
             </p>
           </div>
         )}
@@ -438,14 +434,16 @@ export function BenchmarkPanel({
         {failures.length > 0 && (
           <div className="space-y-2">
             <Badge variant="destructive">
-              {failures.length} run{failures.length === 1 ? "" : "s"} failed — excluded from
-              the means below
+              {failures.length} run{failures.length === 1 ? "" : "s"} failed — excluded from the
+              means below
             </Badge>
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer select-none">Show failures</summary>
               <ul className="mt-1.5 space-y-1 pl-4">
                 {failures.map((failure, index) => (
-                  <li key={`${describeCellFull(failure.cell, failure.networkProfile)}:${failure.repetition}:${index}`}>
+                  <li
+                    key={`${describeCellFull(failure.cell, failure.networkProfile)}:${failure.repetition}:${index}`}
+                  >
                     <span className="font-mono">
                       {NETWORK_PROFILE_LABELS[failure.networkProfile]} ·{" "}
                       {ladderLabel(failure.cell.ladderKind)} · {describeCell(failure.cell)} · rep{" "}
@@ -469,7 +467,10 @@ export function BenchmarkPanel({
                   <th className="py-2 pr-3 font-medium">Configuration</th>
                   <th className="py-2 pr-3 font-medium">Runs</th>
                   <th className="py-2 pr-3 font-medium">Startup (ms)</th>
-                  <th className="py-2 pr-3 font-medium" title="Play request to the end of the clip, stalls included">
+                  <th
+                    className="py-2 pr-3 font-medium"
+                    title="Play request to the end of the clip, stalls included"
+                  >
                     Session (s)
                   </th>
                   <th className="py-2 pr-3 font-medium">Buffering ratio</th>
@@ -477,7 +478,10 @@ export function BenchmarkPanel({
                     Avg buffer (s)
                   </th>
                   <th className="py-2 pr-3 font-medium">Switches</th>
-                  <th className="py-2 pr-3 font-medium" title="Share of played time at the ladder's top rung">
+                  <th
+                    className="py-2 pr-3 font-medium"
+                    title="Share of played time at the ladder's top rung"
+                  >
                     Top rung
                   </th>
                   <th
@@ -486,7 +490,10 @@ export function BenchmarkPanel({
                   >
                     Delivered VMAF
                   </th>
-                  <th className="py-2 pr-3 font-medium" title="Measured average video bitrate of the rungs played, weighted by time (source: the file's average bitrate)">
+                  <th
+                    className="py-2 pr-3 font-medium"
+                    title="Measured average video bitrate of the rungs played, weighted by time (source: the file's average bitrate)"
+                  >
                     Avg bitrate
                   </th>
                   <th
@@ -502,9 +509,7 @@ export function BenchmarkPanel({
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.key} className="border-b border-border/50 last:border-b-0">
-                    <td className="py-1.5 pr-3 text-xs">
-                      {NETWORK_PROFILE_LABELS[row.profile]}
-                    </td>
+                    <td className="py-1.5 pr-3 text-xs">{NETWORK_PROFILE_LABELS[row.profile]}</td>
                     <td className="py-1.5 pr-3 text-xs">{ladderLabel(row.ladderKind)}</td>
                     <td className="py-1.5 pr-3 font-mono text-xs">{row.label}</td>
                     <td className="py-1.5 pr-3 font-mono text-xs">{row.runs}</td>
@@ -512,10 +517,12 @@ export function BenchmarkPanel({
                       {row.startup.mean.toFixed(0)} ± {row.startup.stdDev.toFixed(0)}
                     </td>
                     <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {(row.session.mean / 1000).toFixed(1)} ± {(row.session.stdDev / 1000).toFixed(1)}
+                      {(row.session.mean / 1000).toFixed(1)} ±{" "}
+                      {(row.session.stdDev / 1000).toFixed(1)}
                     </td>
                     <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {(row.buffering.mean * 100).toFixed(2)} % ± {(row.buffering.stdDev * 100).toFixed(2)}
+                      {(row.buffering.mean * 100).toFixed(2)} % ±{" "}
+                      {(row.buffering.stdDev * 100).toFixed(2)}
                     </td>
                     <td className="py-1.5 pr-3 font-mono text-xs">
                       {row.avgBuffer.mean.toFixed(1)}
@@ -527,7 +534,9 @@ export function BenchmarkPanel({
                       {row.top ? `${(row.top.mean * 100).toFixed(0)} %` : "—"}
                     </td>
                     <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {row.vmaf ? `${row.vmaf.mean.toFixed(2)} ± ${row.vmaf.stdDev.toFixed(2)}` : "—"}
+                      {row.vmaf
+                        ? `${row.vmaf.mean.toFixed(2)} ± ${row.vmaf.stdDev.toFixed(2)}`
+                        : "—"}
                     </td>
                     <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
                       {mbps(row.bitrate.mean)}

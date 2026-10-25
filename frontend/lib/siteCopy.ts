@@ -19,8 +19,7 @@ export const RESULTS_COPY = {
 
 export const CONCEPTS_COPY = {
   title: "Concepts",
-  description:
-    "The ideas this project measures, and where to see each of them on real data.",
+  description: "The ideas this project measures, and where to see each of them on real data.",
 } as const;
 
 export const EDITOR_COPY = {

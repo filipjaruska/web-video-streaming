@@ -5,11 +5,7 @@ import { ChevronRight } from "lucide-react";
 import type { AnalysisTreeNode } from "@/lib/videoAnalysisApi";
 import { normalizeAnalysisTreeNodes } from "@/lib/analysisTree";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 interface AnalysisTreeProps {
@@ -70,15 +66,9 @@ function AnalysisTreeNodeView({
         {statusBadge(node.meta?.status)}
       </CollapsibleTrigger>
       <CollapsibleContent className="pb-2 pl-6">
-        {node.meta?.error && (
-          <p className="mb-2 text-sm text-destructive">{node.meta.error}</p>
-        )}
+        {node.meta?.error && <p className="mb-2 text-sm text-destructive">{node.meta.error}</p>}
         {node.children?.map((child) => (
-          <AnalysisTreeNodeView
-            key={child.id}
-            node={child}
-            depth={depth + 1}
-          />
+          <AnalysisTreeNodeView key={child.id} node={child} depth={depth + 1} />
         ))}
         {!hasChildren && node.meta?.status === "running" && (
           <p className="text-sm text-muted-foreground">Analysis in progress…</p>
@@ -91,14 +81,8 @@ function AnalysisTreeNodeView({
   );
 }
 
-export function AnalysisTree({
-  nodes,
-  defaultOpen = false,
-}: AnalysisTreeProps) {
-  const normalizedNodes = useMemo(
-    () => normalizeAnalysisTreeNodes(nodes),
-    [nodes],
-  );
+export function AnalysisTree({ nodes, defaultOpen = false }: AnalysisTreeProps) {
+  const normalizedNodes = useMemo(() => normalizeAnalysisTreeNodes(nodes), [nodes]);
 
   if (normalizedNodes.length === 0) {
     return (
@@ -111,11 +95,7 @@ export function AnalysisTree({
   return (
     <div className="space-y-1">
       {normalizedNodes.map((node, index) => (
-        <AnalysisTreeNodeView
-          key={node.id}
-          node={node}
-          defaultOpen={defaultOpen || index === 0}
-        />
+        <AnalysisTreeNodeView key={node.id} node={node} defaultOpen={defaultOpen || index === 0} />
       ))}
     </div>
   );

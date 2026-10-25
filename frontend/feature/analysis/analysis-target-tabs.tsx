@@ -16,11 +16,7 @@ import { TuningComparisonCard } from "@/feature/analysis/tuning-comparison-card"
 import type { VideoTranscodeListItem } from "@/lib/videoTranscodesApi";
 import type { AnalysisTab } from "@/lib/analysisTabs";
 import { formatTargetStatus } from "@/lib/analysisLabels";
-import {
-  formatBitrate,
-  formatNumber,
-  ladderLabel,
-} from "@/lib/analysisFormat";
+import { formatBitrate, formatNumber, ladderLabel } from "@/lib/analysisFormat";
 import {
   collectVmafEntries,
   pickPackagedWithVmaf,
@@ -35,13 +31,7 @@ import { getPublicApiUrl } from "@/lib/env";
 import { getHlsVariantUrl } from "@/lib/streamingLabels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface AnalysisTargetTabsProps {
@@ -63,16 +53,7 @@ interface AnalysisTargetTabsProps {
 function RdSummaryTable({ entries }: { entries: VmafEntry[] }) {
   return (
     <DataTable
-      headers={[
-        "Format",
-        "Rung",
-        "Bitrate",
-        "Mean VMAF",
-        "Harmonic",
-        "Min",
-        "NEG harm.",
-        "CAMBI",
-      ]}
+      headers={["Format", "Rung", "Bitrate", "Mean VMAF", "Harmonic", "Min", "NEG harm.", "CAMBI"]}
     >
       {entries.map((entry) => {
         const summary = entry.data.summary;
@@ -115,9 +96,7 @@ export function AnalysisTargetTabs({
   const staticTranscode = pickStaticTranscode(targets);
   const packagedWithVmaf = pickPackagedWithVmaf(targets);
 
-  const [selectedTranscodeId, setSelectedTranscodeId] = useState<string | null>(
-    null,
-  );
+  const [selectedTranscodeId, setSelectedTranscodeId] = useState<string | null>(null);
   const selectedTranscode =
     packagedWithVmaf.find((t) => t.id === selectedTranscodeId) ??
     packagedWithVmaf.find((t) => t.label.includes("(active)")) ??
@@ -148,8 +127,7 @@ export function AnalysisTargetTabs({
     resolvedLabel == null
       ? undefined
       : vmafEntries.find(
-          (entry) =>
-            entry.format === resolvedFormat && entry.label === resolvedLabel,
+          (entry) => entry.format === resolvedFormat && entry.label === resolvedLabel,
         )?.data;
 
   const encodeGrid = staticTranscode?.series.encodeGrid ?? [];
@@ -170,13 +148,9 @@ export function AnalysisTargetTabs({
         : { mediaNodes: [], sitiNode: undefined },
     [source],
   );
-  const hasSitiSeries =
-    !!source?.series.siti && source.series.siti.si.length > 0;
+  const hasSitiSeries = !!source?.series.siti && source.series.siti.si.length > 0;
 
-  const videoSrc = useMemo(
-    () => getHlsVariantUrl(getPublicApiUrl(), routeId, "360p"),
-    [routeId],
-  );
+  const videoSrc = useMemo(() => getHlsVariantUrl(getPublicApiUrl(), routeId, "360p"), [routeId]);
 
   // Read off the SI/TI time axis, which covers the whole clip. Avoids parsing the metadata tree
   // for a number the series already carries.
@@ -205,10 +179,7 @@ export function AnalysisTargetTabs({
               <h2 className="text-lg font-medium">{source.label}</h2>
               <Badge variant="outline">{formatTargetStatus(source.status)}</Badge>
             </div>
-            <ContentCharacteristicsCard
-              series={source.series}
-              durationSec={sourceDurationSec}
-            />
+            <ContentCharacteristicsCard series={source.series} durationSec={sourceDurationSec} />
             {(hasSitiSeries || sitiNode) && (
               <SitiChart
                 data={source.series.siti}
@@ -287,8 +258,8 @@ export function AnalysisTargetTabs({
               <div>
                 <CardTitle className="text-base">Packaged ladder VMAF</CardTitle>
                 <CardDescription>
-                  Full-reference scores for each packaged HLS/DASH rung vs
-                  source. Compare static vs dynamic ladders when both exist.
+                  Full-reference scores for each packaged HLS/DASH rung vs source. Compare static vs
+                  dynamic ladders when both exist.
                 </CardDescription>
               </div>
               <Badge variant={vmafEntries.length === 0 ? "secondary" : "outline"}>
@@ -303,9 +274,7 @@ export function AnalysisTargetTabs({
                   <Button
                     key={t.id}
                     size="sm"
-                    variant={
-                      selectedTranscode?.id === t.id ? "default" : "outline"
-                    }
+                    variant={selectedTranscode?.id === t.id ? "default" : "outline"}
                     onClick={() => {
                       setSelectedTranscodeId(t.id);
                       setSelectedFormat(null);
@@ -321,9 +290,7 @@ export function AnalysisTargetTabs({
             {vmafEntries.length > 0 ? (
               <>
                 <div>
-                  <h3 className="mb-2 text-sm font-medium">
-                    Rate–distortion summary
-                  </h3>
+                  <h3 className="mb-2 text-sm font-medium">Rate–distortion summary</h3>
                   <RdSummaryTable entries={vmafEntries} />
                 </div>
 
@@ -332,9 +299,7 @@ export function AnalysisTargetTabs({
                     <Button
                       key={format}
                       size="sm"
-                      variant={
-                        resolvedFormat === format ? "default" : "outline"
-                      }
+                      variant={resolvedFormat === format ? "default" : "outline"}
                       onClick={() => {
                         setSelectedFormat(format);
                         setSelectedLabel(null);
@@ -351,9 +316,7 @@ export function AnalysisTargetTabs({
                       <Button
                         key={label}
                         size="sm"
-                        variant={
-                          resolvedLabel === label ? "default" : "outline"
-                        }
+                        variant={resolvedLabel === label ? "default" : "outline"}
                         onClick={() => setSelectedLabel(label)}
                       >
                         {label}
@@ -363,23 +326,17 @@ export function AnalysisTargetTabs({
                 )}
 
                 {selectedSeries && resolvedLabel && (
-                  <VmafChart
-                    data={selectedSeries}
-                    label={resolvedLabel}
-                    format={resolvedFormat}
-                  />
+                  <VmafChart data={selectedSeries} label={resolvedLabel} format={resolvedFormat} />
                 )}
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No packaged VMAF yet. It is measured for each ladder as soon as that ladder
-                is packaged — the static one first, the two derived ladders after their
-                encode grids.
+                No packaged VMAF yet. It is measured for each ladder as soon as that ladder is
+                packaged — the static one first, the two derived ladders after their encode grids.
               </p>
             )}
           </CardContent>
         </Card>
-
       </TabsContent>
 
       <TabsContent value="raw" className="mt-4 space-y-4">
@@ -402,9 +359,8 @@ export function AnalysisTargetTabs({
             <CardHeader>
               <CardTitle className="text-base">No transcodes yet</CardTitle>
               <CardDescription>
-                After HLS/DASH packaging finishes, each transcode appears here with probe
-                metadata and per-rendition SI/TI. Two derived ladders follow once the encode
-                grids complete.
+                After HLS/DASH packaging finishes, each transcode appears here with probe metadata
+                and per-rendition SI/TI. Two derived ladders follow once the encode grids complete.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -414,12 +370,7 @@ export function AnalysisTargetTabs({
               key={target.id}
               target={target}
               transcodeNumber={index + 1}
-              videoSrc={getHlsVariantUrl(
-                getPublicApiUrl(),
-                routeId,
-                "360p",
-                target.transcodeId,
-              )}
+              videoSrc={getHlsVariantUrl(getPublicApiUrl(), routeId, "360p", target.transcodeId)}
             />
           ))
         )}

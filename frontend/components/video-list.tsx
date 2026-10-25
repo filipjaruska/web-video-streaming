@@ -1,12 +1,6 @@
 import Link from "next/link";
 import { Play } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getPublicApiUrl } from "@/lib/env";
 import type { VideoListItem } from "@/lib/videoApi";
@@ -61,9 +55,7 @@ export function VideoList({ videos }: VideoListProps) {
               </div>
             </div>
             <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-base truncate">
-                {video.title || video.fileName}
-              </CardTitle>
+              <CardTitle className="text-base truncate">{video.title || video.fileName}</CardTitle>
               <CardDescription className="flex items-center gap-2 flex-wrap">
                 <span>{formatSize(video.size)}</span>
                 {video.hasHls && <Badge variant="secondary">HLS</Badge>}
@@ -71,9 +63,7 @@ export function VideoList({ videos }: VideoListProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0">
-              <p className="text-xs text-muted-foreground truncate font-mono">
-                {video.routeId}
-              </p>
+              <p className="text-xs text-muted-foreground truncate font-mono">{video.routeId}</p>
             </CardContent>
           </Card>
         </Link>

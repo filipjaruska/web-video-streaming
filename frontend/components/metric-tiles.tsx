@@ -29,14 +29,7 @@ export function MetricTile({
 }) {
   return (
     <div title={title}>
-      <div
-        className={cn(
-          "text-2xl font-semibold tabular-nums",
-          TONE_CLASS[tone],
-        )}
-      >
-        {value}
-      </div>
+      <div className={cn("text-2xl font-semibold tabular-nums", TONE_CLASS[tone])}>{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
     </div>
   );

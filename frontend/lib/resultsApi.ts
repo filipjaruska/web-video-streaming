@@ -1,14 +1,8 @@
 import { getApiUrl } from "@/lib/env";
 import { listVideos } from "@/lib/videoApi";
 import { getVideoAnalysis } from "@/lib/videoAnalysisApi";
-import {
-  getVideoBenchmarks,
-  type BenchmarkAggregateDto,
-} from "@/lib/videoBenchmarksApi";
-import {
-  pickSourceTarget,
-  pickStaticTranscode,
-} from "@/lib/analysisTargets";
+import { getVideoBenchmarks, type BenchmarkAggregateDto } from "@/lib/videoBenchmarksApi";
+import { pickSourceTarget, pickStaticTranscode } from "@/lib/analysisTargets";
 
 /** Whether a clip has enough measured data to fill a row. */
 export type ClipStatus = "complete" | "partial" | "missing" | "error";
@@ -98,9 +92,7 @@ export async function loadAllResults(): Promise<ClipResult[]> {
       const errors: string[] = [];
 
       const benchmarks =
-        benchmarksResult.status === "fulfilled"
-          ? benchmarksResult.value.aggregates
-          : [];
+        benchmarksResult.status === "fulfilled" ? benchmarksResult.value.aggregates : [];
 
       if (benchmarksResult.status === "rejected") {
         errors.push(`Benchmarks: ${String(benchmarksResult.reason)}`);
