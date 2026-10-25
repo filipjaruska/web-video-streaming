@@ -28,7 +28,7 @@ export default defineConfig({
       // React Compiler rules. The compiler isn't enabled, and the flagged code is the playback
       // and measurement path, so these stay visible without blocking commits.
       "react/set-state-in-effect": "warn",
-      "react/refs": "warn",
+      "react/refs": "error",
       "react/preserve-manual-memoization": "error",
       "react/error-boundaries": "error",
       "react/no-unstable-nested-components": "error",

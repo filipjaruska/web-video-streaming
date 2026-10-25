@@ -128,6 +128,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   // Read when each request is made, not when the player renders, so a request always carries the
   // profile of the run it belongs to.
   const networkProfileRef = useRef(networkProfile);
+  // oxlint-disable-next-line react/refs -- set during render so `src` below tags the current profile
   networkProfileRef.current = networkProfile;
   const runTag = useCallback(
     (): RunRequestTag | null =>
@@ -146,6 +147,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           routeId,
           streamingMethod === "source" ? null : transcodeId,
         ),
+        // oxlint-disable-next-line react/refs -- the URL must carry the profile the run starts on
         runTag(),
       ),
     [streamingMethod, apiUrl, routeId, transcodeId, runTag],

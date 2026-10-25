@@ -56,8 +56,10 @@ export function useVideoStatsTracking({
   // interval on every render, which would reset the cadence a measurement depends on.
   const statsCallbackRef = useRef(onStatsUpdate);
   const eventCallbackRef = useRef(onPlaybackEvent);
+  /* oxlint-disable react/refs -- see above: the interval must not rebuild when callbacks change */
   statsCallbackRef.current = onStatsUpdate;
   eventCallbackRef.current = onPlaybackEvent;
+  /* oxlint-enable react/refs */
   const throughputStateRef = useRef<HttpRangeThroughputState>({
     lastBufferedEnd: 0,
     lastTimestampMs: 0,
