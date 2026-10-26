@@ -42,7 +42,10 @@ export function VideoManageMenu({ video }: { video: VideoListItem }) {
 
   const label = videoTitle(video);
 
-  function show(dialog: Open) {
+  async function show(dialog: Open) {
+    if (!(await requireAuth())) {
+      return;
+    }
     setTitle(video.title ?? "");
     setDescription(video.description ?? "");
     setError(null);
@@ -91,12 +94,12 @@ export function VideoManageMenu({ video }: { video: VideoListItem }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => show("edit")}>
+          <DropdownMenuItem onSelect={() => void show("edit")}>
             <Pencil />
             Edit title and description
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => show("delete")}>
+          <DropdownMenuItem variant="destructive" onSelect={() => void show("delete")}>
             <Trash2 />
             Delete video
           </DropdownMenuItem>

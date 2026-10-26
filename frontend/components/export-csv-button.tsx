@@ -1,6 +1,8 @@
 "use client";
 
 import { Download } from "lucide-react";
+
+import { useActionAuth } from "@/components/action-auth-provider";
 import { Button } from "@/components/ui/button";
 import { downloadCsv, rowsToCsv, type CsvCell } from "@/lib/csvExport";
 
@@ -12,6 +14,7 @@ interface ExportCsvButtonProps {
   label?: string;
 }
 
+/** Downloads a table as CSV, behind the site password like every other action. */
 export function ExportCsvButton({
   filename,
   headers,
@@ -19,7 +22,14 @@ export function ExportCsvButton({
   disabled,
   label = "Export CSV",
 }: ExportCsvButtonProps) {
+  const { requireAuth } = useActionAuth();
   const empty = rows.length === 0;
+
+  async function download() {
+    if (await requireAuth()) {
+      downloadCsv(filename, rowsToCsv(headers, rows));
+    }
+  }
 
   return (
     <Button
@@ -27,7 +37,7 @@ export function ExportCsvButton({
       variant="outline"
       size="sm"
       disabled={disabled || empty}
-      onClick={() => downloadCsv(filename, rowsToCsv(headers, rows))}
+      onClick={() => void download()}
     >
       <Download />
       {label}

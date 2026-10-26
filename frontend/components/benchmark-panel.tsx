@@ -211,6 +211,7 @@ export function BenchmarkPanel({
     () => new Set(BENCHMARK_ALGORITHMS),
   );
   const [includeSource, setIncludeSource] = useState(true);
+  const [customOpen, setCustomOpen] = useState(false);
 
   const selection = useMemo<BenchmarkSelection>(
     () => ({
@@ -297,7 +298,15 @@ export function BenchmarkPanel({
             Keep this tab in front. Browsers throttle background tabs, which would be recorded as
             stalls that never happened.
           </p>
-          <Button variant="destructive" className="w-full" onClick={onCancel}>
+          <Button
+            variant="destructive"
+            className="w-full"
+            onClick={async () => {
+              if (await requireAuth()) {
+                onCancel();
+              }
+            }}
+          >
             Cancel
           </Button>
         </div>
@@ -317,8 +326,24 @@ export function BenchmarkPanel({
             </p>
           </div>
 
-          <details className="group border-t pt-4">
-            <summary className="cursor-pointer text-sm font-medium select-none">
+          <details
+            className="group border-t pt-4"
+            open={customOpen}
+            onToggle={(event) => setCustomOpen(event.currentTarget.open)}
+          >
+            <summary
+              className="cursor-pointer text-sm font-medium select-none"
+              onClick={async (event) => {
+                // Opening the selection is gated like running it; closing never is.
+                if (customOpen) {
+                  return;
+                }
+                event.preventDefault();
+                if (await requireAuth()) {
+                  setCustomOpen(true);
+                }
+              }}
+            >
               Choose what to run
             </summary>
             <div className="mt-4 space-y-4">

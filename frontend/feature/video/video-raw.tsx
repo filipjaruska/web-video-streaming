@@ -36,15 +36,15 @@ export function VideoRaw({ routeId, poll }: { routeId: string; poll: boolean }) 
   }
 
   return (
-    <div className="max-w-5xl">
-      <Section title="Source" description="ffprobe on the uploaded file.">
+    <div>
+      <Section id="source" title="Source" description="ffprobe on the uploaded file.">
         {source ? (
           <AnalysisTree nodes={mediaNodes} defaultOpen />
         ) : (
           <EmptyState title="Not probed yet" />
         )}
       </Section>
-      <Section title="Packaging runs">
+      <Section id="packaging" title="Packaging runs">
         {transcodes.length === 0 ? (
           <EmptyState title="Nothing packaged yet" />
         ) : (

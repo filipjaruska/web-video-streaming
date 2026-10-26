@@ -28,12 +28,15 @@ export function ResultsToolbar() {
         variant="outline"
         size="sm"
         disabled={refreshing}
-        onClick={() =>
+        onClick={async () => {
+          if (!(await requireAuth())) {
+            return;
+          }
           startRefresh(async () => {
             await refreshData();
             router.refresh();
-          })
-        }
+          });
+        }}
       >
         <RefreshCw className={refreshing ? "animate-spin" : undefined} />
         Refresh
