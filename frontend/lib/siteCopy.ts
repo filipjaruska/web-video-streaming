@@ -17,13 +17,7 @@ export const RESULTS_COPY = {
     "Every clip measured the same way, laid out as in chapter 5. Select a clip for its own results.",
 } as const;
 
-export const CONCEPTS_COPY = {
-  title: "Concepts",
-  description: "The ideas this project measures, and where to see each of them on real data.",
-} as const;
-
-export const EDITOR_COPY = {
-  title: "Editor",
-  description:
-    "Manage the clip catalogue: upload new sources, edit titles and descriptions, remove videos and their generated ladders.",
+export const METHOD_COPY = {
+  title: "Method",
+  description: "The measures and terms used across the results, defined once.",
 } as const;

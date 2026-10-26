@@ -1,34 +1,25 @@
 import Link from "next/link";
+
+import { Container } from "./page-shell";
+import { HeaderNav, MobileNav } from "./header-nav";
 import { ModeToggle } from "./mode-toggle";
 import { UploadSessionLauncher } from "./upload-session-launcher";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Videos" },
-  { href: "/results", label: "Results" },
-  { href: "/editor", label: "Editor" },
-  { href: "/concepts", label: "Concepts" },
-] as const;
-
 export function Header() {
   return (
-    <header className="supports-backdrop-filter:bg-background/60 sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur">
-      <div className="flex h-14 items-center justify-between px-6">
-        <nav className="flex items-center space-x-6 text-sm font-medium">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="transition-colors hover:text-foreground/80 text-foreground"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="flex items-center space-x-2">
+    <header className="sticky top-0 z-40 w-full border-b bg-background/85 backdrop-blur supports-backdrop-filter:bg-background/70">
+      <Container className="flex h-14 items-center gap-6">
+        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+          <span aria-hidden className="h-5 w-1.5 rounded-[1px] bg-primary" />
+          <span className="hidden sm:inline">Video Streaming</span>
+        </Link>
+        <HeaderNav />
+        <div className="ml-auto flex items-center gap-2">
           <UploadSessionLauncher />
           <ModeToggle />
+          <MobileNav />
         </div>
-      </div>
+      </Container>
     </header>
   );
 }

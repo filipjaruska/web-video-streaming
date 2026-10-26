@@ -1,15 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { PageShell } from "@/components/page-shell";
-import { Separator } from "@/components/ui/separator";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
 import { HullDiagram } from "@/feature/concepts/hull-diagram";
@@ -20,12 +11,12 @@ import {
   getDashAbrDescription,
   getStreamingMethodDescription,
 } from "@/lib/streamingLabels";
-import { CONCEPTS_COPY } from "@/lib/siteCopy";
+import { METHOD_COPY } from "@/lib/siteCopy";
 import type { AbrAlgorithm } from "@/types/streaming";
 
 export const metadata: Metadata = {
-  title: CONCEPTS_COPY.title,
-  description: CONCEPTS_COPY.description,
+  title: METHOD_COPY.title,
+  description: METHOD_COPY.description,
 };
 
 const ABR_ALGORITHMS: AbrAlgorithm[] = ["throughput", "buffer", "hybrid", "baseline"];
@@ -87,31 +78,11 @@ export default async function ConceptsPage() {
     sample = null;
   }
 
-  const analysis = (tab: string) =>
-    sample ? { href: `/${sample}/analysis?tab=${tab}`, label: "See it live" } : undefined;
+  const analysis = (section: string) =>
+    sample ? { href: `/${sample}/results#${section}`, label: "See it on a clip" } : undefined;
 
   return (
-    <PageShell
-      title={CONCEPTS_COPY.title}
-      description={CONCEPTS_COPY.description}
-      breadcrumb={
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link href="/">Videos</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>Concepts</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      }
-    >
-      <Separator className="mb-6" />
-
+    <PageShell title={METHOD_COPY.title} description={METHOD_COPY.description}>
       <div className="grid gap-4 @min-[1400px]/page:grid-cols-2">
         <Section title="Spatial and temporal information (SI / TI)" link={analysis("content")}>
           <p>
@@ -206,7 +177,7 @@ export default async function ConceptsPage() {
           </p>
         </Section>
 
-        <Section title="VMAF, VMAF-NEG and CAMBI" link={analysis("delivery")}>
+        <Section title="VMAF, VMAF-NEG and CAMBI" link={analysis("vmaf")}>
           <p>
             VMAF is a full-reference perceptual score fusing several elementary metrics. The
             harmonic mean is used for decisions rather than the arithmetic one, because a short
