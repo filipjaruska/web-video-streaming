@@ -1,10 +1,7 @@
 /**
  * The convex-hull ladder, drawn.
  *
- * This is the one idea in the project that genuinely resists prose: "one operating point per
- * resolution, all taken at the same hull slope" is hard to hold in your head from a sentence, and
- * it is the central claim. Everything else on the concepts page is text plus a link to live data.
- *
+
  * Curves are generated rather than hand-drawn path data so the shape is actually a saturating
  * rate–quality curve, and so the selected points really do sit where the slope equals λ.
  */
@@ -211,11 +208,9 @@ export function HullDiagram() {
         </text>
       </svg>
       <figcaption className="text-xs text-muted-foreground">
-        Each coloured line is one resolution&apos;s rate–quality curve; the thick grey line is the
-        upper envelope across all of them. The dashed tangents all share the same gradient λ, and
-        each star is where that gradient touches its curve — the point past which doubling the
-        bitrate no longer buys λ points of quality. A curve that flattens early gets a cheap rung;
-        one still climbing is followed further up.
+        Illustration. Each coloured line is one resolution&apos;s rate–quality curve, the thick grey
+        line the upper envelope. The dashed tangents share one slope λ; each star is where it
+        touches its curve, past which doubling the bitrate buys less than λ points of VMAF.
       </figcaption>
     </figure>
   );

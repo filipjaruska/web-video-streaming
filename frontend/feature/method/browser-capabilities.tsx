@@ -2,10 +2,11 @@
 
 import { usePlaybackCapabilities } from "@/hooks/usePlaybackCapabilities";
 import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
-import { Badge } from "@/components/ui/badge";
 
 function YesNo({ value }: { value: boolean }) {
-  return <Badge variant={value ? "secondary" : "outline"}>{value ? "yes" : "no"}</Badge>;
+  return (
+    <span className={value ? "text-success" : "text-muted-foreground"}>{value ? "Yes" : "No"}</span>
+  );
 }
 
 /**
@@ -31,12 +32,12 @@ export function BrowserCapabilities() {
     {
       label: "ManagedMediaSource",
       value: capabilities.managedMediaSource,
-      note: "Apple's constrained MSE — the iOS 17+ path.",
+      note: "Apple's constrained MSE, the iOS 17+ path.",
     },
     {
       label: "Native HLS",
       value: capabilities.nativeHls,
-      note: "Plays .m3u8 without any JavaScript library — used only where MSE is missing, since the browser then picks the quality itself.",
+      note: "Plays .m3u8 without a library. Used only where MSE is missing, since the browser then picks the quality itself.",
     },
     {
       label: "H.264 in MSE",
@@ -71,7 +72,7 @@ export function BrowserCapabilities() {
         ))}
       </DataTable>
       <p className="text-sm text-muted-foreground">
-        On this browser, Best mode would deliver <strong>{chosen}</strong>.
+        In this browser, Best mode plays <strong className="text-foreground">{chosen}</strong>.
       </p>
     </div>
   );

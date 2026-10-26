@@ -1,16 +1,22 @@
 import Link from "next/link";
+
 import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 
 export default function NotFound() {
   return (
     <PageShell
-      title="Video not found"
-      description="This video does not exist or may have been removed."
+      title="Page not found"
+      description="Nothing lives at this address. If it was a clip, it may have been deleted."
     >
-      <Button asChild>
-        <Link href="/">Back to videos</Link>
-      </Button>
+      <div className="flex gap-2">
+        <Button asChild>
+          <Link href="/">All clips</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/results">Results</Link>
+        </Button>
+      </div>
     </PageShell>
   );
 }

@@ -1,260 +1,302 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+
 import { PageShell } from "@/components/page-shell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
-import { HullDiagram } from "@/feature/concepts/hull-diagram";
-import { BrowserCapabilities } from "@/feature/concepts/browser-capabilities";
-import { listVideos } from "@/lib/videoApi";
-import {
-  getAbrDescription,
-  getDashAbrDescription,
-  getStreamingMethodDescription,
-} from "@/lib/streamingLabels";
+import { Section } from "@/components/section";
+import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
+import { BrowserCapabilities } from "@/feature/method/browser-capabilities";
+import { HullDiagram } from "@/feature/method/hull-diagram";
+import { NETWORK_PROFILE_SHORT, VARIABLE_NETWORK_SCHEDULE } from "@/lib/benchmark/types";
 import { METHOD_COPY } from "@/lib/siteCopy";
-import type { AbrAlgorithm } from "@/types/streaming";
+import { listVideos } from "@/lib/videoApi";
 
 export const metadata: Metadata = {
   title: METHOD_COPY.title,
   description: METHOD_COPY.description,
 };
 
-const ABR_ALGORITHMS: AbrAlgorithm[] = ["throughput", "buffer", "hybrid", "baseline"];
-
 /**
- * The fixed baseline ladder, mirroring `TranscodeProfile.Default` on the backend: Apple's HLS
- * authoring specification, one rung per resolution.
- *
- * Hardcoded rather than fetched: this is the one ladder that never varies by clip, and the page
- * needs to render it even with an empty catalogue. If the backend default ever changes, this is
- * the copy to update alongside it.
+ * The static ladder, mirroring `TranscodeProfile.Default` on the backend: Apple's HLS authoring
+ * specification, one rung per resolution. Kept here so the page renders with an empty catalogue;
+ * update it together with the backend default.
  */
 const STATIC_LADDER = [
-  { label: "1080p", resolution: "1920×1080", bitrate: "7.8 Mb/s" },
-  { label: "720p", resolution: "1280×720", bitrate: "4.5 Mb/s" },
-  { label: "540p", resolution: "960×540", bitrate: "2.0 Mb/s" },
-  { label: "432p", resolution: "768×432", bitrate: "1.1 Mb/s" },
-  { label: "360p", resolution: "640×360", bitrate: "0.365 Mb/s" },
-  { label: "234p", resolution: "416×234", bitrate: "0.145 Mb/s" },
+  { label: "1080p", resolution: "1920×1080", bitrate: "7.80" },
+  { label: "720p", resolution: "1280×720", bitrate: "4.50" },
+  { label: "540p", resolution: "960×540", bitrate: "2.00" },
+  { label: "432p", resolution: "768×432", bitrate: "1.10" },
+  { label: "360p", resolution: "640×360", bitrate: "0.365" },
+  { label: "234p", resolution: "416×234", bitrate: "0.145" },
 ];
 
-/** A concept, with somewhere in the app it can actually be seen on measured data. */
-function Section({
-  title,
-  link,
-  children,
-}: {
-  title: string;
-  link?: { href: string; label: string };
-  children: React.ReactNode;
-}) {
+const NETWORKS = [
+  { profile: "standard", rate: "unshaped", rtt: "—", loss: "—" },
+  { profile: "fourG", rate: "20", rtt: "40 ms", loss: "1 %" },
+  { profile: "threeG", rate: "2", rtt: "100 ms", loss: "5 %" },
+] as const;
+
+const ABR_RULES = [
+  {
+    rule: "Throughput",
+    how: "Highest rung that fits in 90 % of the throughput estimate to switch up; a rung is left once it no longer fits in 100 %.",
+  },
+  {
+    rule: "Buffer (BOLA)",
+    how: "BOLA-BASIC: chooses on buffer level alone, weighing each rung's utility against its segment size.",
+  },
+  {
+    rule: "Hybrid",
+    how: "Throughput until the buffer reaches half its target, then BOLA; back to throughput below a quarter. The arrangement of dash.js DYNAMIC.",
+  },
+  {
+    rule: "Baseline",
+    how: "Holds the top rung, no adaptation. The reference for what the network can carry.",
+  },
+];
+
+const SECTIONS = [
+  { id: "content", title: "Content measures" },
+  { id: "ladders", title: "Ladders" },
+  { id: "quality", title: "Quality metrics" },
+  { id: "delivery", title: "Delivery and ABR" },
+  { id: "networks", title: "Network profiles" },
+  { id: "browser", title: "This browser" },
+] as const;
+
+function Term({ name, children }: { name: string; children: React.ReactNode }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm text-muted-foreground">
-        {children}
-        {link && (
-          <p>
-            <Link href={link.href} className="text-foreground underline underline-offset-4">
-              {link.label} →
-            </Link>
-          </p>
-        )}
-      </CardContent>
-    </Card>
+    <div className="grid gap-1 border-b py-3 last:border-b-0 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6">
+      <dt className="font-medium">{name}</dt>
+      <dd className="space-y-2 text-sm text-muted-foreground">{children}</dd>
+    </div>
   );
 }
 
-export default async function ConceptsPage() {
-  // Deep links point at a real clip so every "see it live" lands on measured data rather than an
-  // empty state. Falls back to prose-only links when the catalogue is empty or unreachable.
-  let sample: string | null = null;
-  try {
-    const { videos } = await listVideos();
-    sample = (videos.find((video) => video.hasHls) ?? videos[0])?.routeId ?? null;
-  } catch {
-    sample = null;
-  }
-
-  const analysis = (section: string) =>
-    sample ? { href: `/${sample}/results#${section}`, label: "See it on a clip" } : undefined;
+export default async function MethodPage() {
+  // Links point at a real clip, so "see it on a clip" lands on measured data.
+  const sample = await listVideos()
+    .then(({ videos }) => (videos.find((video) => video.status === "ready") ?? videos[0])?.routeId)
+    .catch(() => undefined);
+  const onClip = (section: string) =>
+    sample ? (
+      <Link href={`/${sample}/results#${section}`} className="text-sm underline underline-offset-4">
+        See it on a clip
+      </Link>
+    ) : undefined;
 
   return (
     <PageShell title={METHOD_COPY.title} description={METHOD_COPY.description}>
-      <div className="grid gap-4 @min-[1400px]/page:grid-cols-2">
-        <Section title="Spatial and temporal information (SI / TI)" link={analysis("content")}>
-          <p>
-            Two numbers from ITU-T P.910 that describe how hard a clip is to encode before anything
-            encodes it. SI measures edge energy within a frame; TI measures how much changes between
-            consecutive frames. Live action tends to sit high on both — texture everywhere, camera
-            noise, constant motion.
-          </p>
-          <p>
-            Animation does not. Flat cel-shaded areas keep SI low, and frames held still keep TI
-            near zero. That gap is the entire premise: a ladder derived from live-action assumptions
-            will overpay for content that was never that expensive.
-          </p>
-        </Section>
-
-        <Section title='Duplicate frames ("on twos")' link={analysis("content")}>
-          <p>
-            Animation is frequently drawn on twos: each image is held for two frames, so half the
-            frames in a 24 fps stream are exact repeats of their predecessor. The encoder codes
-            those as near-free skipped frames, which is one reason animated content compresses far
-            better than its runtime suggests.
-          </p>
-          <p>
-            It falls out of the TI series for free — a duplicate frame has zero temporal information
-            — so it costs nothing extra to measure.
-          </p>
-        </Section>
-
-        <Section title="The bitrate ladder" link={analysis("ladder")}>
-          <p>
-            A ladder is the set of quality rungs a player can choose between: each is a resolution
-            paired with a bitrate. Generic ladders are fixed tables, identical for every title,
-            which is convenient and — for anything that compresses unusually well or unusually badly
-            — wrong.
-          </p>
-          <p>
-            This is the static baseline every measurement is compared against: the H.264 ladder from
-            Apple&apos;s HLS authoring specification, one rung per resolution. Apple offers it as
-            initial targets for typical content, to be adjusted to the content — the same six rungs
-            for every clip, regardless of what the clip contains:
-          </p>
-          <DataTable headers={["Rung", "Resolution", "Bitrate"]}>
-            {STATIC_LADDER.map((rung) => (
-              <DataRow key={rung.label}>
-                <DataCell>{rung.label}</DataCell>
-                <DataCell>{rung.resolution}</DataCell>
-                <DataCell last>{rung.bitrate}</DataCell>
-              </DataRow>
+      <div className="grid gap-10 xl:grid-cols-[15rem_minmax(0,1fr)]">
+        <nav aria-label="Sections" className="hidden xl:block">
+          <ol className="sticky top-20 space-y-1 border-l text-sm">
+            {SECTIONS.map((section) => (
+              <li key={section.id}>
+                <a
+                  href={`#${section.id}`}
+                  className="-ml-px block border-l border-transparent py-1 pl-3 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                >
+                  {section.title}
+                </a>
+              </li>
             ))}
-          </DataTable>
-          <p>
-            The other two ladders are derived per clip — same resolutions, but the bitrates come out
-            of measurement rather than a table, and a rung can be dropped entirely if a lower
-            resolution already beats it at that bitrate. All three are packaged and kept, so the
-            same source can be replayed on any of them without re-processing.
-          </p>
-        </Section>
+          </ol>
+        </nav>
 
-        <Section title="Convex hull and λ" link={analysis("ladder")}>
-          <p>
-            Each resolution has its own rate–quality curve, measured by encoding the clip at a sweep
-            of CRF values and scoring every result. Plotted against log-bitrate the curves are
-            concave: quality rises quickly, then saturates.
-          </p>
-          <HullDiagram />
-          <p>
-            λ is the primary control, and in log-rate space it has a directly readable meaning: keep
-            buying bits while doubling the bitrate still returns at least λ points of quality, and
-            stop once it does not. Driving selection off a fixed quality target instead inverts this
-            — on hard content the target is only reachable far past the point of diminishing
-            returns, and the ladder dutifully pays for it.
-          </p>
-          <p>
-            λ starts at 4 for every clip and moves for one reason only: to keep the top rung between
-            harmonic VMAF 88 and 95. If the top rung lands above 95, λ is raised onto the cheapest
-            measured sample that still reaches 95 — the grid is discrete, so that sample can sit a
-            little above it; if it lands below 88, λ is lowered until it clears 88, or until the top
-            resolution's best sample when it never gets there. Each ladder records which of these
-            applied.
-          </p>
-        </Section>
+        <div className="max-w-4xl">
+          <Section id="content" title="Content measures" actions={onClip("content")}>
+            <dl>
+              <Term name="SI and TI">
+                <p>
+                  Spatial and temporal information from ITU-T P.910, computed for every frame of the
+                  source. SI is the edge energy within a frame, TI the difference from the previous
+                  frame. The results report the mean and the population SD over all frames.
+                </p>
+              </Term>
+              <Term name="Duplicate frames">
+                <p>
+                  The share of frames with TI below 2: frames that repeat the one before, as in
+                  animation drawn on twos. The threshold sits just above the coding noise a held
+                  drawing still carries in a lossy master.
+                </p>
+              </Term>
+              <Term name="Source CAMBI">
+                <p>Banding already present in the source, before any encoding. 0 is none.</p>
+              </Term>
+            </dl>
+          </Section>
 
-        <Section title="Resolution crossovers" link={analysis("ladder")}>
-          <p>
-            Where the envelope hands over from one resolution to the next. Below its crossover a
-            resolution is simply the wrong choice: some lower resolution reaches the same or better
-            quality at the same bitrate, so shipping the higher one spends bits for nothing.
-          </p>
-          <p>
-            On a correctly built hull these need no search or interpolation — they are just the
-            points where consecutive vertices change resolution.
-          </p>
-        </Section>
+          <Section id="ladders" title="Ladders" actions={onClip("ladder")}>
+            <dl>
+              <Term name="Static">
+                <p>
+                  The H.264 ladder from Apple&apos;s HLS authoring specification, the same six rungs
+                  for every clip.
+                </p>
+                <DataTable
+                  head={
+                    <tr className="border-b border-foreground/20">
+                      <DataHead>Rung</DataHead>
+                      <DataHead>Resolution</DataHead>
+                      <DataHead numeric>Bitrate (Mb/s)</DataHead>
+                    </tr>
+                  }
+                >
+                  {STATIC_LADDER.map((rung) => (
+                    <DataRow key={rung.label}>
+                      <DataCell>{rung.label}</DataCell>
+                      <DataCell>{rung.resolution}</DataCell>
+                      <DataCell numeric last>
+                        {rung.bitrate}
+                      </DataCell>
+                    </DataRow>
+                  ))}
+                </DataTable>
+              </Term>
+              <Term name="Encode grid">
+                <p>
+                  The clip encoded at every resolution over a sweep of CRF values, each encode
+                  scored with VMAF against the source. The animation grid repeats it with{" "}
+                  <code className="font-mono text-xs">-tune animation</code>, which lowers
+                  deblocking and changes psy-RD for flat areas with hard edges.
+                </p>
+              </Term>
+              <Term name="Convex hull and λ">
+                <p>
+                  On log bitrate, the upper envelope of all resolutions&apos; curves. Every rung is
+                  taken where its resolution&apos;s hull has the same slope λ, in VMAF per doubling
+                  of bitrate. λ starts at 4 and moves only to keep the top rung between harmonic
+                  VMAF 88 and 95.
+                </p>
+                <HullDiagram />
+              </Term>
+              <Term name="Crossover">
+                <p>
+                  The bitrate where the envelope passes from one resolution to the next. Each rung
+                  stays between the crossovers either side of it.
+                </p>
+              </Term>
+              <Term name="Content-adaptive">
+                <p>Derived from the default grid, encoded as 2-pass VBR with maxrate 1.5×.</p>
+              </Term>
+              <Term name="Animation-optimised">
+                <p>
+                  Derived from both grids pooled, each rung free to take either setting, chosen on
+                  harmonic VMAF minus a CAMBI penalty so banding counts against a rung.
+                </p>
+              </Term>
+            </dl>
+          </Section>
 
-        <Section title="VMAF, VMAF-NEG and CAMBI" link={analysis("vmaf")}>
-          <p>
-            VMAF is a full-reference perceptual score fusing several elementary metrics. The
-            harmonic mean is used for decisions rather than the arithmetic one, because a short
-            badly-degraded passage is noticed far more than it is compensated by a long good one.
-          </p>
-          <p>
-            VMAF-NEG withholds credit for &quot;enhancement gain&quot; — sharpening or added
-            contrast that raises the score without restoring anything that was in the source. CAMBI
-            is different in kind: it is no-reference, and it detects banding on flat gradients, the
-            artifact animation is most prone to and that VMAF scarcely registers.
-          </p>
-          <p>
-            CAMBI enters ladder selection as a penalty rather than a threshold, because it is not
-            monotonic in CRF: banding grows as quantization coarsens, then falls again once the
-            gradients are destroyed entirely and replaced by blocking. A cutoff would reject a
-            middling encode while admitting a visibly worse one; subtracting it keeps the ordering
-            correct at every bitrate.
-          </p>
-        </Section>
+          <Section id="quality" title="Quality metrics" actions={onClip("vmaf")}>
+            <dl>
+              <Term name="VMAF">
+                <p>
+                  Full-reference score from 0 to 100 (model vmaf_v0.6.1). Ladders are derived and
+                  compared on the harmonic mean over frames, which weighs bad passages more than the
+                  arithmetic mean.
+                </p>
+              </Term>
+              <Term name="VMAF NEG">
+                <p>The no-enhancement-gain model: sharpening or added contrast earns no credit.</p>
+              </Term>
+              <Term name="CAMBI">
+                <p>No-reference banding detector, 0 is none. Higher is more visible banding.</p>
+              </Term>
+              <Term name="BD-rate and BD-VMAF">
+                <p>
+                  The mean difference between two rate–quality curves over the range where both are
+                  defined, fitted with Akima interpolation (PCHIP where Akima is not monotone).
+                  BD-rate is the bitrate change at equal quality, negative is a saving; BD-VMAF the
+                  quality change at equal bitrate.
+                </p>
+              </Term>
+              <Term name="Delivered VMAF">
+                <p>
+                  For a playback run, the harmonic VMAF of each rung played, weighted by how long it
+                  played. Steady state leaves out the first 6 s segment.
+                </p>
+              </Term>
+            </dl>
+          </Section>
 
-        <Section
-          title="HLS and DASH"
-          link={sample ? { href: `/${sample}`, label: "Try both" } : undefined}
-        >
-          <p>{getStreamingMethodDescription("hls")}</p>
-          <p>{getStreamingMethodDescription("dash")}</p>
-          <p>
-            Here they carry <em>identical encoded content</em> — the same ladders, the same
-            renditions, differing only in packaging and manifest. That is what makes any measured
-            difference between them attributable to delivery rather than to encoding, and what makes
-            it safe to pick whichever a given browser handles best.
-          </p>
-        </Section>
+          <Section id="delivery" title="Delivery and ABR">
+            <dl>
+              <Term name="HLS and DASH">
+                <p>
+                  Both carry the same encoded renditions of each ladder as fMP4 segments; they
+                  differ in packaging and manifest (.m3u8 against .mpd). HLS plays through hls.js,
+                  DASH through dash.js.
+                </p>
+              </Term>
+              <Term name="Progressive">
+                <p>The source file over HTTP range requests: one quality, no ladder.</p>
+              </Term>
+              <Term name="ABR rules">
+                <p>
+                  Implemented in this project and plugged into both players, so a rule behaves the
+                  same over HLS and DASH. Below 4 s of buffer the three adaptive rules drop to the
+                  bottom rung.
+                </p>
+                <DataTable headers={["Rule", "Decision"]}>
+                  {ABR_RULES.map((row) => (
+                    <DataRow key={row.rule}>
+                      <DataCell mono={false} className="font-medium whitespace-nowrap">
+                        {row.rule}
+                      </DataCell>
+                      <DataCell mono={false} last>
+                        {row.how}
+                      </DataCell>
+                    </DataRow>
+                  ))}
+                </DataTable>
+              </Term>
+            </dl>
+          </Section>
 
-        <Section
-          title="Adaptive bitrate algorithms"
-          link={sample ? { href: `/${sample}`, label: "Switch between them" } : undefined}
-        >
-          <p>
-            The rules are implemented in this project rather than taken from the players. Neither
-            library exposes a throughput-only or buffer-only mode, and their internals differ, so
-            selecting each one&apos;s built-in under a shared label would measure two different
-            algorithms and blame the difference on the protocol.
-          </p>
-          <DataTable headers={["Rule", "How it decides", "Player's own version"]}>
-            {ABR_ALGORITHMS.map((algorithm) => (
-              <DataRow key={algorithm}>
-                <DataCell mono={false} className="capitalize">
-                  {algorithm}
-                </DataCell>
-                <DataCell mono={false}>{getAbrDescription(algorithm)}</DataCell>
-                <DataCell mono={false} last className="text-muted-foreground">
-                  {getDashAbrDescription(algorithm)}
-                </DataCell>
-              </DataRow>
-            ))}
-          </DataTable>
-          <p>
-            Throughput gets its hysteresis from asymmetric safety factors — a rung must fit inside
-            90 % of the estimate to be switched up to, but is only abandoned once it no longer fits
-            inside 100 % — so a stream parked between the two thresholds stays put instead of
-            oscillating. Buffer follows BOLA-BASIC, where dividing by segment size favours cheap
-            rungs while the buffer is small and expensive ones once it fills. All three sit behind
-            the same panic rule: below four seconds of buffer, the bottom rung is forced regardless.
-          </p>
-        </Section>
+          <Section id="networks" title="Network profiles">
+            <p className="text-sm text-muted-foreground">
+              The server shapes every request of a run. Loss is emulated by its cost, an extra round
+              trip that holds back the data behind it, since a server cannot drop TCP segments.
+            </p>
+            <DataTable
+              head={
+                <tr className="border-b border-foreground/20">
+                  <DataHead>Profile</DataHead>
+                  <DataHead numeric>Rate (Mb/s)</DataHead>
+                  <DataHead numeric>Round trip</DataHead>
+                  <DataHead numeric>Loss</DataHead>
+                </tr>
+              }
+            >
+              {NETWORKS.map((row) => (
+                <DataRow key={row.profile}>
+                  <DataCell mono={false}>{NETWORK_PROFILE_SHORT[row.profile]}</DataCell>
+                  <DataCell numeric>{row.rate}</DataCell>
+                  <DataCell numeric>{row.rtt}</DataCell>
+                  <DataCell numeric last>
+                    {row.loss}
+                  </DataCell>
+                </DataRow>
+              ))}
+            </DataTable>
+            <p className="text-sm text-muted-foreground">
+              Variable:{" "}
+              {VARIABLE_NETWORK_SCHEDULE.map(
+                (phase) => `${NETWORK_PROFILE_SHORT[phase.profile]} from ${phase.fromMs / 1000} s`,
+              ).join(", ")}
+              , counted from the play request. Every run is repeated three times; tables show the
+              mean over the runs that started.
+            </p>
+          </Section>
 
-        <Section title="Your browser">
-          <p>
-            Best mode probes these capabilities and picks a protocol accordingly, rather than
-            hardcoding one. The answers below are from the browser you are reading this in. It also
-            starts differently from the measured profiles: it opens on the top rung and holds it
-            until the first segment is in, instead of starting from a fixed estimate that the panic
-            rule immediately overrides on an empty buffer.
-          </p>
-          <BrowserCapabilities />
-        </Section>
+          <Section id="browser" title="This browser">
+            <p className="text-sm text-muted-foreground">
+              Best mode picks the delivery from what the browser supports. It also starts on the top
+              rung until the first segment arrives, which the measured runs do not.
+            </p>
+            <BrowserCapabilities />
+          </Section>
+        </div>
       </div>
     </PageShell>
   );

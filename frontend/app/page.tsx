@@ -1,31 +1,47 @@
-import { VideoList } from "@/components/video-list";
-import { PageShell } from "@/components/page-shell";
-import { Separator } from "@/components/ui/separator";
 import { ErrorBanner } from "@/components/error-banner";
-import { HomeHero } from "@/components/home-hero";
-import { listVideos } from "@/lib/videoApi";
+import { PageShell } from "@/components/page-shell";
+import { VideoList, type ClipFigures } from "@/components/video-list";
+import { loadChapter5 } from "@/lib/results/loadChapter5";
 import { HOME_COPY } from "@/lib/siteCopy";
+import { listVideos, type VideoListItem } from "@/lib/videoApi";
+
+async function headlineFigures(): Promise<Record<string, ClipFigures>> {
+  // The figures are a bonus on the cards; the catalogue renders without them.
+  const report = await loadChapter5().catch(() => null);
+  if (!report) {
+    return {};
+  }
+  return Object.fromEntries(
+    report.content.map((row, index) => [
+      row.routeId,
+      {
+        tiMean: row.tiMean,
+        animationBdRate: report.ladders[index]?.ladders.animation?.bdRate ?? null,
+      },
+    ]),
+  );
+}
+
+async function catalogue(): Promise<{ videos: VideoListItem[]; error: string | null }> {
+  try {
+    return { videos: (await listVideos()).videos, error: null };
+  } catch (err) {
+    return {
+      videos: [],
+      error: err instanceof Error ? err.message : "The catalogue could not be loaded.",
+    };
+  }
+}
 
 export default async function Home() {
-  let videos = null;
-  let error: string | null = null;
-
-  try {
-    const data = await listVideos();
-    videos = data.videos;
-  } catch (err) {
-    error = err instanceof Error ? err.message : "Failed to load videos";
-  }
+  const [{ videos, error }, figures] = await Promise.all([catalogue(), headlineFigures()]);
 
   return (
     <PageShell title={HOME_COPY.title} description={HOME_COPY.description}>
-      <Separator className="mb-6" />
-      <HomeHero />
-      <h2 className="mb-4 text-xl font-semibold tracking-tight">Clips</h2>
       {error ? (
-        <ErrorBanner title="Failed to load videos" message={error} />
+        <ErrorBanner title="Catalogue unavailable" message={error} />
       ) : (
-        <VideoList videos={videos ?? []} />
+        <VideoList videos={videos} figures={figures} />
       )}
     </PageShell>
   );

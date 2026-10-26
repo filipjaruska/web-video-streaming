@@ -64,13 +64,14 @@ The defaults work for local development without editing either `.env.example`.
 
 ```
 frontend/              Next.js app (pnpm workspace member)
-  app/                 routes: catalogue, [video] player and analysis, results, concepts, editor
+  app/                 routes: catalogue, clip tabs (watch, results, benchmark, raw), results, method, upload
   components/          player, benchmark panel, shared UI
-  feature/             analysis, results, concepts and editor views
+  feature/             clip, results (chapter 5), upload timeline and method views
   hooks/               playback telemetry and the benchmark runner
   lib/abr/             ABR rules and the driver that applies them to hls.js and dash.js
   lib/benchmark/       benchmark matrix, metric definitions and types
-  tests/unit/          pure frontend logic: ABR rules, metrics, matrix, URLs, results rows, CSV
+  lib/results/         chapter 5 tables and graphs, reduced on the server
+  tests/unit/          pure frontend logic: ABR rules, metrics, matrix, URLs, chapter 5 rows, CSV
   tests/api/           the API as the frontend consumes it (contracts, goldens, upload end-to-end)
 backend/               ASP.NET Core API
   Api/                 controllers: videos, upload sessions, streaming, benchmarks, database

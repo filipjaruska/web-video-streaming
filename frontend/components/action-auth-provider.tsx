@@ -197,7 +197,7 @@ export function ActionAuthProvider({ children }: { children: ReactNode }) {
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting || !password}>
-                {isSubmitting ? "Checking..." : "Continue"}
+                {isSubmitting ? "Checking…" : "Continue"}
               </Button>
             </DialogFooter>
           </form>

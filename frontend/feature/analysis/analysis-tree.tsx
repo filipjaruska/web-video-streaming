@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { AnalysisTreeNode } from "@/lib/videoAnalysisApi";
 import { normalizeAnalysisTreeNodes } from "@/lib/analysisTree";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/status-badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
@@ -14,16 +14,7 @@ interface AnalysisTreeProps {
 }
 
 function statusBadge(status?: string) {
-  switch (status) {
-    case "running":
-      return <Badge variant="secondary">Running</Badge>;
-    case "failed":
-      return <Badge variant="destructive">Failed</Badge>;
-    case "pending":
-      return <Badge variant="outline">Pending</Badge>;
-    default:
-      return null;
-  }
+  return status && status !== "completed" ? <StatusBadge status={status} /> : null;
 }
 
 function AnalysisTreeNodeView({
@@ -85,11 +76,7 @@ export function AnalysisTree({ nodes, defaultOpen = false }: AnalysisTreeProps) 
   const normalizedNodes = useMemo(() => normalizeAnalysisTreeNodes(nodes), [nodes]);
 
   if (normalizedNodes.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No analysis data yet. Processing may still be running.
-      </p>
-    );
+    return <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>;
   }
 
   return (

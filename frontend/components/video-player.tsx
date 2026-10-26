@@ -342,7 +342,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   return (
     <div className="relative space-y-3">
-      {error && <ErrorBanner title="Playback Error" message={error} />}
+      {error && <ErrorBanner title="Playback failed" message={error} />}
       <MediaPlayer
         key={`${streamingMethod}:${transcodeId ?? "source"}:${abrAlgorithm}:${fastStart ? "fast" : "fixed"}:${runNonce}`}
         className="aspect-video w-full overflow-hidden rounded-md bg-black shadow-sm media-player"

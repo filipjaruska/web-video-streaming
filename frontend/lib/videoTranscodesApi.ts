@@ -77,26 +77,29 @@ function pickDeliveryForLadder(
         method: "hls",
         reason:
           capabilities.managedMediaSource && !capabilities.mediaSource
-            ? "HLS via hls.js — ManagedMediaSource"
-            : "HLS via hls.js — MSE available",
+            ? "HLS through hls.js, using ManagedMediaSource."
+            : "HLS through hls.js; this browser has Media Source Extensions.",
       };
     }
 
     if (item.hasHls && capabilities.nativeHls) {
-      return { method: "hls", reason: "HLS — native playback, no MSE available" };
+      return {
+        method: "hls",
+        reason: "HLS played natively; this browser has no Media Source Extensions.",
+      };
     }
 
     if (item.hasDash && capabilities.dash) {
-      return { method: "dash", reason: "DASH — MSE available, no native HLS" };
+      return { method: "dash", reason: "DASH through dash.js; this browser cannot play HLS." };
     }
   }
 
   if (item.hasHls) {
-    return { method: "hls", reason: "HLS — default, capabilities not probed" };
+    return { method: "hls", reason: "HLS by default; the browser has not been probed yet." };
   }
 
   if (item.hasDash) {
-    return { method: "dash", reason: "DASH — only packaging available" };
+    return { method: "dash", reason: "DASH, the only packaging of this ladder." };
   }
 
   return null;
@@ -140,6 +143,6 @@ export function pickBestPlaybackSettings(
     packagingRunId: SOURCE_RUN_ID,
     streamingMethod: "source",
     abrAlgorithm: "throughput",
-    reason: "Progressive HTTP Range — no packaged ladder available",
+    reason: "No ladder is packaged yet, so the source file plays over HTTP range requests.",
   };
 }

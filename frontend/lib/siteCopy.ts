@@ -1,14 +1,11 @@
 /**
- * Page titles and descriptions shared between a route and its loading skeleton.
- *
- * These pairs must match, or the skeleton flashes different copy than the page it stands in for.
- * They drifted once already — the home skeleton read "Video Streaming Demo Description" — so they
- * live in one place now.
+ * Page titles and descriptions shared between a route and its loading skeleton, so the skeleton
+ * never shows different copy from the page it stands in for.
  */
 export const HOME_COPY = {
-  title: "Adaptive streaming for animated content",
+  title: "Clips",
   description:
-    "A measurement harness for per-clip bitrate ladders: three packaging runs over the same source, delivered over HLS and DASH under interchangeable ABR rules.",
+    "Animated clips, each packaged as a static, a content-adaptive and an animation-optimised ladder and played over HLS and DASH.",
 } as const;
 
 export const RESULTS_COPY = {

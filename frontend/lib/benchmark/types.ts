@@ -10,11 +10,6 @@ export type NetworkProfile = "standard" | "fourG" | "threeG" | "variable";
 /** A profile with one fixed shape; the variable one moves between these over time. */
 export type ShapedProfile = Exclude<NetworkProfile, "variable">;
 
-/**
- * Shown in the UI, in megabits per second like every other rate in the app. Loss is emulated by its
- * cost — a lost packet crosses the link twice and holds back the data behind it for one round trip,
- * while the link keeps sending — since a server cannot drop a TCP segment.
- */
 /** Column and row headings, where the full description would not fit. */
 export const NETWORK_PROFILE_SHORT: Record<NetworkProfile, string> = {
   standard: "Standard",
@@ -23,6 +18,11 @@ export const NETWORK_PROFILE_SHORT: Record<NetworkProfile, string> = {
   variable: "Variable",
 };
 
+/**
+ * Shown in the UI, in megabits per second like every other rate in the app. Loss is emulated by its
+ * cost — a lost packet crosses the link twice and holds back the data behind it for one round trip,
+ * while the link keeps sending — since a server cannot drop a TCP segment.
+ */
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
   standard: "Standard (unshaped)",
   fourG: "4G: 20 Mb/s, 40 ms, 1 % loss",
