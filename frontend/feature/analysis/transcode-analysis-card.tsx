@@ -9,9 +9,8 @@ import type {
 } from "@/lib/videoAnalysisApi";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
-import { formatTargetStatus } from "@/lib/analysisLabels";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBadge } from "@/components/status-badge";
+import { ladderLongLabel } from "@/lib/analysisFormat";
 import {
   Select,
   SelectContent,
@@ -28,18 +27,7 @@ interface TranscodeAnalysisCardProps {
 }
 
 function sectionStatusBadge(status?: AnalysisSectionStatus) {
-  switch (status) {
-    case "running":
-      return <Badge variant="secondary">Running</Badge>;
-    case "failed":
-      return <Badge variant="destructive">Failed</Badge>;
-    case "pending":
-      return <Badge variant="outline">Pending</Badge>;
-    case "completed":
-      return <Badge variant="outline">Completed</Badge>;
-    default:
-      return null;
-  }
+  return status ? <StatusBadge status={status} /> : null;
 }
 
 function labelHeight(label: string) {
@@ -95,8 +83,8 @@ function FormatSitiCharts({
       {activeSeries && (
         <SitiChart
           data={activeSeries}
-          title={`${formatLabel} · ${active} SI/TI`}
-          description={`Spatial and temporal information (ITU-T P.910) for the ${active} ${formatLabel} rendition.`}
+          title={`${formatLabel} ${active}: SI and TI over time`}
+          note={`ITU-T P.910, per frame of the ${active} rendition.`}
           videoSrc={videoSrc}
           videoLabel="Scene reference (HLS 360p)"
         />
@@ -118,7 +106,7 @@ function FormatBox({
   const hasSiti = !!sitiByRendition && Object.keys(sitiByRendition).length > 0;
 
   return (
-    <div className="rounded-md border">
+    <div className="rounded-sm border">
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <h4 className="text-sm font-medium">{section.label}</h4>
         {sectionStatusBadge(section.meta?.status)}
@@ -130,9 +118,7 @@ function FormatBox({
         {hasTree ? (
           <AnalysisTree nodes={section.children!} defaultOpen />
         ) : (
-          !section.meta?.error && (
-            <p className="text-sm text-muted-foreground">No analysis data for this format yet.</p>
-          )
+          !section.meta?.error && <p className="text-sm text-muted-foreground">Not probed yet.</p>
         )}
         {hasSiti && (
           <FormatSitiCharts
@@ -169,23 +155,16 @@ export function TranscodeAnalysisCard({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">
-              Transcode {transcodeNumber}
-              {isActive ? " · active" : ""}
-            </CardTitle>
-            <CardDescription>
-              {createdLabel}. Probe metadata and per-format SI/TI from the packaged HLS and DASH
-              outputs.
-            </CardDescription>
-          </div>
-          <Badge variant="outline">{formatTargetStatus(target.status)}</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h3 className="font-medium">
+          {target.ladderKind ? ladderLongLabel(target.ladderKind) : `Run ${transcodeNumber}`}
+          {isActive ? " (active)" : ""}
+          <span className="ml-2 text-sm font-normal text-muted-foreground">{createdLabel}</span>
+        </h3>
+        <StatusBadge status={target.status} />
+      </div>
+      <div className="space-y-3">
         {boxes.length > 0 ? (
           boxes.map(({ section, siti }) => (
             <FormatBox
@@ -196,11 +175,9 @@ export function TranscodeAnalysisCard({
             />
           ))
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No HLS/DASH analysis for this packaging run.
-          </p>
+          <p className="text-sm text-muted-foreground">No HLS or DASH probe for this run.</p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

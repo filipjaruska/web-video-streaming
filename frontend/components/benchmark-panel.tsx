@@ -1,8 +1,12 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -10,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+
 import { useActionAuth } from "@/components/action-auth-provider";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { slugFilename } from "@/lib/csvExport";
@@ -34,6 +38,7 @@ import {
   NETWORK_PROFILE_CSV_IDS,
   NETWORK_PROFILE_LABELS,
   NETWORK_PROFILE_RATE_BPS,
+  NETWORK_PROFILE_SHORT,
   exceedsProfileRate,
   type BenchmarkLadder,
   type BenchmarkRunResult,
@@ -150,13 +155,11 @@ function Check({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs has-disabled:cursor-not-allowed has-disabled:opacity-60">
-      <input
-        type="checkbox"
-        className="size-3.5 accent-primary"
+    <label className="inline-flex cursor-pointer items-center gap-2 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-60">
+      <Checkbox
         checked={checked}
         disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
+        onCheckedChange={(value) => onChange(value === true)}
       />
       {label}
     </label>
@@ -167,7 +170,7 @@ function CheckGroup({ label, children }: { label: string; children: ReactNode })
   return (
     <div className="space-y-1.5">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5">{children}</div>
+      <div className="flex flex-col gap-1.5">{children}</div>
     </div>
   );
 }
@@ -253,321 +256,276 @@ export function BenchmarkPanel({
   const locked = progress.running;
 
   return (
-    <Card>
-      <CardHeader className="border-b py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
-            <CardTitle className="text-base">Playback benchmark</CardTitle>
-            <CardDescription>
-              Plays every chosen protocol and ABR rule against every chosen ladder, three times
-              each, and records startup, session time, buffering, switching and which resolution was
-              on screen for how much of the clip — weighted by each rung&apos;s measured VMAF into
-              the quality actually delivered. Every run requests its files under a fresh URL, so
-              nothing is served from the browser cache. The network profile is applied by the server
-              to every request of a run — bandwidth, round-trip delay and packet loss — and the
-              variable one switches 4G → 3G → 4G on its own, mid-download included. The throughput
-              column shows what the link actually delivered.
-            </CardDescription>
-          </div>
-          {results.length > 0 && (
-            <ExportCsvButton
-              filename={slugFilename(["benchmark", profile])}
-              headers={[
-                "network_profile",
-                "ladder",
-                "protocol",
-                "algorithm",
-                "repetition",
-                "startup_ms",
-                "session_ms",
-                "buffering_ratio",
-                "rebuffer_count",
-                "rebuffer_ms",
-                "avg_buffer_sec",
-                "quality_switches",
-                "oscillations",
-                "time_weighted_bitrate_bps",
-                "avg_throughput_bps",
-                "dropped_frame_ratio",
-                "top_rung_share",
-                "time_weighted_vmaf",
-                "resolution_share",
-                "recovery_ms",
-                "error",
-              ]}
-              rows={exportRows}
-            />
-          )}
+    <section className="space-y-5 rounded-md border p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-3xl space-y-1">
+          <h2 className="font-semibold">Playback benchmark</h2>
+          <p className="text-sm text-muted-foreground">
+            Plays every chosen combination three times under one network profile and saves startup,
+            buffering, switching and the delivered quality. Files are requested under fresh URLs, so
+            nothing comes from the browser cache. The server shapes every request of a run.
+          </p>
         </div>
-      </CardHeader>
+        {results.length > 0 && (
+          <ExportCsvButton
+            filename={slugFilename(["benchmark", profile])}
+            headers={[
+              "network_profile",
+              "ladder",
+              "protocol",
+              "algorithm",
+              "repetition",
+              "startup_ms",
+              "session_ms",
+              "buffering_ratio",
+              "rebuffer_count",
+              "rebuffer_ms",
+              "avg_buffer_sec",
+              "quality_switches",
+              "oscillations",
+              "time_weighted_bitrate_bps",
+              "avg_throughput_bps",
+              "dropped_frame_ratio",
+              "top_rung_share",
+              "time_weighted_vmaf",
+              "resolution_share",
+              "recovery_ms",
+              "error",
+            ]}
+            rows={exportRows}
+          />
+        )}
+      </div>
 
-      <CardContent className="space-y-4 pt-4">
-        <div className="grid gap-4 rounded-md border bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-4">
-          <CheckGroup label="Ladders">
-            {ladders.length === 0 ? (
-              <span className="text-xs text-muted-foreground">No packaged ladder yet</span>
-            ) : (
-              ladders.map((ladder) => (
-                <Check
-                  key={ladder.transcodeId}
-                  label={ladderLabel(ladder.ladderKind)}
-                  checked={!excludedLadders.has(ladder.transcodeId)}
-                  disabled={locked}
-                  onChange={(on) =>
-                    setExcludedLadders((current) => toggled(current, ladder.transcodeId, !on))
-                  }
-                />
-              ))
-            )}
-          </CheckGroup>
-          <CheckGroup label="Protocols">
-            {BENCHMARK_PROTOCOLS.map((protocol) => (
-              <Check
-                key={protocol}
-                label={protocol.toUpperCase()}
-                checked={protocols.has(protocol)}
-                disabled={locked}
-                onChange={(on) => setProtocols((current) => toggled(current, protocol, on))}
-              />
-            ))}
-          </CheckGroup>
-          <CheckGroup label="ABR rules">
-            {BENCHMARK_ALGORITHMS.map((algorithm) => (
-              <Check
-                key={algorithm}
-                label={algorithmLabel(algorithm)}
-                checked={algorithms.has(algorithm)}
-                disabled={locked}
-                onChange={(on) => setAlgorithms((current) => toggled(current, algorithm, on))}
-              />
-            ))}
-          </CheckGroup>
-          <CheckGroup label="Reference">
-            <Check
-              label="Source · HTTP Range"
-              checked={includeSource}
-              disabled={locked}
-              onChange={setIncludeSource}
-            />
-          </CheckGroup>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-56 space-y-1.5">
-            <label className="text-xs text-muted-foreground">Network profile</label>
-            <Select
-              value={profile}
-              onValueChange={(value) => setProfile(value as NetworkProfile)}
-              disabled={locked}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROFILES.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {NETWORK_PROFILE_LABELS[item]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {progress.running ? (
-            <Button variant="destructive" onClick={onCancel}>
-              Cancel
-            </Button>
+      <div className="grid gap-5 border-y py-4 sm:grid-cols-2 lg:grid-cols-4">
+        <CheckGroup label="Ladders">
+          {ladders.length === 0 ? (
+            <span className="text-xs text-muted-foreground">No packaged ladder yet</span>
           ) : (
-            <Button onClick={handleStart} disabled={disabled || cellCount === 0}>
-              Run benchmark
-            </Button>
+            ladders.map((ladder) => (
+              <Check
+                key={ladder.transcodeId}
+                label={ladderLabel(ladder.ladderKind)}
+                checked={!excludedLadders.has(ladder.transcodeId)}
+                disabled={locked}
+                onChange={(on) =>
+                  setExcludedLadders((current) => toggled(current, ladder.transcodeId, !on))
+                }
+              />
+            ))
           )}
+        </CheckGroup>
+        <CheckGroup label="Protocols">
+          {BENCHMARK_PROTOCOLS.map((protocol) => (
+            <Check
+              key={protocol}
+              label={protocol.toUpperCase()}
+              checked={protocols.has(protocol)}
+              disabled={locked}
+              onChange={(on) => setProtocols((current) => toggled(current, protocol, on))}
+            />
+          ))}
+        </CheckGroup>
+        <CheckGroup label="ABR rules">
+          {BENCHMARK_ALGORITHMS.map((algorithm) => (
+            <Check
+              key={algorithm}
+              label={algorithmLabel(algorithm)}
+              checked={algorithms.has(algorithm)}
+              disabled={locked}
+              onChange={(on) => setAlgorithms((current) => toggled(current, algorithm, on))}
+            />
+          ))}
+        </CheckGroup>
+        <CheckGroup label="Reference">
+          <Check
+            label="Source file over HTTP range"
+            checked={includeSource}
+            disabled={locked}
+            onChange={setIncludeSource}
+          />
+        </CheckGroup>
+      </div>
 
-          {!progress.running && (
-            <span className="pb-2 text-xs text-muted-foreground">
-              {cellCount} configuration{cellCount === 1 ? "" : "s"} × {BENCHMARK_REPETITIONS}{" "}
-              repetitions = {cellCount * BENCHMARK_REPETITIONS} runs
-            </span>
-          )}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-64 space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Network profile</Label>
+          <Select
+            value={profile}
+            onValueChange={(value) => setProfile(value as NetworkProfile)}
+            disabled={locked}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PROFILES.map((item) => (
+                <SelectItem key={item} value={item}>
+                  {NETWORK_PROFILE_LABELS[item]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        {progress.running && (
-          <div className="space-y-1 text-sm">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">
-                Cell {progress.cellIndex}/{progress.cellCount}
-              </Badge>
-              <span className="font-mono text-xs">{progress.cellLabel}</span>
-              <span className="text-muted-foreground text-xs">
-                repetition {progress.repetition}/{progress.repetitions}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Leave this tab focused. Browsers throttle timers and media in background tabs, which
-              would be recorded as rebuffering that never happened.
-            </p>
-          </div>
+        {progress.running ? (
+          <Button variant="destructive" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Button onClick={handleStart} disabled={disabled || cellCount === 0}>
+            Run benchmark
+          </Button>
         )}
 
-        {mismatched.length > 0 && (
-          <div className="space-y-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-            <p className="font-medium">
-              The link was faster than the network profile these runs are recorded under, so they do
-              not describe that network.
-            </p>
-            <ul className="space-y-0.5 pl-4 font-mono">
-              {mismatched.map((row) => (
-                <li key={row.key}>
-                  {NETWORK_PROFILE_LABELS[row.profile]} · {ladderLabel(row.ladderKind)} ·{" "}
-                  {row.label}: measured {mbps(row.throughput.mean)}, declared{" "}
-                  {mbps(NETWORK_PROFILE_RATE_BPS[row.profile] ?? 0)}
-                </li>
-              ))}
-            </ul>
-            <p className="text-muted-foreground">
-              The server applies the profile, so the shaping did not happen — check that the backend
-              these runs went to has been deployed with network shaping.
-            </p>
-          </div>
+        {!progress.running && (
+          <span className="pb-2 text-xs text-muted-foreground tabular">
+            {cellCount} combination{cellCount === 1 ? "" : "s"} × {BENCHMARK_REPETITIONS} ={" "}
+            {cellCount * BENCHMARK_REPETITIONS} runs
+          </span>
         )}
+      </div>
 
-        {failures.length > 0 && (
-          <div className="space-y-2">
-            <Badge variant="destructive">
-              {failures.length} run{failures.length === 1 ? "" : "s"} failed — excluded from the
-              means below
-            </Badge>
-            <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer select-none">Show failures</summary>
-              <ul className="mt-1.5 space-y-1 pl-4">
-                {failures.map((failure, index) => (
-                  <li
-                    key={`${describeCellFull(failure.cell, failure.networkProfile)}:${failure.repetition}:${index}`}
-                  >
-                    <span className="font-mono">
-                      {NETWORK_PROFILE_LABELS[failure.networkProfile]} ·{" "}
-                      {ladderLabel(failure.cell.ladderKind)} · {describeCell(failure.cell)} · rep{" "}
-                      {failure.repetition}
-                    </span>{" "}
-                    — {failure.errorMessage ?? "failed"}
-                  </li>
-                ))}
-              </ul>
-            </details>
+      {progress.running && (
+        <div className="space-y-2 rounded-sm bg-muted/50 p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <StatusBadge status="running" />
+            <span className="tabular">
+              {progress.cellIndex} of {progress.cellCount}
+            </span>
+            <span className="font-mono text-xs">{progress.cellLabel}</span>
+            <span className="text-xs text-muted-foreground">
+              repetition {progress.repetition} of {progress.repetitions}
+            </span>
           </div>
-        )}
+          <Progress
+            value={
+              progress.cellCount > 0
+                ? ((progress.cellIndex - 1 + (progress.repetition - 1) / progress.repetitions) /
+                    progress.cellCount) *
+                  100
+                : 0
+            }
+            className="h-1"
+          />
+          <p className="text-xs text-muted-foreground">
+            Keep this tab in front. Browsers throttle background tabs, which would be recorded as
+            stalls that never happened.
+          </p>
+        </div>
+      )}
 
-        {rows.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b text-muted-foreground">
-                  <th className="py-2 pr-3 font-medium">Network</th>
-                  <th className="py-2 pr-3 font-medium">Ladder</th>
-                  <th className="py-2 pr-3 font-medium">Configuration</th>
-                  <th className="py-2 pr-3 font-medium">Runs</th>
-                  <th className="py-2 pr-3 font-medium">Startup (ms)</th>
-                  <th
-                    className="py-2 pr-3 font-medium"
-                    title="Play request to the end of the clip, stalls included"
+      {mismatched.length > 0 && (
+        <div className="space-y-1.5 rounded-sm border border-warning/40 bg-warning/10 p-3 text-xs">
+          <p className="font-medium">
+            The link was faster than the profile these runs are saved under, so the shaping did not
+            apply. Check that the backend is deployed with network shaping.
+          </p>
+          <ul className="space-y-0.5 pl-4 font-mono">
+            {mismatched.map((row) => (
+              <li key={row.key}>
+                {NETWORK_PROFILE_SHORT[row.profile]} · {ladderLabel(row.ladderKind)} · {row.label}:
+                measured {mbps(row.throughput.mean)}, profile{" "}
+                {mbps(NETWORK_PROFILE_RATE_BPS[row.profile] ?? 0)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {failures.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-destructive select-none">
+            {failures.length} run{failures.length === 1 ? "" : "s"} failed and{" "}
+            {failures.length === 1 ? "is" : "are"} left out of the means
+          </summary>
+          <ul className="mt-1.5 space-y-1 pl-4 text-muted-foreground">
+            {failures.map((failure, index) => (
+              <li
+                key={`${describeCellFull(failure.cell, failure.networkProfile)}:${failure.repetition}:${index}`}
+              >
+                <span className="font-mono">
+                  {NETWORK_PROFILE_SHORT[failure.networkProfile]} ·{" "}
+                  {ladderLabel(failure.cell.ladderKind)} · {describeCell(failure.cell)} · repetition{" "}
+                  {failure.repetition}
+                </span>
+                : {failure.errorMessage ?? "failed"}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {rows.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">This session</h3>
+          <DataTable
+            head={
+              <tr className="border-b border-foreground/20">
+                <DataHead>Network</DataHead>
+                <DataHead>Ladder</DataHead>
+                <DataHead>Combination</DataHead>
+                <DataHead numeric>Runs</DataHead>
+                <DataHead numeric>Startup (ms)</DataHead>
+                <DataHead numeric>Session (s)</DataHead>
+                <DataHead numeric>Buffering</DataHead>
+                <DataHead numeric>Mean buffer (s)</DataHead>
+                <DataHead numeric>Switches</DataHead>
+                <DataHead numeric>Top rung</DataHead>
+                <DataHead numeric>VMAF</DataHead>
+                <DataHead numeric>Bitrate</DataHead>
+                <DataHead numeric>Throughput</DataHead>
+                <DataHead numeric>Dropped</DataHead>
+                <DataHead>Resolutions</DataHead>
+              </tr>
+            }
+          >
+            {rows.map((row) => {
+              const tooFast = exceedsProfileRate(row.profile, row.throughput.mean);
+              return (
+                <DataRow key={row.key}>
+                  <DataCell mono={false}>{NETWORK_PROFILE_SHORT[row.profile]}</DataCell>
+                  <DataCell mono={false}>{ladderLabel(row.ladderKind)}</DataCell>
+                  <DataCell>{row.label}</DataCell>
+                  <DataCell numeric>{row.runs}</DataCell>
+                  <DataCell numeric>
+                    {row.startup.mean.toFixed(0)} ± {row.startup.stdDev.toFixed(0)}
+                  </DataCell>
+                  <DataCell numeric>
+                    {(row.session.mean / 1000).toFixed(1)} ±{" "}
+                    {(row.session.stdDev / 1000).toFixed(1)}
+                  </DataCell>
+                  <DataCell numeric>{(row.buffering.mean * 100).toFixed(2)} %</DataCell>
+                  <DataCell numeric>{row.avgBuffer.mean.toFixed(1)}</DataCell>
+                  <DataCell numeric>
+                    {row.switches.mean.toFixed(1)} ± {row.switches.stdDev.toFixed(1)}
+                  </DataCell>
+                  <DataCell numeric>
+                    {row.top ? `${(row.top.mean * 100).toFixed(0)} %` : "—"}
+                  </DataCell>
+                  <DataCell numeric>
+                    {row.vmaf ? `${row.vmaf.mean.toFixed(2)} ± ${row.vmaf.stdDev.toFixed(2)}` : "—"}
+                  </DataCell>
+                  <DataCell numeric>{mbps(row.bitrate.mean)}</DataCell>
+                  <DataCell
+                    numeric
+                    className={tooFast ? "font-semibold text-warning" : undefined}
+                    title={
+                      tooFast
+                        ? `Above the profile's ${mbps(NETWORK_PROFILE_RATE_BPS[row.profile] ?? 0)}: shaping did not apply`
+                        : undefined
+                    }
                   >
-                    Session (s)
-                  </th>
-                  <th className="py-2 pr-3 font-medium">Buffering ratio</th>
-                  <th className="py-2 pr-3 font-medium" title="Mean forward buffer while playing">
-                    Avg buffer (s)
-                  </th>
-                  <th className="py-2 pr-3 font-medium">Switches</th>
-                  <th
-                    className="py-2 pr-3 font-medium"
-                    title="Share of played time at the ladder's top rung"
-                  >
-                    Top rung
-                  </th>
-                  <th
-                    className="py-2 pr-3 font-medium"
-                    title="Each played rung's measured harmonic VMAF, weighted by its share of played time"
-                  >
-                    Delivered VMAF
-                  </th>
-                  <th
-                    className="py-2 pr-3 font-medium"
-                    title="Measured average video bitrate of the rungs played, weighted by time (source: the file's average bitrate)"
-                  >
-                    Avg bitrate
-                  </th>
-                  <th
-                    className="py-2 pr-3 font-medium"
-                    title="The player's own throughput estimate, averaged — what the link actually delivered"
-                  >
-                    Throughput
-                  </th>
-                  <th className="py-2 pr-3 font-medium">Dropped frames</th>
-                  <th className="py-2 font-medium">Resolution mix</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.key} className="border-b border-border/50 last:border-b-0">
-                    <td className="py-1.5 pr-3 text-xs">{NETWORK_PROFILE_LABELS[row.profile]}</td>
-                    <td className="py-1.5 pr-3 text-xs">{ladderLabel(row.ladderKind)}</td>
-                    <td className="py-1.5 pr-3 font-mono text-xs">{row.label}</td>
-                    <td className="py-1.5 pr-3 font-mono text-xs">{row.runs}</td>
-                    <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {row.startup.mean.toFixed(0)} ± {row.startup.stdDev.toFixed(0)}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {(row.session.mean / 1000).toFixed(1)} ±{" "}
-                      {(row.session.stdDev / 1000).toFixed(1)}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {(row.buffering.mean * 100).toFixed(2)} % ±{" "}
-                      {(row.buffering.stdDev * 100).toFixed(2)}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs">
-                      {row.avgBuffer.mean.toFixed(1)}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {row.switches.mean.toFixed(1)} ± {row.switches.stdDev.toFixed(1)}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs">
-                      {row.top ? `${(row.top.mean * 100).toFixed(0)} %` : "—"}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {row.vmaf
-                        ? `${row.vmaf.mean.toFixed(2)} ± ${row.vmaf.stdDev.toFixed(2)}`
-                        : "—"}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs whitespace-nowrap">
-                      {mbps(row.bitrate.mean)}
-                    </td>
-                    <td
-                      className={
-                        exceedsProfileRate(row.profile, row.throughput.mean)
-                          ? "py-1.5 pr-3 font-mono text-xs whitespace-nowrap font-semibold text-amber-600 dark:text-amber-400"
-                          : "py-1.5 pr-3 font-mono text-xs whitespace-nowrap"
-                      }
-                      title={
-                        exceedsProfileRate(row.profile, row.throughput.mean)
-                          ? `Above the declared ${mbps(NETWORK_PROFILE_RATE_BPS[row.profile] ?? 0)} — network shaping did not apply`
-                          : undefined
-                      }
-                    >
-                      {row.throughput.mean > 0 ? mbps(row.throughput.mean) : "—"}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs">
-                      {(row.dropped.mean * 100).toFixed(2)} %
-                    </td>
-                    <td className="py-1.5 font-mono text-xs whitespace-nowrap">
-                      {describeResolutionShare(row.mix)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                    {row.throughput.mean > 0 ? mbps(row.throughput.mean) : "—"}
+                  </DataCell>
+                  <DataCell numeric>{(row.dropped.mean * 100).toFixed(2)} %</DataCell>
+                  <DataCell last>{describeResolutionShare(row.mix)}</DataCell>
+                </DataRow>
+              );
+            })}
+          </DataTable>
+        </div>
+      )}
+    </section>
   );
 }

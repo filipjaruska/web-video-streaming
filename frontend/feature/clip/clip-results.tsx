@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { ErrorBanner } from "@/components/error-banner";
@@ -14,8 +14,8 @@ import { RdScatterChart } from "@/feature/analysis/rd-scatter-chart";
 import { SitiChart } from "@/feature/analysis/siti-chart";
 import { TuningComparisonCard } from "@/feature/analysis/tuning-comparison-card";
 import { useVideoAnalysis } from "@/hooks/useVideoAnalysis";
-import { useVideoTranscodes } from "@/hooks/useVideoTranscodes";
 import { pickSourceTarget, pickStaticTranscode } from "@/lib/analysisTargets";
+import type { Chapter5Report } from "@/lib/results/chapter5";
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { getPublicApiUrl } from "@/lib/env";
 import { getHlsVariantUrl } from "@/lib/streamingLabels";
@@ -27,6 +27,7 @@ export const CLIP_RESULT_SECTIONS = [
   { id: "ladder", title: "Ladders" },
   { id: "tuning", title: "Codec tuning" },
   { id: "vmaf", title: "Packaged quality" },
+  { id: "playback", title: "Playback" },
   { id: "cost", title: "Pipeline cost" },
 ] as const;
 
@@ -50,9 +51,18 @@ function SectionIndex() {
 }
 
 /** One clip's results, in the order of its appendix in the thesis. */
-export function ClipResults({ routeId }: { routeId: string }) {
+export function ClipResults({
+  routeId,
+  report,
+  playback,
+}: {
+  routeId: string;
+  /** This clip's chapter 5 rows, reduced on the server. */
+  report: Chapter5Report | null;
+  /** The playback tables, rendered on the server from the same report. */
+  playback: ReactNode;
+}) {
   const { data, error, loading, isPolling } = useVideoAnalysis(routeId);
-  const { transcodes } = useVideoTranscodes(routeId);
 
   const targets = useMemo(() => data?.targets ?? [], [data]);
   const source = pickSourceTarget(targets);
@@ -85,6 +95,8 @@ export function ClipResults({ routeId }: { routeId: string }) {
   // Default-setting samples taken while refining the pooled ladder count towards the grid's cost
   // but are not the tune, so the animation scatter leaves them out.
   const tunedSamples = animationGrid.filter((point) => point.setting !== "default");
+  const achievedPoints = (kind: string) =>
+    series?.ladderComparison?.ladders.find((entry) => entry.ladderKind === kind)?.points;
 
   return (
     <div className="grid gap-10 xl:grid-cols-[11rem_minmax(0,1fr)]">
@@ -104,8 +116,9 @@ export function ClipResults({ routeId }: { routeId: string }) {
                 <SitiChart
                   data={source.series.siti}
                   stats={sitiNode}
+                  showStats={false}
                   videoSrc={previewSrc}
-                  videoLabel="Preview (HLS 360p)"
+                  videoLabel="HLS 360p"
                 />
               )}
             </>
@@ -114,31 +127,38 @@ export function ClipResults({ routeId }: { routeId: string }) {
           )}
         </Section>
 
-        <Section id="ladder" title="Ladders">
-          <LadderComparisonCard comparison={series?.ladderComparison} />
+        <Section
+          id="ladder"
+          title="Ladders"
+          description="Each derived ladder from its encode grid, rung by rung, then both against the static ladder."
+        >
           {encodeGrid.length > 0 || series?.derivedLadder ? (
             <>
               <RdScatterChart
                 encodeGrid={encodeGrid}
                 derivedLadder={series?.derivedLadder}
                 crossoverBps={series?.derivedLadder?.crossoverBps}
+                title="Default grid with the content-adaptive rungs"
               />
               <DerivedLadderTable
                 ladder={series?.derivedLadder}
-                caption="Content-adaptive ladder: hull operating points, encoded as 2-pass VBR targets with maxrate 1.5×."
+                title="Content-adaptive ladder"
+                achieved={achievedPoints("dynamic")}
               />
               {tunedSamples.length > 0 && (
                 <RdScatterChart
                   encodeGrid={tunedSamples}
                   derivedLadder={series?.animationLadder}
                   crossoverBps={series?.animationLadder?.crossoverBps}
-                  title="Rate–distortion, animation grid"
+                  title="Animation grid with the animation-optimised rungs"
+                  note="Each dot is one resolution × CRF encode with -tune animation. Rungs may come from either grid; stars sit at their predicted quality."
                 />
               )}
               <DerivedLadderTable
                 ladder={series?.animationLadder}
+                title="Animation-optimised ladder"
+                achieved={achievedPoints("animation")}
                 sensitivity={series?.animationLadderSensitivity}
-                caption="Animation-optimised ladder: both grids pooled, each rung free to take either setting, banding penalised in the selection."
               />
             </>
           ) : (
@@ -146,20 +166,25 @@ export function ClipResults({ routeId }: { routeId: string }) {
               The grid runs after the static ladder is packaged.
             </EmptyState>
           )}
+          <LadderComparisonCard comparison={series?.ladderComparison} />
         </Section>
 
         <Section id="tuning" title="Codec tuning">
-          <TuningComparisonCard tuning={series?.tuningComparison} />
+          <TuningComparisonCard tuning={series?.tuningComparison} byCrf={report?.tuningByCrf[0]} />
         </Section>
 
         <Section id="vmaf" title="Packaged quality">
-          <PackagedVmaf targets={targets} />
+          <PackagedVmaf targets={targets} durationSec={durationSec} />
+        </Section>
+
+        <Section id="playback" title="Playback">
+          {playback ?? <EmptyState title="Playback results unavailable" />}
         </Section>
 
         <Section id="cost" title="Pipeline cost">
           <PipelineCostCard
-            transcodes={transcodes}
-            gridSizes={{ generic: encodeGrid.length, animation: animationGrid.length }}
+            timings={source?.series.stageTimings}
+            overhead={report?.overhead[0]}
             sourceDurationSec={durationSec}
           />
         </Section>

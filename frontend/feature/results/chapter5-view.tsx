@@ -7,7 +7,7 @@ import { Section } from "@/components/section";
 import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
 import { Hint } from "@/components/ui/tooltip";
 import { ladderLabel } from "@/lib/analysisFormat";
-import { NETWORK_PROFILE_CSV_IDS, type NetworkProfile } from "@/lib/benchmark/types";
+import { NETWORK_PROFILE_CSV_IDS, NETWORK_PROFILE_SHORT } from "@/lib/benchmark/types";
 import {
   HEIGHTS,
   PROFILES,
@@ -20,13 +20,6 @@ import {
 import { clipName, fixed, multiple, pair, percent, signed, small } from "@/lib/results/format";
 
 import { SavingsChart, SiTiPlaneChart, SteadyStateChart, TuningByCrfChart } from "./results-charts";
-
-const PROFILE_LABEL: Record<NetworkProfile, string> = {
-  standard: "Standard",
-  fourG: "4G",
-  threeG: "3G",
-  variable: "Variable",
-};
 
 export const RESULT_SECTIONS = [
   { id: "content", number: "5.1.1", title: "Content characteristics" },
@@ -213,7 +206,7 @@ function ContentSection({ report }: { report: Chapter5Report }) {
               <DataHead>Clip</DataHead>
               {PROFILES.map((profile) => (
                 <DataHead key={profile} numeric>
-                  {PROFILE_LABEL[profile]}
+                  {NETWORK_PROFILE_SHORT[profile]}
                 </DataHead>
               ))}
             </tr>
@@ -543,7 +536,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
               <DataHead>Ladder</DataHead>
               {PROFILES.map((profile) => (
                 <DataHead key={profile} numeric>
-                  {PROFILE_LABEL[profile]}
+                  {NETWORK_PROFILE_SHORT[profile]}
                 </DataHead>
               ))}
             </tr>
@@ -638,7 +631,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
                 className={index === rows.length - 1 ? "border-b-foreground/20" : undefined}
               >
                 <DataCell mono={false} className="font-medium">
-                  {index === 0 ? PROFILE_LABEL[profile] : ""}
+                  {index === 0 ? NETWORK_PROFILE_SHORT[profile] : ""}
                 </DataCell>
                 <DataCell mono={false}>
                   <ClipLink routeId={row.routeId} title={row.title} />

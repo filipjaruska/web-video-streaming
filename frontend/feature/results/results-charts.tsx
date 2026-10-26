@@ -238,12 +238,14 @@ export function TuningByCrfChart({
         <YAxis width={44} {...AXIS} tickFormatter={(value: number) => signed(value, 1)} />
         <ReferenceLine y={0} stroke="var(--border)" />
         <ChartTooltip content={CrfTooltip} />
-        <Legend
-          verticalAlign="top"
-          height={28}
-          iconType="plainline"
-          wrapperStyle={{ fontSize: 12 }}
-        />
+        {series.length > 1 && (
+          <Legend
+            verticalAlign="top"
+            height={28}
+            iconType="plainline"
+            wrapperStyle={{ fontSize: 12 }}
+          />
+        )}
         {series.map((item, index) => (
           <Line
             key={item.routeId}

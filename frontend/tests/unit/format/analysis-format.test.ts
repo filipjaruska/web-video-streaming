@@ -9,9 +9,10 @@ import {
 } from "@/lib/analysisFormat";
 
 describe("formatBitrate", () => {
-  it("writes rates from 1 Mb/s up in Mb/s", () => {
+  it("writes every rate in Mb/s, low rungs included", () => {
     expect(formatBitrate(1_000_000)).toBe("1.00 Mb/s");
     expect(formatBitrate(7_800_000)).toBe("7.80 Mb/s");
+    expect(formatBitrate(150_000)).toBe("0.15 Mb/s");
   });
 
   it("shows a dash for values that were never measured", () => {

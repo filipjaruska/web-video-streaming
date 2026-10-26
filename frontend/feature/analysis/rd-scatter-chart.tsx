@@ -12,14 +12,17 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import type { DerivedLadderDocument, EncodeGridPoint } from "@/lib/videoAnalysisApi";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
+import { ChartTooltipBox } from "@/components/chart-tooltip-box";
+import { EmptyState } from "@/components/empty-state";
 import { ExportCsvButton } from "@/components/export-csv-button";
+import { Figure } from "@/components/figure";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { formatMbpsTick, logDomain, logTicks } from "@/lib/chartScale";
 import { slugFilename } from "@/lib/csvExport";
 
-/** Highest → lowest — legend and series always follow this order. */
 /**
- * Highest → lowest — legend and series always follow this order. The resolutions of the static
+ * Highest to lowest; legend and series always follow this order. The resolutions of the static
  * ladder (Apple's HLS authoring spec) and, before it, of the ladder clips analysed earlier used.
  */
 const HEIGHT_KEYS = [1080, 720, 540, 480, 432, 360, 240, 234] as const;
@@ -42,8 +45,8 @@ function heightKey(height: number): HeightKey {
   return match ? `h${match}` : "h540";
 }
 
-function formatBitrateKbps(bps: number) {
-  return Number((bps / 1000).toFixed(0));
+function toMbps(bps: number) {
+  return bps / 1_000_000;
 }
 
 type QualityMetric = "harmonic" | "mean";
@@ -152,7 +155,7 @@ function RdLegend({
               strokeWidth={1.6}
             />
           </svg>
-          <span>Derived ladder</span>
+          <span>Ladder rung</span>
         </div>
       )}
       {ordered.map((height) => {
@@ -177,22 +180,20 @@ function PointTooltip({ active, payload }: TooltipContentProps) {
     return null;
   }
   const raw = payload[0]?.payload as {
-    bitrateKbps?: number;
+    mbps?: number;
     vmaf?: number;
     label?: string;
     crf?: number;
     derived?: boolean;
   };
   return (
-    <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
-      <div className="font-medium text-foreground">
-        {raw.label ?? "point"}
-        {raw.derived ? " · derived" : raw.crf != null ? ` · CRF ${raw.crf}` : ""}
+    <ChartTooltipBox
+      title={`${raw.label ?? "point"}${raw.derived ? " · ladder rung" : raw.crf != null ? ` · CRF ${raw.crf}` : ""}`}
+    >
+      <div>
+        {raw.mbps?.toFixed(2)} Mb/s · VMAF {raw.vmaf?.toFixed(2)}
       </div>
-      <div className="text-muted-foreground">
-        {raw.bitrateKbps?.toFixed(0)} kb/s · VMAF {raw.vmaf?.toFixed(2)}
-      </div>
-    </div>
+    </ChartTooltipBox>
   );
 }
 
@@ -202,39 +203,16 @@ interface RdScatterChartProps {
   /** Bitrates where the hull hands over between resolutions, keyed `"1080p>720p"`. */
   crossoverBps?: Record<string, number> | null;
   title?: string;
+  note?: string;
 }
 
 export function RdScatterChart({
   encodeGrid,
   derivedLadder,
   crossoverBps,
-  title = "Rate–distortion (encode grid)",
+  title = "Rate–distortion, default grid",
+  note,
 }: RdScatterChartProps) {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const [chartSize, setChartSize] = React.useState<{
-    width: number;
-    height: number;
-  } | null>(null);
-
-  React.useLayoutEffect(() => {
-    const el = containerRef.current;
-    if (!el) {
-      return;
-    }
-
-    const update = () => {
-      const { width, height } = el.getBoundingClientRect();
-      if (width > 0 && height > 0) {
-        setChartSize({ width: Math.floor(width), height: Math.floor(height) });
-      }
-    };
-
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
   const [metric, setMetric] = React.useState<QualityMetric>("harmonic");
 
   const okPoints = React.useMemo(
@@ -248,7 +226,7 @@ export function RdScatterChart({
         .filter((p) => p.onHull)
         .toSorted((a, b) => a.bitrateBps - b.bitrateBps)
         .map((p) => ({
-          bitrateKbps: formatBitrateKbps(p.bitrateBps),
+          mbps: toMbps(p.bitrateBps),
           vmaf: qualityOf(p, metric),
           label: `${p.label} hull`,
           crf: p.crf,
@@ -272,7 +250,7 @@ export function RdScatterChart({
       return new Map<
         number,
         Array<{
-          bitrateKbps: number;
+          mbps: number;
           vmaf: number;
           label: string;
           height: number;
@@ -283,7 +261,7 @@ export function RdScatterChart({
     const map = new Map<
       number,
       Array<{
-        bitrateKbps: number;
+        mbps: number;
         vmaf: number;
         label: string;
         height: number;
@@ -294,7 +272,7 @@ export function RdScatterChart({
       const parts = v.resolution.split(/[:xX]/);
       const height = parts.length === 2 ? Number(parts[1]) : 0;
       const point = {
-        bitrateKbps: v.bitrateBps / 1000,
+        mbps: toMbps(v.bitrateBps),
         vmaf:
           (metric === "harmonic"
             ? (v.predictedVmafHarmonic ?? v.predictedVmaf)
@@ -321,7 +299,7 @@ export function RdScatterChart({
       point.height,
       point.crf,
       point.bitrateBps,
-      Number((point.bitrateBps / 1000).toFixed(3)),
+      Number(toMbps(point.bitrateBps).toFixed(6)),
       point.error ? "" : Number(point.vmafMean.toFixed(6)),
       point.vmafHarmonicMean != null ? Number(point.vmafHarmonicMean.toFixed(6)) : "",
       point.vmafMin != null ? Number(point.vmafMin.toFixed(6)) : "",
@@ -344,7 +322,7 @@ export function RdScatterChart({
           height,
           variant.crf ?? "",
           variant.bitrateBps,
-          Number((variant.bitrateBps / 1000).toFixed(3)),
+          Number(toMbps(variant.bitrateBps).toFixed(6)),
           variant.predictedVmaf != null ? Number(variant.predictedVmaf.toFixed(6)) : "",
           variant.predictedVmafHarmonic != null
             ? Number(variant.predictedVmafHarmonic.toFixed(6))
@@ -363,177 +341,172 @@ export function RdScatterChart({
 
   if (okPoints.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Encode-grid RD points will appear here after the CRF × resolution sweep.
-      </p>
+      <EmptyState title="No encode grid yet">
+        The CRF × resolution sweep runs after the static ladder is packaged.
+      </EmptyState>
     );
   }
 
-  const yMin = Math.max(0, Math.min(...okPoints.map((p) => qualityOf(p, metric))) - 5);
+  const yMin = Math.max(
+    0,
+    Math.floor((Math.min(...okPoints.map((p) => qualityOf(p, metric))) - 5) / 10) * 10,
+  );
   const presentHeights = byHeight.map(([h]) => h);
+  const xDomain = logDomain(okPoints.map((p) => toMbps(p.bitrateBps)));
   const showDerived = derivedByHeight.size > 0;
 
   return (
-    <Card>
-      <CardHeader className="border-b py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
-            <CardTitle className="text-base">{title}</CardTitle>
-            <CardDescription>
-              Measured bitrate vs VMAF per resolution×CRF sample. The line traces the convex hull
-              across all resolutions; stars mark the derived ladder&apos;s operating points (same
-              colors as their resolution).
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-md border p-0.5 text-xs">
-              {(["harmonic", "mean"] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setMetric(option)}
-                  className={
-                    metric === option
-                      ? "rounded-sm bg-secondary px-2 py-1 font-medium"
-                      : "rounded-sm px-2 py-1 text-muted-foreground"
-                  }
-                >
-                  {option === "harmonic" ? "Harmonic" : "Mean"}
-                </button>
-              ))}
-            </div>
-            <ExportCsvButton
-              filename={slugFilename(["rd-encode-grid", derivedLadder?.name ?? ""])}
-              headers={[
-                "kind",
-                "label",
-                "width",
-                "height",
-                "crf",
-                "bitrate_bps",
-                "bitrate_kbps",
-                "vmaf_mean",
-                "vmaf_harmonic_mean",
-                "vmaf_min",
-                "vmaf_neg_mean",
-                "vmaf_neg_harmonic_mean",
-                "cambi",
-                "on_hull",
-                "error",
-              ]}
-              rows={exportRows}
+    <Figure
+      title={title}
+      note={
+        note ??
+        "Each dot is one resolution × CRF encode. The line is the convex hull over all resolutions, stars are the ladder's rungs at their predicted quality, dashed lines the crossovers between resolutions."
+      }
+      actions={
+        <>
+          <ToggleGroup
+            type="single"
+            value={metric}
+            onValueChange={(value) => value && setMetric(value as QualityMetric)}
+            aria-label="VMAF pooling"
+          >
+            <ToggleGroupItem value="harmonic">Harmonic</ToggleGroupItem>
+            <ToggleGroupItem value="mean">Mean</ToggleGroupItem>
+          </ToggleGroup>
+          <ExportCsvButton
+            filename={slugFilename(["rd-encode-grid", derivedLadder?.name ?? ""])}
+            headers={[
+              "kind",
+              "label",
+              "width",
+              "height",
+              "crf",
+              "bitrate_bps",
+              "bitrate_mbps",
+              "vmaf_mean",
+              "vmaf_harmonic_mean",
+              "vmaf_min",
+              "vmaf_neg_mean",
+              "vmaf_neg_harmonic_mean",
+              "cambi",
+              "on_hull",
+              "error",
+            ]}
+            rows={exportRows}
+          />
+        </>
+      }
+    >
+      <ChartContainer config={chartConfig} className="aspect-auto h-80 w-full">
+        <ScatterChart margin={{ top: 16, right: 16, bottom: 20, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis
+            type="number"
+            dataKey="mbps"
+            name="Bitrate"
+            scale="log"
+            domain={xDomain}
+            ticks={logTicks(xDomain)}
+            allowDataOverflow
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            fontSize={12}
+            tickFormatter={formatMbpsTick}
+            label={{
+              value: "Mb/s, log scale",
+              position: "insideBottom",
+              offset: -12,
+              fontSize: 12,
+            }}
+          />
+          <YAxis
+            type="number"
+            dataKey="vmaf"
+            name="VMAF"
+            domain={[yMin, 100]}
+            allowDecimals={false}
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            fontSize={12}
+            width={36}
+          />
+          <ZAxis range={[40, 40]} />
+          {Object.entries(crossoverBps ?? {})
+            .toSorted(([, a], [, b]) => a - b)
+            .map(([key, bps], index) => (
+              <ReferenceLine
+                key={key}
+                x={toMbps(bps)}
+                stroke="var(--muted-foreground)"
+                strokeOpacity={0.6}
+                strokeDasharray="4 4"
+                label={{
+                  value: key.replace(">", "→"),
+                  position: index % 2 === 0 ? "insideTopLeft" : "insideBottomRight",
+                  fontSize: 10,
+                  fill: "var(--muted-foreground)",
+                }}
+              />
+            ))}
+          <ChartTooltip cursor={false} content={PointTooltip} />
+          {/* Drawn first so the markers sit on top of it. */}
+          {hullPoints.length > 1 && (
+            <Scatter
+              key="hull"
+              name="hull"
+              legendType="none"
+              data={hullPoints}
+              line={{ stroke: "var(--foreground)", strokeWidth: 1.5 }}
+              lineType="joint"
+              shape={NoMarker}
+              isAnimationActive={false}
             />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-4">
-        <div ref={containerRef} className="h-80 w-full min-h-80 min-w-0">
-          {chartSize ? (
-            <ChartContainer
-              config={chartConfig}
-              className="aspect-auto h-full w-full min-h-0 min-w-0"
-            >
-              <ScatterChart margin={{ top: 8, right: 12, bottom: 8, left: 8 }}>
-                <CartesianGrid vertical strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  dataKey="bitrateKbps"
-                  name="Bitrate"
-                  unit=" kb/s"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                />
-                <YAxis
-                  type="number"
-                  dataKey="vmaf"
-                  name="VMAF"
-                  domain={[yMin, 100]}
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  width={40}
-                />
-                <ZAxis range={[72, 72]} />
-                {/* Where the hull hands over between resolutions. Drawing these turns the
-                    crossover from a number in a table into the visible place on the curve where
-                    one resolution stops being the right choice. */}
-                {Object.entries(crossoverBps ?? {}).map(([key, bps]) => (
-                  <ReferenceLine
-                    key={key}
-                    x={bps / 1000}
-                    stroke="var(--muted-foreground)"
-                    strokeDasharray="4 4"
-                    label={{
-                      value: key.replace(">", "→"),
-                      position: "top",
-                      fontSize: 10,
-                      fill: "var(--muted-foreground)",
-                    }}
-                  />
-                ))}
-                <ChartTooltip
-                  cursor={{ stroke: "var(--border)", strokeDasharray: "3 3" }}
-                  content={PointTooltip}
-                />
-                {/* Drawn first so the markers sit on top of it. */}
-                {hullPoints.length > 1 && (
-                  <Scatter
-                    key="hull"
-                    name="hull"
-                    legendType="none"
-                    data={hullPoints}
-                    line={{ stroke: "var(--foreground)", strokeWidth: 1.75 }}
-                    lineType="joint"
-                    shape={NoMarker}
-                    isAnimationActive={false}
-                  />
-                )}
-                {byHeight.map(([height, points]) => {
-                  const key = heightKey(height);
-                  return (
-                    <Scatter
-                      key={`grid-${height}`}
-                      name={key}
-                      legendType="none"
-                      data={points.map((p) => ({
-                        bitrateKbps: formatBitrateKbps(p.bitrateBps),
-                        vmaf: qualityOf(p, metric),
-                        label: p.label,
-                        crf: p.crf,
-                        height: p.height,
-                        derived: false,
-                      }))}
-                      fill={`var(--color-${key})`}
-                      isAnimationActive={false}
-                    />
-                  );
-                })}
-                {HEIGHT_KEYS.filter((h) => derivedByHeight.has(h)).map((height) => {
-                  const key = heightKey(height);
-                  const points = derivedByHeight.get(height)!;
-                  return (
-                    <Scatter
-                      key={`derived-${height}`}
-                      name={`${key}-derived`}
-                      legendType="none"
-                      data={points.map((p) => ({ ...p, derived: true }))}
-                      fill={`var(--color-${key})`}
-                      shape={DerivedStar}
-                      isAnimationActive={false}
-                    />
-                  );
-                })}
-              </ScatterChart>
-            </ChartContainer>
-          ) : null}
-        </div>
-        <RdLegend
-          heights={presentHeights}
-          showDerived={showDerived}
-          showHull={hullPoints.length > 1}
-        />
-      </CardContent>
-    </Card>
+          )}
+          {byHeight.map(([height, points]) => {
+            const key = heightKey(height);
+            return (
+              <Scatter
+                key={`grid-${height}`}
+                name={key}
+                legendType="none"
+                data={points.map((p) => ({
+                  mbps: toMbps(p.bitrateBps),
+                  vmaf: qualityOf(p, metric),
+                  label: p.label,
+                  crf: p.crf,
+                  height: p.height,
+                  derived: false,
+                }))}
+                fill={`var(--color-${key})`}
+                fillOpacity={0.8}
+                isAnimationActive={false}
+              />
+            );
+          })}
+          {HEIGHT_KEYS.filter((h) => derivedByHeight.has(h)).map((height) => {
+            const key = heightKey(height);
+            const points = derivedByHeight.get(height)!;
+            return (
+              <Scatter
+                key={`derived-${height}`}
+                name={`${key}-derived`}
+                legendType="none"
+                data={points.map((p) => ({ ...p, derived: true }))}
+                fill={`var(--color-${key})`}
+                shape={DerivedStar}
+                isAnimationActive={false}
+              />
+            );
+          })}
+        </ScatterChart>
+      </ChartContainer>
+      <RdLegend
+        heights={presentHeights}
+        showDerived={showDerived}
+        showHull={hullPoints.length > 1}
+      />
+    </Figure>
   );
 }

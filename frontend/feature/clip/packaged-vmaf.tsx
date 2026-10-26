@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
-import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
+import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { VmafChart } from "@/feature/analysis/vmaf-chart";
 import { formatBitrate, formatNumber, ladderLabel } from "@/lib/analysisFormat";
@@ -11,7 +11,13 @@ import { collectVmafEntries, pickPackagedWithVmaf, type FormatKey } from "@/lib/
 import type { AnalysisTarget } from "@/lib/videoAnalysisApi";
 
 /** Measured quality of every packaged rung, per ladder and format, with the per-frame series. */
-export function PackagedVmaf({ targets }: { targets: AnalysisTarget[] }) {
+export function PackagedVmaf({
+  targets,
+  durationSec,
+}: {
+  targets: AnalysisTarget[];
+  durationSec?: number | null;
+}) {
   const packaged = pickPackagedWithVmaf(targets);
   const [ladderId, setLadderId] = useState<string | null>(null);
   const [format, setFormat] = useState<FormatKey | null>(null);
@@ -65,7 +71,18 @@ export function PackagedVmaf({ targets }: { targets: AnalysisTarget[] }) {
       </div>
 
       <DataTable
-        headers={["Rung", "Bitrate", "Mean VMAF", "Harmonic", "Min", "NEG harmonic", "CAMBI"]}
+        head={
+          <tr className="border-b border-foreground/20">
+            <DataHead>Rung</DataHead>
+            {["Bitrate", "Mean VMAF", "Harmonic VMAF", "Min VMAF", "NEG harmonic", "CAMBI"].map(
+              (header) => (
+                <DataHead key={header} numeric>
+                  {header}
+                </DataHead>
+              ),
+            )}
+          </tr>
+        }
       >
         {rungs.map((entry) => {
           const summary = entry.data.summary;
@@ -101,7 +118,12 @@ export function PackagedVmaf({ targets }: { targets: AnalysisTarget[] }) {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-          <VmafChart data={activeRung.data} label={activeRung.label} format={activeFormat} />
+          <VmafChart
+            data={activeRung.data}
+            label={activeRung.label}
+            format={activeFormat}
+            durationSec={durationSec}
+          />
         </div>
       )}
     </div>

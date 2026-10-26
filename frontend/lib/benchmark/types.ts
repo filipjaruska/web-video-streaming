@@ -15,11 +15,19 @@ export type ShapedProfile = Exclude<NetworkProfile, "variable">;
  * cost — a lost packet crosses the link twice and holds back the data behind it for one round trip,
  * while the link keeps sending — since a server cannot drop a TCP segment.
  */
+/** Column and row headings, where the full description would not fit. */
+export const NETWORK_PROFILE_SHORT: Record<NetworkProfile, string> = {
+  standard: "Standard",
+  fourG: "4G",
+  threeG: "3G",
+  variable: "Variable",
+};
+
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
   standard: "Standard (unshaped)",
-  fourG: "4G — 20 Mb/s, 40 ms, 1 % loss",
-  threeG: "3G — 2 Mb/s, 100 ms, 5 % loss",
-  variable: "Variable — 4G → 3G → 4G",
+  fourG: "4G: 20 Mb/s, 40 ms, 1 % loss",
+  threeG: "3G: 2 Mb/s, 100 ms, 5 % loss",
+  variable: "Variable: 4G → 3G → 4G",
 };
 
 /**

@@ -76,15 +76,13 @@ export function formatSigned(value: number | null | undefined, digits = 2): stri
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
-/** Bitrate in the unit that keeps it readable: Mb/s above 1 Mb/s, kb/s below. */
+/** Bitrate in Mb/s, the one unit every rate in the app and the thesis is given in. */
 export function formatBitrate(bps: number | null | undefined): string {
   if (bps == null || !Number.isFinite(bps) || bps <= 0) {
     return "—";
   }
 
-  return bps >= 1_000_000
-    ? `${(bps / 1_000_000).toFixed(2)} Mb/s`
-    : `${Math.round(bps / 1000)} kb/s`;
+  return `${(bps / 1_000_000).toFixed(2)} Mb/s`;
 }
 
 /** Percentage with a fixed precision, or an em dash when the value was never measured. */

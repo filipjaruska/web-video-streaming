@@ -4,17 +4,19 @@ import * as React from "react";
 import type {
   DerivedLadderDocument,
   DerivedLadderVariant,
+  LadderComparisonPoint,
   LadderSensitivityEntry,
 } from "@/lib/videoAnalysisApi";
 import { formatBitrate, formatNumber, formatResolution } from "@/lib/analysisFormat";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
 import { ExportCsvButton } from "@/components/export-csv-button";
+import { Figure } from "@/components/figure";
+import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
+import { Hint } from "@/components/ui/tooltip";
 import { slugFilename } from "@/lib/csvExport";
+import { cn } from "@/lib/utils";
 
 /**
- * Reads `"1080p>720p"` into its two rung labels — the resolution winning above the crossover,
+ * Reads `"1080p>720p"` into its two rung labels: the resolution winning above the crossover,
  * then the one below it.
  */
 function splitCrossoverKey(key: string): [string, string] {
@@ -38,25 +40,25 @@ function placementFlag(variant: DerivedLadderVariant): RungFlag | null {
     case "window":
       return {
         label: "window",
-        title: `λ point at ${lambdaPoint} lies below ${formatBitrate(variant.intervalLowBps)}, where this resolution starts to be the best one — raised to that bound.`,
+        title: `λ point at ${lambdaPoint} lies below ${formatBitrate(variant.intervalLowBps)}, where this resolution starts to be the best one. Raised to that bound.`,
         variant: "outline",
       };
     case "cap":
       return {
         label: "cap",
-        title: `λ point at ${lambdaPoint} lies above the crossover at ${formatBitrate(variant.intervalHighBps)}, past which the next resolution up is better — lowered to it.`,
+        title: `λ point at ${lambdaPoint} lies above the crossover at ${formatBitrate(variant.intervalHighBps)}, past which the next resolution up is better. Lowered to it.`,
         variant: "outline",
       };
     case "spacing":
       return {
         label: "spacing",
-        title: `λ point at ${lambdaPoint} lies within ×1.5 of the rung above — lowered to ${formatBitrate(variant.intervalHighBps)}.`,
+        title: `λ point at ${lambdaPoint} lies within ×1.5 of the rung above. Lowered to ${formatBitrate(variant.intervalHighBps)}.`,
         variant: "outline",
       };
     case "floor":
       return {
         label: "floor",
-        title: `λ point at ${lambdaPoint} lies below the bitrate floor — raised to ${formatBitrate(variant.intervalLowBps)}.`,
+        title: `λ point at ${lambdaPoint} lies below the bitrate floor. Raised to ${formatBitrate(variant.intervalLowBps)}.`,
         variant: "secondary",
       };
     case "gap":
@@ -68,7 +70,7 @@ function placementFlag(variant: DerivedLadderVariant): RungFlag | null {
     case "cambi":
       return {
         label: "cambi",
-        title: `λ point at ${lambdaPoint} predicts too much banding — raised to ${formatBitrate(variant.intervalLowBps)}, the lowest rate whose predicted CAMBI stays within the limit.`,
+        title: `λ point at ${lambdaPoint} predicts too much banding. Raised to ${formatBitrate(variant.intervalLowBps)}, the lowest rate whose predicted CAMBI stays within the limit.`,
         variant: "secondary",
       };
     default:
@@ -100,7 +102,7 @@ function rungFlags(variant: DerivedLadderVariant): RungFlag[] {
     flags.push({
       label: "grid edge",
       title:
-        "On the grid's lowest CRF with the hull still steeper than λ — the tangent point lies past the sampled range, so the grid, not the content, set this rung.",
+        "On the grid's lowest CRF with the hull still steeper than λ: the tangent point lies past the sampled range, so the grid set this rung, not the content.",
       variant: "secondary",
     });
   }
@@ -173,12 +175,15 @@ function describeLambdaRule(ladder: DerivedLadderDocument): string | null {
  */
 export function DerivedLadderTable({
   ladder,
-  caption,
+  title,
+  achieved,
   sensitivity,
 }: {
   ladder?: DerivedLadderDocument | null;
-  caption: string;
-  /** The same ladder re-derived under other CAMBI weights — animation ladder only. */
+  title: string;
+  /** The packaged rungs as measured, matched to the derived ones by label. */
+  achieved?: LadderComparisonPoint[];
+  /** The same ladder re-derived under other CAMBI weights; animation-optimised ladder only. */
   sensitivity?: LadderSensitivityEntry[] | null;
 }) {
   const exportRows = React.useMemo(
@@ -231,7 +236,7 @@ export function DerivedLadderTable({
   const notes: string[] = [];
   if (ladder.lambda != null) {
     notes.push(
-      `Shared hull slope λ = ${ladder.lambda.toFixed(2)} VMAF per bitrate doubling — every rung is taken at this same trade-off, which is what makes the ladder content-adaptive rather than a fixed target.`,
+      `Every rung is taken at the same hull slope, λ = ${ladder.lambda.toFixed(2)} VMAF per doubling of bitrate.`,
     );
     const rule = describeLambdaRule(ladder);
     if (rule) {
@@ -240,193 +245,207 @@ export function DerivedLadderTable({
   }
   if (ladder.qualityFloor != null) {
     notes.push(
-      `Grid points below harmonic VMAF ${formatNumber(ladder.qualityFloor)} are left out of the hulls: down there the harmonic mean measures clipped frames, not rate.`,
+      `Grid points below harmonic VMAF ${formatNumber(ladder.qualityFloor)} are left out of the hulls.`,
     );
   }
   if (ladder.cambiPenaltyWeight) {
     notes.push(
-      `Rungs are chosen on harmonic VMAF − ${formatNumber(ladder.cambiPenaltyWeight)} × CAMBI, so banding counts against a rung.`,
+      `Rungs are chosen on harmonic VMAF − ${formatNumber(ladder.cambiPenaltyWeight)} × CAMBI.`,
     );
   }
   if (ladder.cambiLimit) {
     notes.push(
-      `${ladder.cambiLimit === "TopRung" ? "The top rung is" : "Every rung at 720p and above is"} held to predicted CAMBI ≤ ${formatNumber(ladder.maxPredictedCambi)}, a lower edge of its interval that takes precedence over the 95 ceiling.`,
+      `${ladder.cambiLimit === "TopRung" ? "The top rung is" : "Every rung at 720p and above is"} held to predicted CAMBI ≤ ${formatNumber(ladder.maxPredictedCambi)}, which takes precedence over the 95 ceiling.`,
     );
   }
 
+  const achievedByLabel = new Map((achieved ?? []).map((point) => [point.label, point]));
+  const hasAchieved = achievedByLabel.size > 0;
+
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
-            <CardTitle className="text-base">Derived ladder ({ladder.name})</CardTitle>
-            <CardDescription>
-              {caption}
-              {notes.length > 0 ? ` ${notes.join(" ")}` : ""}
-            </CardDescription>
-          </div>
-          <ExportCsvButton
-            filename={slugFilename(["derived-ladder", ladder.name])}
-            headers={[
-              "rung",
-              "resolution",
-              "bitrate",
-              "bitrate_bps",
-              "crf",
-              "interpolated_between_crf",
-              "predicted_vmaf",
-              "predicted_vmaf_harmonic",
-              "predicted_vmaf_min",
-              "predicted_cambi",
-              "setting",
-              "cambi_limit",
-              "hull_slope",
-              "on_envelope",
-              "hull_deficit",
-              "placement",
-              "lambda_point_bps",
-              "interval_low_bps",
-              "interval_high_bps",
-              "at_grid_boundary",
-              "fallback",
-            ]}
-            rows={exportRows}
-          />
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <DataTable
+    <Figure
+      title={title}
+      note={notes.length > 0 ? notes.join(" ") : undefined}
+      actions={
+        <ExportCsvButton
+          filename={slugFilename(["derived-ladder", ladder.name])}
           headers={[
-            "Rung",
-            "Resolution",
-            "Bitrate",
-            "CRF",
-            "Pred. VMAF",
-            "Pred. harm. VMAF",
-            "Pred. CAMBI",
-            "Hull slope",
-            "Notes",
+            "rung",
+            "resolution",
+            "bitrate",
+            "bitrate_bps",
+            "crf",
+            "interpolated_between_crf",
+            "predicted_vmaf",
+            "predicted_vmaf_harmonic",
+            "predicted_vmaf_min",
+            "predicted_cambi",
+            "setting",
+            "cambi_limit",
+            "hull_slope",
+            "on_envelope",
+            "hull_deficit",
+            "placement",
+            "lambda_point_bps",
+            "interval_low_bps",
+            "interval_high_bps",
+            "at_grid_boundary",
+            "fallback",
           ]}
-        >
-          {ladder.variants.map((variant) => {
-            const flags = rungFlags(variant);
-            return (
-              <DataRow key={variant.label}>
-                <DataCell>{variant.label}</DataCell>
-                <DataCell>{formatResolution(variant.resolution)}</DataCell>
-                <DataCell>{variant.bitrate}</DataCell>
-                <DataCell>
-                  {variant.crf ??
-                    (variant.interpolatedBetweenCrf
-                      ? variant.interpolatedBetweenCrf.join("–")
-                      : "—")}
-                </DataCell>
-                <DataCell>{formatNumber(variant.predictedVmaf)}</DataCell>
-                <DataCell>{formatNumber(variant.predictedVmafHarmonic)}</DataCell>
-                <DataCell>{formatNumber(variant.predictedCambi)}</DataCell>
-                <DataCell title="Local slope of this resolution's hull at the selected point, in VMAF per doubling of bitrate.">
-                  {formatNumber(variant.hullSlope)}
-                </DataCell>
-                <DataCell last>
-                  {flags.length > 0 ? (
-                    <span className="flex flex-wrap gap-1">
-                      {flags.map((flag) => (
-                        <Badge
-                          key={flag.label}
-                          variant={flag.variant}
-                          className="text-[10px]"
-                          title={flag.title}
+          rows={exportRows}
+        />
+      }
+    >
+      <DataTable
+        head={
+          <>
+            <tr>
+              <DataHead rowSpan={2}>Rung</DataHead>
+              <DataHead rowSpan={2}>Resolution</DataHead>
+              <DataHead rowSpan={2} numeric>
+                CRF
+              </DataHead>
+              <DataHead colSpan={3} className="border-b text-center">
+                Predicted
+              </DataHead>
+              {hasAchieved && (
+                <DataHead colSpan={2} className="border-b text-center">
+                  Achieved
+                </DataHead>
+              )}
+              <DataHead rowSpan={2} numeric>
+                Hull slope
+              </DataHead>
+              <DataHead rowSpan={2}>Placement</DataHead>
+            </tr>
+            <tr className="border-b border-foreground/20">
+              <DataHead numeric>Bitrate</DataHead>
+              <DataHead numeric>Harmonic VMAF</DataHead>
+              <DataHead numeric>CAMBI</DataHead>
+              {hasAchieved && (
+                <>
+                  <DataHead numeric>Bitrate</DataHead>
+                  <DataHead numeric>Harmonic VMAF</DataHead>
+                </>
+              )}
+            </tr>
+          </>
+        }
+      >
+        {ladder.variants.map((variant) => {
+          const flags = rungFlags(variant);
+          const measured = achievedByLabel.get(variant.label);
+          return (
+            <DataRow key={variant.label}>
+              <DataCell>{variant.label}</DataCell>
+              <DataCell>{formatResolution(variant.resolution)}</DataCell>
+              <DataCell numeric>
+                {variant.crf ??
+                  (variant.interpolatedBetweenCrf ? variant.interpolatedBetweenCrf.join("–") : "—")}
+              </DataCell>
+              <DataCell numeric>{formatBitrate(variant.bitrateBps)}</DataCell>
+              <DataCell numeric>
+                {formatNumber(variant.predictedVmafHarmonic ?? variant.predictedVmaf)}
+              </DataCell>
+              <DataCell numeric>{formatNumber(variant.predictedCambi)}</DataCell>
+              {hasAchieved && (
+                <>
+                  <DataCell numeric>{formatBitrate(measured?.bitrateBps)}</DataCell>
+                  <DataCell numeric>{formatNumber(measured?.vmafHarmonicMean)}</DataCell>
+                </>
+              )}
+              <DataCell
+                numeric
+                title="Slope of this resolution's hull at the rung, VMAF per doubling of bitrate."
+              >
+                {formatNumber(variant.hullSlope)}
+              </DataCell>
+              <DataCell mono={false} last>
+                {flags.length > 0 ? (
+                  <span className="flex flex-wrap gap-1">
+                    {flags.map((flag) => (
+                      <Hint key={flag.label} content={flag.title}>
+                        <span
+                          tabIndex={0}
+                          className={cn(
+                            "cursor-help rounded-sm border px-1.5 py-px text-[11px] whitespace-nowrap",
+                            flag.variant === "destructive"
+                              ? "border-destructive/40 text-destructive"
+                              : flag.variant === "secondary"
+                                ? "border-transparent bg-muted"
+                                : "text-muted-foreground",
+                          )}
                         >
                           {flag.label}
-                        </Badge>
-                      ))}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </DataCell>
-              </DataRow>
+                        </span>
+                      </Hint>
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">λ point</span>
+                )}
+              </DataCell>
+            </DataRow>
+          );
+        })}
+      </DataTable>
+
+      {crossovers.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Crossovers: </span>
+          {crossovers.map(({ key, bps, extrapolated }, index) => {
+            const [from, to] = splitCrossoverKey(key);
+            return (
+              <span key={key} className="whitespace-nowrap">
+                {index > 0 && " · "}
+                {from} → {to} at {formatBitrate(bps)}
+                {extrapolated ? " (extrapolated)" : ""}
+              </span>
             );
           })}
-        </DataTable>
+          . Each rung stays between the crossovers either side of it.
+        </p>
+      )}
 
-        {crossovers.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">Resolution crossovers</h4>
-            <p className="text-xs text-muted-foreground">
-              The bitrate at which the envelope hands over from one resolution to the next. Below
-              its crossover a resolution is simply the wrong choice — a lower one reaches more
-              quality for the same bits — so each rung stays inside the window between the
-              crossovers either side of it, and is clamped to the nearer one when its λ point falls
-              outside.
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {crossovers.map(({ key, bps, extrapolated }) => {
-                const [from, to] = splitCrossoverKey(key);
-                return (
-                  <Badge
-                    key={key}
-                    variant="outline"
-                    className="font-mono text-xs"
-                    title={
-                      extrapolated
-                        ? "Lies past the lower resolution's last grid sample, so that curve is extended flat to reach it."
-                        : undefined
-                    }
-                  >
-                    {from} → {to} @ {formatBitrate(bps)}
-                    {extrapolated ? " (extrapolated)" : ""}
-                  </Badge>
-                );
-              })}
-            </div>
-          </div>
-        )}
+      {(dropped.length > 0 || warnings.length > 0) && (
+        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+          {dropped.map(([label, reason]) => (
+            <li key={`dropped-${label}`}>
+              <span className="font-medium text-foreground">{label} dropped:</span> {reason}
+            </li>
+          ))}
+          {warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      )}
 
-        {(dropped.length > 0 || warnings.length > 0) && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">Derivation notes</h4>
-            <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-              {dropped.map(([label, reason]) => (
-                <li key={`dropped-${label}`}>
-                  <span className="font-medium text-foreground">{label} dropped</span> — {reason}
-                </li>
-              ))}
-              {warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {sensitivity && sensitivity.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">CAMBI weight sensitivity</h4>
-            <p className="text-xs text-muted-foreground">
-              The same grid re-derived under other banding penalties, without encoding anything
-              again. Rungs that move with the weight are the ones the penalty decides; rungs that
-              stay put are decided by VMAF alone.
-            </p>
-            <DataTable headers={["CAMBI weight", "λ", "Rungs"]}>
-              {sensitivity.map((entry) => (
-                <DataRow key={entry.weight}>
-                  <DataCell>
-                    {formatNumber(entry.weight)}
-                    {entry.weight === ladder.cambiPenaltyWeight ? " (used)" : ""}
-                  </DataCell>
-                  <DataCell>{formatNumber(entry.lambda)}</DataCell>
-                  <DataCell last>
-                    {entry.error ??
-                      entry.variants
-                        .map((variant) => `${variant.label} ${formatBitrate(variant.bitrateBps)}`)
-                        .join(" · ")}
-                  </DataCell>
-                </DataRow>
-              ))}
-            </DataTable>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      {sensitivity && sensitivity.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <h4 className="text-sm font-medium">CAMBI weight sensitivity</h4>
+          <DataTable headers={["CAMBI weight", "λ", "Rungs"]}>
+            {sensitivity.map((entry) => (
+              <DataRow key={entry.weight}>
+                <DataCell>
+                  {formatNumber(entry.weight)}
+                  {entry.weight === ladder.cambiPenaltyWeight ? " (used)" : ""}
+                </DataCell>
+                <DataCell>{formatNumber(entry.lambda)}</DataCell>
+                <DataCell last>
+                  {entry.error ??
+                    entry.variants
+                      .map((variant) => `${variant.label} ${formatBitrate(variant.bitrateBps)}`)
+                      .join(" · ")}
+                </DataCell>
+              </DataRow>
+            ))}
+          </DataTable>
+          <p className="text-xs text-muted-foreground">
+            The same grids re-derived under other banding penalties, nothing re-encoded. Rungs that
+            move with the weight are the ones the penalty decides.
+          </p>
+        </div>
+      )}
+    </Figure>
   );
 }
