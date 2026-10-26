@@ -30,7 +30,10 @@ import type { VideoTranscodesResponse } from "@/lib/videoTranscodesApi";
 import {
   checkAnalysis,
   checkBenchmarks,
+  checkClipErrors,
+  checkCors,
   checkDelivery,
+  checkNetworkShaping,
   checkSubtitles,
   checkThumbnail,
   checkTranscodes,
@@ -141,6 +144,13 @@ describe.skipIf(!writesEnabled)("upload end to end", () => {
 
   it("delivers every packaging run over HLS and DASH, and the source over byte ranges", async () => {
     await checkDelivery(routeId, transcodes);
+  });
+
+  // The contract files skip these on a fresh backend, which has no clip until this test uploads one.
+  it("shapes tagged runs, allows the frontend's origin and refuses bad requests on the clip", async () => {
+    await checkNetworkShaping(routeId);
+    await checkCors(routeId);
+    await checkClipErrors(routeId);
   });
 
   it("stores a benchmark run in the shape the runner submits, and aggregates it", async () => {

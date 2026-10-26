@@ -7,6 +7,8 @@ import {
   pickStaticTranscode,
   pickTranscodeTargets,
 } from "@/lib/analysisTargets";
+import { NETWORK_PROFILE_RATE_BPS } from "@/lib/benchmark/types";
+import { tagRunRequest } from "@/lib/streamingConfig";
 import { getVideoUrl, getHlsVariantUrl } from "@/lib/streamingLabels";
 import { getVideoAnalysis, type VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 import {
@@ -242,4 +244,72 @@ export async function checkDelivery(
     }
   }
   await checkByteRange(routeId);
+}
+
+/** The frontend's origin may read media responses, including the codec header the player reports. */
+export async function checkCors(routeId: string): Promise<void> {
+  const res = await fetch(getVideoUrl("source", apiUrl, routeId), {
+    method: "HEAD",
+    headers: { Origin: "http://localhost:3000" },
+  });
+  expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:3000");
+  expect(res.headers.get("access-control-expose-headers") ?? "").toMatch(/X-Video-Codec/i);
+}
+
+async function timedRange(url: string, bytes: number): Promise<number> {
+  const started = performance.now();
+  const res = await fetch(url, { headers: { Range: `bytes=0-${bytes - 1}` } });
+  expect((await res.arrayBuffer()).byteLength).toBe(bytes);
+  return (performance.now() - started) / 1000;
+}
+
+/**
+ * A request tagged with the 3G profile is held to its rate; the same request untagged is not.
+ * Every 3G and 4G result rests on the server actually shaping a tagged run.
+ */
+export async function checkNetworkShaping(routeId: string): Promise<void> {
+  const source = getVideoUrl("source", apiUrl, routeId);
+  const size = Number((await fetchOk(source, { method: "HEAD" })).headers.get("content-length"));
+  const bytes = Math.min(500_000, size);
+  const shaped = tagRunRequest(source, { token: `api-test.${Date.now()}`, network: "threeG" });
+
+  const floorSec = (bytes * 8) / (NETWORK_PROFILE_RATE_BPS.threeG as number);
+  const shapedSec = await timedRange(shaped, bytes);
+  const unshapedSec = await timedRange(source, bytes);
+
+  expect(shapedSec, `${bytes} B at 3G took ${shapedSec.toFixed(2)} s`).toBeGreaterThanOrEqual(
+    floorSec * 0.8,
+  );
+  expect(unshapedSec, "the same range unshaped").toBeLessThan(shapedSec / 3);
+}
+
+async function statusOf(path: string, init?: RequestInit): Promise<number> {
+  return (await fetch(`${apiUrl}${path}`, init)).status;
+}
+
+/** What an existing clip answers for runs, rungs and files it does not have, and for hostile names. */
+export async function checkClipErrors(routeId: string): Promise<void> {
+  for (const path of [
+    `/api/hls/${routeId}/t/no-such-run/master.m3u8`,
+    `/api/dash/${routeId}/t/no-such-run/manifest.mpd`,
+    `/api/hls/${routeId}/no-such-rung.m3u8`,
+    `/api/videos/${routeId}/subs/no-such-track.vtt`,
+  ]) {
+    expect(await statusOf(path), `unknown run, rung or track: ${path}`).toBe(404);
+  }
+
+  for (const path of [
+    `/api/hls/${routeId}/..%2f..%2fapp.db`,
+    `/api/dash/${routeId}/..%2F..%2Fapp.db`,
+    `/api/hls/${routeId}/%2e%2e%5capp.db`,
+    `/api/videos/${routeId}/subs/..%2f..%2fapp.db`,
+  ]) {
+    const code = await statusOf(path);
+    // Refused as a client error, never served and never a crash.
+    expect(code >= 400 && code < 500, `path traversal ${path} answered ${code}`).toBe(true);
+  }
+
+  const url = getVideoUrl("source", apiUrl, routeId);
+  const pastEnd = await fetch(url, { headers: { Range: "bytes=999999999999-" } });
+  expect(pastEnd.status, "byte range past the end of the file").toBe(416);
 }

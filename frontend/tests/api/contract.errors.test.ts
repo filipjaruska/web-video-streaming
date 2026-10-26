@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { getVideoUrl } from "@/lib/streamingLabels";
 import { getUploadSession } from "@/lib/videoApi";
 import { getVideoAnalysis } from "@/lib/videoAnalysisApi";
 import { getVideoBenchmarks } from "@/lib/videoBenchmarksApi";
 import { getVideoSubtitles } from "@/lib/videoSubtitlesApi";
 import { getVideoTranscodes } from "@/lib/videoTranscodesApi";
 
+import { checkClipErrors } from "./support/checks";
 import { apiUrl, backendUp, listRouteIds } from "./support/env";
 
 const unknown = "no-such-clip";
@@ -45,30 +45,11 @@ describe.skipIf(!backendUp)("error contract", () => {
     });
   });
 
-  describe.skipIf(!someClip)("on an existing clip", () => {
-    it.each([
-      () => `/api/hls/${someClip}/t/no-such-run/master.m3u8`,
-      () => `/api/dash/${someClip}/t/no-such-run/manifest.mpd`,
-      () => `/api/hls/${someClip}/no-such-rung.m3u8`,
-      () => `/api/videos/${someClip}/subs/no-such-track.vtt`,
-    ])("answers 404 for an unknown run, rung or track (%#)", async (path) => {
-      expect(await status(path())).toBe(404);
-    });
-
-    it.each([
-      () => `/api/hls/${someClip}/..%2f..%2fapp.db`,
-      () => `/api/dash/${someClip}/..%2F..%2Fapp.db`,
-      () => `/api/hls/${someClip}/%2e%2e%5capp.db`,
-      () => `/api/videos/${someClip}/subs/..%2f..%2fapp.db`,
-    ])("refuses a path-traversal segment name (%#)", async (path) => {
-      const code = await status(path());
-      expect(code).toBeGreaterThanOrEqual(400);
-      expect(code).toBeLessThan(500);
-    });
-
-    it("answers 416 for a byte range past the end of the file", async () => {
-      const url = getVideoUrl("source", apiUrl, someClip);
-      expect((await fetch(url, { headers: { Range: "bytes=999999999999-" } })).status).toBe(416);
-    });
-  });
+  // On a fresh backend (CI) there is no clip yet; e2e.upload.test.ts runs this on the one it uploads.
+  it.skipIf(!someClip)(
+    "refuses unknown runs, rungs, tracks, path traversal and out-of-range bytes on an existing clip",
+    async () => {
+      await checkClipErrors(someClip);
+    },
+  );
 });
