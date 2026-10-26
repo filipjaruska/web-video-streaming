@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * The one table shape in the app: a header row (or `head` for multi-row headers such as Table 6),
+ * The one table shape in the app: a header row (or `head` for multi-row, grouped headers),
  * thin row rules, no outer box. Numeric cells are right-aligned in tabular figures.
  */
 export function DataTable({

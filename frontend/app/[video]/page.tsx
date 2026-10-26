@@ -1,5 +1,5 @@
 import { VideoStreamingClient } from "@/components/video-streaming-client";
-import { isProcessing } from "@/lib/clipLookup";
+import { isProcessing } from "@/lib/videoLookup";
 
 type WatchPageProps = {
   params: Promise<{ video: string }>;

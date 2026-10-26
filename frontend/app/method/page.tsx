@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 
 import { PageShell } from "@/components/page-shell";
 import { Section } from "@/components/section";
+import { SectionIndex } from "@/components/section-index";
 import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
 import { BrowserCapabilities } from "@/feature/method/browser-capabilities";
 import { HullDiagram } from "@/feature/method/hull-diagram";
@@ -73,37 +74,24 @@ function Term({ name, children }: { name: string; children: React.ReactNode }) {
 }
 
 export default async function MethodPage() {
-  // Links point at a real clip, so "see it on a clip" lands on measured data.
+  // Links point at a real video, so "see it on a video" lands on measured data.
   const sample = await listVideos()
     .then(({ videos }) => (videos.find((video) => video.status === "ready") ?? videos[0])?.routeId)
     .catch(() => undefined);
-  const onClip = (section: string) =>
+  const onVideo = (section: string) =>
     sample ? (
       <Link href={`/${sample}/results#${section}`} className="text-sm underline underline-offset-4">
-        See it on a clip
+        See it on a video
       </Link>
     ) : undefined;
 
   return (
     <PageShell title={METHOD_COPY.title} description={METHOD_COPY.description}>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-10 xl:grid-cols-[15rem_minmax(0,1fr)]">
-        <nav aria-label="Sections" className="hidden xl:block">
-          <ol className="sticky top-20 space-y-1 border-l text-sm">
-            {SECTIONS.map((section) => (
-              <li key={section.id}>
-                <a
-                  href={`#${section.id}`}
-                  className="-ml-px block border-l border-transparent py-1 pl-3 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-                >
-                  {section.title}
-                </a>
-              </li>
-            ))}
-          </ol>
-        </nav>
+        <SectionIndex sections={SECTIONS} />
 
         <div className="max-w-4xl">
-          <Section id="content" title="Content measures" actions={onClip("content")}>
+          <Section id="content" title="Content measures" actions={onVideo("content")}>
             <dl>
               <Term name="SI and TI">
                 <p>
@@ -125,12 +113,12 @@ export default async function MethodPage() {
             </dl>
           </Section>
 
-          <Section id="ladders" title="Ladders" actions={onClip("ladder")}>
+          <Section id="ladders" title="Ladders" actions={onVideo("ladder")}>
             <dl>
               <Term name="Static">
                 <p>
                   The H.264 ladder from Apple&apos;s HLS authoring specification, the same six rungs
-                  for every clip.
+                  for every video.
                 </p>
                 <DataTable
                   head={
@@ -154,7 +142,7 @@ export default async function MethodPage() {
               </Term>
               <Term name="Encode grid">
                 <p>
-                  The clip encoded at every resolution over a sweep of CRF values, each encode
+                  The video encoded at every resolution over a sweep of CRF values, each encode
                   scored with VMAF against the source. The animation grid repeats it with{" "}
                   <code className="font-mono text-xs">-tune animation</code>, which lowers
                   deblocking and changes psy-RD for flat areas with hard edges.
@@ -187,7 +175,7 @@ export default async function MethodPage() {
             </dl>
           </Section>
 
-          <Section id="quality" title="Quality metrics" actions={onClip("vmaf")}>
+          <Section id="quality" title="Quality metrics" actions={onVideo("vmaf")}>
             <dl>
               <Term name="VMAF">
                 <p>

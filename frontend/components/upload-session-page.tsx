@@ -97,7 +97,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
 
   // Details are saved first, then the file goes up; one action instead of two buttons to order.
   async function handleUpload() {
-    if (!file || busy || !(await requireAuth())) {
+    if (!file || !title.trim() || busy || !(await requireAuth())) {
       return;
     }
     setBusy(true);
@@ -133,7 +133,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
             id="title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="Defaults to the file name"
+            placeholder="Name shown for this video"
           />
         </div>
         <div className="space-y-1.5">
@@ -165,7 +165,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           />
         </label>
-        <Button type="submit" disabled={!file || busy}>
+        <Button type="submit" disabled={!file || !title.trim() || busy}>
           {busy ? "Uploading…" : "Upload and process"}
         </Button>
       </form>

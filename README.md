@@ -1,7 +1,7 @@
 # Web Video Streaming
 
-A platform for measuring video streaming. The Next.js frontend holds the clip catalogue, the player
-with its playback benchmark, per-clip analysis and the cross-clip results. The .NET backend
+A platform for measuring video streaming. The Next.js frontend holds the video catalogue, the player
+with its playback benchmark, per-video analysis and the results across all videos. The .NET backend
 transcodes and analyses uploads with FFmpeg and serves HLS and DASH.
 
 ## Commands
@@ -64,9 +64,9 @@ The defaults work for local development without editing either `.env.example`.
 
 ```
 frontend/              Next.js app (pnpm workspace member)
-  app/                 routes: catalogue, clip tabs (watch, results, benchmark, raw), results, method, upload
+  app/                 routes: catalogue, video tabs (watch, results, benchmark, raw), results, method, upload
   components/          player, benchmark panel, shared UI
-  feature/             clip, results (chapter 5), upload timeline and method views
+  feature/             video, results, upload timeline and method views
   hooks/               playback telemetry and the benchmark runner
   lib/abr/             ABR rules and the driver that applies them to hls.js and dash.js
   lib/benchmark/       benchmark matrix, metric definitions and types
@@ -96,10 +96,10 @@ All tests live in `frontend/tests/` and run on Vitest through Vite+.
     - What's recorded: the raw responses (analysis, benchmarks, transcodes, subtitles, the catalogue), every manifest, and a fingerprint of one segment per run.
     - Where they live: `tests/__golden__/`, gitignored, because they hold your measurement data and only match the database they came from.
     - On a later run, any change shows as a value-level diff.
-    - Record them before a backend refactor with `vp run frontend#test:api:record`. Re-record after deliberately reprocessing a clip or adding benchmark runs.
+    - Record them before a backend refactor with `vp run frontend#test:api:record`. Re-record after deliberately reprocessing a video or adding benchmark runs.
   - **Upload end-to-end:**
     - Only runs with `API_TESTS_WRITE=1`.
-    - It generates a 4 s clip with ffmpeg, uploads it, waits for the whole pipeline (about 9 minutes locally), runs every contract on it, submits a benchmark, renames the video and deletes it.
+    - It generates a 4 s video with ffmpeg, uploads it, waits for the whole pipeline (about 9 minutes locally), runs every contract on it, submits a benchmark, renames the video and deletes it.
     - It only touches the video it creates, but it writes to the backend's database and occupies its processing queue. **Don't set it against a backend whose data matters.**
 - **CI:** the `api` job starts a backend on a fresh database with the same FFmpeg build as the Docker image, then runs the API project with writes enabled. That includes the upload end-to-end test, so every push runs the whole processing pipeline once.
 

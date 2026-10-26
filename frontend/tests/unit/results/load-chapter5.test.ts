@@ -109,7 +109,7 @@ function traces(routeId: string): Route {
   return { status: 200, body };
 }
 
-/** A fake API: a complete clip, one whose analysis fails, and one whose benchmarks fail. */
+/** A fake API: a complete video, one whose analysis fails, and one whose benchmarks fail. */
 const routes: Record<string, Route> = {
   "/api/videos": {
     status: 200,
@@ -155,13 +155,14 @@ afterEach(() => {
 });
 
 describe("fetchChapter5", () => {
-  it("keeps one row per clip, ordered by title, even for failures", () => {
-    expect(report.clips.map((clip) => clip.title)).toEqual(["alpha", "broken.mkv", "zeta"]);
+  it("keeps one row per video, ordered by title, even for failures", () => {
+    // A video without a title is shown as untitled, never under its file name.
+    expect(report.videos.map((item) => item.title)).toEqual(["alpha", "Untitled video", "zeta"]);
     expect(report.content.map((row) => row.routeId)).toEqual(["alpha", "broken", "zeta"]);
   });
 
-  it("reduces a loaded clip to its table rows", () => {
-    const zeta = report.clips.find((clip) => clip.routeId === "zeta");
+  it("reduces a loaded video to its table rows", () => {
+    const zeta = report.videos.find((item) => item.routeId === "zeta");
     expect(zeta).toMatchObject({ complete: true, errors: [] });
     expect(report.content[2]).toMatchObject({ siMean: 20, tiMean: 2, duplicateFrameShare: 0.4 });
     expect(report.ladders[2].ladders.dynamic).toMatchObject({ bdRate: -8.1, bdVmaf: 1.2 });
@@ -172,8 +173,8 @@ describe("fetchChapter5", () => {
     });
   });
 
-  it("contains an analysis failure to its clip and says what failed", () => {
-    const broken = report.clips.find((clip) => clip.routeId === "broken");
+  it("contains an analysis failure to its video and says what failed", () => {
+    const broken = report.videos.find((item) => item.routeId === "broken");
     expect(broken?.complete).toBe(false);
     expect(broken?.errors).toHaveLength(1);
     expect(broken?.errors[0]).toMatch(/^Analysis: .*500/);
@@ -182,7 +183,7 @@ describe("fetchChapter5", () => {
   });
 
   it("keeps the analysis figures when only the benchmarks failed", () => {
-    const alpha = report.clips.find((clip) => clip.routeId === "alpha");
+    const alpha = report.videos.find((item) => item.routeId === "alpha");
     expect(alpha?.complete).toBe(true);
     expect(alpha?.errors.map((error) => error.split(":")[0])).toEqual(["Benchmarks", "Traces"]);
     expect(report.ladders[0].ladders.dynamic?.bdRate).toBe(-8.1);

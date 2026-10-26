@@ -33,7 +33,7 @@ if (!backendUp && backendRequired) {
 
 export const skipReason = backendUp ? null : `no backend at ${apiUrl}`;
 
-/** Route ids of the clips the backend currently has, read once per test file. */
+/** Route ids of the videos the backend currently has, read once per test file. */
 export async function listRouteIds(): Promise<string[]> {
   if (!backendUp) {
     return [];

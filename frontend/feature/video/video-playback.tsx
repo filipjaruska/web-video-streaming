@@ -9,10 +9,10 @@ import { PROFILES, STEADY_PROFILES, type Chapter5Report } from "@/lib/results/ch
 import { fixed, pair, percent, signed } from "@/lib/results/format";
 
 /**
- * This clip's saved playback runs, pivoted the way Tables 5, 9, 10 and 11 present all clips.
- * Expects a report built from this clip alone.
+ * This video's saved playback runs, pivoted the way the results page presents all videos.
+ * Expects a report built from this video alone.
  */
-export function ClipPlayback({ report, routeId }: { report: Chapter5Report; routeId: string }) {
+export function VideoPlayback({ report, routeId }: { report: Chapter5Report; routeId: string }) {
   const progressive = report.progressive[0];
   const protocols = report.protocols;
   const ladderPlayback = report.ladderPlayback;
@@ -45,7 +45,7 @@ export function ClipPlayback({ report, routeId }: { report: Chapter5Report; rout
       <div className="grid gap-8 xl:grid-cols-2">
         <Figure
           title="Source file over progressive download"
-          note="Startup and buffering ratio, as in Table 5."
+          note="Startup and buffering ratio, mean over the repetitions."
         >
           <DataTable headers={["Network", "Startup", "Buffering"]}>
             {PROFILES.map((profile) => {
@@ -65,7 +65,7 @@ export function ClipPlayback({ report, routeId }: { report: Chapter5Report; rout
 
         <Figure
           title="HLS against DASH"
-          note="HLS − DASH in points of time-weighted harmonic VMAF, throughput / hybrid rule, as in Table 9."
+          note="HLS − DASH in points of time-weighted harmonic VMAF, throughput / hybrid rule."
         >
           <DataTable
             head={
@@ -100,7 +100,7 @@ export function ClipPlayback({ report, routeId }: { report: Chapter5Report; rout
 
       <Figure
         title="Animation-optimised against static"
-        note="ΔVMAF is animation-optimised − static, time-weighted harmonic VMAF; steady state leaves out the first 6 s segment. Saving is the relative reduction of time-weighted bitrate. Both protocols averaged, as in Table 10."
+        note="ΔVMAF is animation-optimised − static, time-weighted harmonic VMAF; steady state leaves out the first 6 s segment. Saving is the relative reduction of time-weighted bitrate. Both protocols averaged."
       >
         <DataTable
           head={
@@ -153,7 +153,7 @@ export function ClipPlayback({ report, routeId }: { report: Chapter5Report; rout
 
       <Figure
         title="Variable network: 4G, 3G, back to 4G"
-        note="HLS / DASH. Buffering, stalled time and VMAF under the throughput rule, VMAF under the buffer rule, as in Table 11."
+        note="HLS / DASH. Buffering, stalled time and VMAF under the throughput rule, VMAF under the buffer rule."
       >
         <DataTable
           head={

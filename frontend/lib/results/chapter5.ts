@@ -12,12 +12,12 @@ import {
 } from "@/lib/videoBenchmarksApi";
 
 /*
- * The cross-clip results, computed the way chapter 5 of the thesis reports them: one function per
- * table or graph, each taking every clip's analysis, benchmark aggregates and run traces. Pure, so
+ * The cross-video results, computed the way chapter 5 of the thesis reports them: one function per
+ * table or graph, each taking every video's analysis, benchmark aggregates and run traces. Pure, so
  * it runs on the server and only the reduced rows reach the browser.
  */
 
-export interface ClipData {
+export interface VideoData {
   routeId: string;
   title: string;
   analysis: VideoAnalysisResponse | null;
@@ -44,7 +44,7 @@ function mean(values: readonly number[]): Num {
   return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 }
 
-/** Population standard deviation, as SI/TI is reported over every frame of the clip. */
+/** Population standard deviation, as SI/TI is reported over every frame of the video. */
 export function populationStdDev(values: readonly number[]): Num {
   const average = mean(values);
   if (average === null) {
@@ -71,13 +71,13 @@ export interface ContentRow {
 }
 
 /** Table 4 and Graph 1. */
-export function contentRows(clips: ClipData[]): ContentRow[] {
-  return clips.map((clip) => {
-    const source = clip.analysis ? pickSourceTarget(clip.analysis.targets) : undefined;
+export function contentRows(videos: VideoData[]): ContentRow[] {
+  return videos.map((video) => {
+    const source = video.analysis ? pickSourceTarget(video.analysis.targets) : undefined;
     const siti = source?.series.siti;
     return {
-      routeId: clip.routeId,
-      title: clip.title,
+      routeId: video.routeId,
+      title: video.title,
       siMean: siti ? mean(siti.si) : null,
       siStdDev: siti ? populationStdDev(siti.si) : null,
       tiMean: siti ? mean(siti.ti) : null,
@@ -100,16 +100,16 @@ export interface ProgressiveRow {
   byProfile: Record<NetworkProfile, ProgressiveCell | null>;
 }
 
-function aggregates(clip: ClipData): BenchmarkAggregateDto[] {
-  return clip.benchmarks?.aggregates ?? [];
+function aggregates(video: VideoData): BenchmarkAggregateDto[] {
+  return video.benchmarks?.aggregates ?? [];
 }
 
 /** Table 5: the source file over progressive download, per network profile. */
-export function progressiveRows(clips: ClipData[]): ProgressiveRow[] {
-  return clips.map((clip) => {
+export function progressiveRows(videos: VideoData[]): ProgressiveRow[] {
+  return videos.map((video) => {
     const byProfile = Object.fromEntries(
       PROFILES.map((profile) => {
-        const sourceCell = aggregates(clip).find(
+        const sourceCell = aggregates(video).find(
           (aggregate) => aggregate.protocol === "source" && profileOf(aggregate) === profile,
         );
         return [
@@ -124,7 +124,7 @@ export function progressiveRows(clips: ClipData[]): ProgressiveRow[] {
         ];
       }),
     ) as Record<NetworkProfile, ProgressiveCell | null>;
-    return { routeId: clip.routeId, title: clip.title, byProfile };
+    return { routeId: video.routeId, title: video.title, byProfile };
   });
 }
 
@@ -145,10 +145,10 @@ export interface LadderRow {
 }
 
 /** Table 6. */
-export function ladderRows(clips: ClipData[]): LadderRow[] {
-  return clips.map((clip) => {
-    const comparison = clip.analysis
-      ? pickStaticTranscode(clip.analysis.targets)?.series.ladderComparison
+export function ladderRows(videos: VideoData[]): LadderRow[] {
+  return videos.map((video) => {
+    const comparison = video.analysis
+      ? pickStaticTranscode(video.analysis.targets)?.series.ladderComparison
       : undefined;
     const entry = (kind: DerivedLadder) =>
       comparison?.ladders.find((ladder) => ladder.ladderKind === kind);
@@ -167,8 +167,8 @@ export function ladderRows(clips: ClipData[]): LadderRow[] {
           };
     };
     return {
-      routeId: clip.routeId,
-      title: clip.title,
+      routeId: video.routeId,
+      title: video.title,
       rungs: {
         static: comparison ? comparison.staticPoints.length : null,
         dynamic: entry("dynamic")?.points.length ?? null,
@@ -187,10 +187,10 @@ export interface SavingPoint {
   animation: Num;
 }
 
-/** Graph 2: full-range BD-rate of each derived ladder against the clip's mean TI. */
-export function savingPoints(clips: ClipData[]): SavingPoint[] {
-  const content = contentRows(clips);
-  return ladderRows(clips).map((row, index) => ({
+/** Graph 2: full-range BD-rate of each derived ladder against the video's mean TI. */
+export function savingPoints(videos: VideoData[]): SavingPoint[] {
+  const content = contentRows(videos);
+  return ladderRows(videos).map((row, index) => ({
     routeId: row.routeId,
     title: row.title,
     tiMean: content[index].tiMean,
@@ -213,14 +213,14 @@ export interface TuningRow {
 }
 
 /** Table 7. */
-export function tuningRows(clips: ClipData[]): TuningRow[] {
-  return clips.map((clip) => {
-    const tuning = clip.analysis
-      ? pickStaticTranscode(clip.analysis.targets)?.series.tuningComparison
+export function tuningRows(videos: VideoData[]): TuningRow[] {
+  return videos.map((video) => {
+    const tuning = video.analysis
+      ? pickStaticTranscode(video.analysis.targets)?.series.tuningComparison
       : undefined;
     return {
-      routeId: clip.routeId,
-      title: clip.title,
+      routeId: video.routeId,
+      title: video.title,
       pairs: tuning ? tuning.pairs.length : null,
       vmafDelta: tuning?.meanVmafDelta ?? null,
       cambiDelta: tuning?.meanCambiDelta ?? null,
@@ -247,13 +247,13 @@ export interface TuningCrfSeries {
 
 /**
  * Graphs 3 and 4: ΔVMAF and ΔCAMBI from tuning at each coarse CRF, averaged over the resolutions.
- * A CRF is kept only where both grids encoded every resolution the clip has pairs for, so the
+ * A CRF is kept only where both grids encoded every resolution the video has pairs for, so the
  * average always covers the same set.
  */
-export function tuningByCrf(clips: ClipData[]): TuningCrfSeries[] {
-  return clips.map((clip) => {
-    const pairs = clip.analysis
-      ? (pickStaticTranscode(clip.analysis.targets)?.series.tuningComparison?.pairs ?? [])
+export function tuningByCrf(videos: VideoData[]): TuningCrfSeries[] {
+  return videos.map((video) => {
+    const pairs = video.analysis
+      ? (pickStaticTranscode(video.analysis.targets)?.series.tuningComparison?.pairs ?? [])
       : [];
     const heights = new Set(pairs.map((pair) => pair.height));
     const points = TUNING_CRFS.flatMap((crf): TuningCrfPoint[] => {
@@ -272,7 +272,7 @@ export function tuningByCrf(clips: ClipData[]): TuningCrfSeries[] {
         },
       ];
     });
-    return { routeId: clip.routeId, title: clip.title, points };
+    return { routeId: video.routeId, title: video.title, points };
   });
 }
 
@@ -295,14 +295,14 @@ export interface OverheadRow {
 }
 
 /**
- * Table 8: each phase as a multiple of encoding and packaging the static ladder of the same clip.
+ * Table 8: each phase as a multiple of encoding and packaging the static ladder of the same video.
  * The production path is both grids, the derivation and encoding plus packaging the
  * animation-optimised ladder; analysing the packaged rungs serves only the measurement.
  */
-export function overheadRows(clips: ClipData[]): OverheadRow[] {
-  return clips.map((clip) => {
-    const timings = clip.analysis
-      ? pickSourceTarget(clip.analysis.targets)?.series.stageTimings
+export function overheadRows(videos: VideoData[]): OverheadRow[] {
+  return videos.map((video) => {
+    const timings = video.analysis
+      ? pickSourceTarget(video.analysis.targets)?.series.stageTimings
       : undefined;
     const ms = (step: string) => timings?.[step]?.durationMs;
     const base = (ms("StaticEncode") ?? 0) + (ms("StaticPackage") ?? 0);
@@ -313,8 +313,8 @@ export function overheadRows(clips: ClipData[]): OverheadRow[] {
       return steps.reduce((sum, step) => sum + (ms(step) as number), 0) / base;
     };
     return {
-      routeId: clip.routeId,
-      title: clip.title,
+      routeId: video.routeId,
+      title: video.title,
       samplesDefault: stageCount(timings?.EncodeGrid),
       samplesTuned: stageCount(timings?.AnimationGrid),
       defaultGrid: multiple("EncodeGrid"),
@@ -334,13 +334,13 @@ export function overheadRows(clips: ClipData[]): OverheadRow[] {
 // —— 5.1.5 Protocols and ABR ——————————————————————————————————————————————
 
 function cell(
-  clip: ClipData,
+  video: VideoData,
   profile: NetworkProfile,
   ladder: string,
   protocol: Protocol,
   rule: string,
 ): BenchmarkAggregateDto | undefined {
-  return aggregates(clip).find(
+  return aggregates(video).find(
     (aggregate) =>
       profileOf(aggregate) === profile &&
       aggregate.ladderKind === ladder &&
@@ -361,17 +361,17 @@ function bothProtocols(perProtocol: (protocol: Protocol) => Num): Num {
  * trace, averaged over the runs that started.
  */
 function steadyVmaf(
-  clip: ClipData,
+  video: VideoData,
   profile: NetworkProfile,
   ladder: string,
   protocol: Protocol,
   rule: string,
 ): Num {
-  if (!clip.analysis || !clip.traces) {
+  if (!video.analysis || !video.traces) {
     return null;
   }
-  const targets = clip.analysis.targets;
-  const values = clip.traces.runs.flatMap((run) => {
+  const targets = video.analysis.targets;
+  const values = video.traces.runs.flatMap((run) => {
     if (
       run.failed ||
       !run.trace ||
@@ -398,18 +398,18 @@ export interface ProtocolRow {
 }
 
 /** Table 9. */
-export function protocolRows(clips: ClipData[]): ProtocolRow[] {
-  return clips.flatMap((clip) =>
+export function protocolRows(videos: VideoData[]): ProtocolRow[] {
+  return videos.flatMap((video) =>
     (["static", "animation"] as const).map((ladder) => ({
-      routeId: clip.routeId,
-      title: clip.title,
+      routeId: video.routeId,
+      title: video.title,
       ladder,
       byProfile: Object.fromEntries(
         PROFILES.map((profile) => {
           const delta = (rule: Rule) =>
             difference(
-              cell(clip, profile, ladder, "hls", rule)?.timeWeightedVmafMean ?? null,
-              cell(clip, profile, ladder, "dash", rule)?.timeWeightedVmafMean ?? null,
+              cell(video, profile, ladder, "hls", rule)?.timeWeightedVmafMean ?? null,
+              cell(video, profile, ladder, "dash", rule)?.timeWeightedVmafMean ?? null,
             );
           return [profile, { throughput: delta("throughput"), hybrid: delta("hybrid") }];
         }),
@@ -435,20 +435,21 @@ export interface LadderPlaybackRow {
 }
 
 /** Table 10: the animation-optimised ladder against the static one, both protocols averaged. */
-export function ladderPlaybackRows(clips: ClipData[]): LadderPlaybackRow[] {
+export function ladderPlaybackRows(videos: VideoData[]): LadderPlaybackRow[] {
   return STEADY_PROFILES.flatMap((profile) =>
-    clips.map((clip) => {
+    videos.map((video) => {
       const figures = (rule: Rule): LadderPlaybackFigures => {
         const vmaf = (ladder: string) =>
           bothProtocols(
-            (protocol) => cell(clip, profile, ladder, protocol, rule)?.timeWeightedVmafMean ?? null,
+            (protocol) =>
+              cell(video, profile, ladder, protocol, rule)?.timeWeightedVmafMean ?? null,
           );
         const steady = (ladder: string) =>
-          bothProtocols((protocol) => steadyVmaf(clip, profile, ladder, protocol, rule));
+          bothProtocols((protocol) => steadyVmaf(video, profile, ladder, protocol, rule));
         const bitrate = (ladder: string) =>
           bothProtocols(
             (protocol) =>
-              cell(clip, profile, ladder, protocol, rule)?.timeWeightedBitrateBpsMean ?? null,
+              cell(video, profile, ladder, protocol, rule)?.timeWeightedBitrateBpsMean ?? null,
           );
         const staticRate = bitrate("static");
         const animationRate = bitrate("animation");
@@ -461,8 +462,8 @@ export function ladderPlaybackRows(clips: ClipData[]): LadderPlaybackRow[] {
       };
       return {
         profile,
-        routeId: clip.routeId,
-        title: clip.title,
+        routeId: video.routeId,
+        title: video.title,
         byRule: {
           throughput: figures("throughput"),
           hybrid: figures("hybrid"),
@@ -481,8 +482,8 @@ export interface SteadyStatePoint {
 }
 
 /** Graph 5: whole session against steady state, throughput rule, 4G. */
-export function steadyStatePoints(clips: ClipData[]): SteadyStatePoint[] {
-  return ladderPlaybackRows(clips)
+export function steadyStatePoints(videos: VideoData[]): SteadyStatePoint[] {
+  return ladderPlaybackRows(videos)
     .filter((row) => row.profile === "fourG")
     .map((row) => ({
       routeId: row.routeId,
@@ -505,22 +506,22 @@ export interface VariableRow {
 }
 
 /** Table 11: the 4G → 3G → 4G schedule, HLS and DASH side by side. */
-export function variableRows(clips: ClipData[]): VariableRow[] {
-  return clips.flatMap((clip) =>
+export function variableRows(videos: VideoData[]): VariableRow[] {
+  return videos.flatMap((video) =>
     (["static", "dynamic", "animation"] as const).map((ladder) => {
       const per = (rule: Rule, pick: (aggregate: BenchmarkAggregateDto) => Num): PerProtocol => ({
         hls: (() => {
-          const aggregate = cell(clip, "variable", ladder, "hls", rule);
+          const aggregate = cell(video, "variable", ladder, "hls", rule);
           return aggregate ? pick(aggregate) : null;
         })(),
         dash: (() => {
-          const aggregate = cell(clip, "variable", ladder, "dash", rule);
+          const aggregate = cell(video, "variable", ladder, "dash", rule);
           return aggregate ? pick(aggregate) : null;
         })(),
       });
       return {
-        routeId: clip.routeId,
-        title: clip.title,
+        routeId: video.routeId,
+        title: video.title,
         ladder,
         throughput: {
           bufferingPercent: per("throughput", (aggregate) => aggregate.bufferingRatioMean * 100),
@@ -541,7 +542,7 @@ export interface RunCounts {
 }
 
 export interface Chapter5Report {
-  clips: Array<{ routeId: string; title: string; complete: boolean; errors: string[] }>;
+  videos: Array<{ routeId: string; title: string; complete: boolean; errors: string[] }>;
   runs: RunCounts;
   content: ContentRow[];
   progressive: ProgressiveRow[];
@@ -556,17 +557,17 @@ export interface Chapter5Report {
   variable: VariableRow[];
 }
 
-export function buildChapter5(clips: ClipData[]): Chapter5Report {
-  const ordered = clips.toSorted((a, b) => a.title.localeCompare(b.title));
-  const runs = ordered.flatMap((clip) => clip.benchmarks?.runs ?? []);
+export function buildChapter5(videos: VideoData[]): Chapter5Report {
+  const ordered = videos.toSorted((a, b) => a.title.localeCompare(b.title));
+  const runs = ordered.flatMap((video) => video.benchmarks?.runs ?? []);
   return {
-    clips: ordered.map((clip) => ({
-      routeId: clip.routeId,
-      title: clip.title,
+    videos: ordered.map((video) => ({
+      routeId: video.routeId,
+      title: video.title,
       complete: !!(
-        clip.analysis && pickStaticTranscode(clip.analysis.targets)?.series.ladderComparison
+        video.analysis && pickStaticTranscode(video.analysis.targets)?.series.ladderComparison
       ),
-      errors: clip.errors ?? [],
+      errors: video.errors ?? [],
     })),
     runs: { total: runs.length, failed: runs.filter((run) => run.failed).length },
     content: contentRows(ordered),

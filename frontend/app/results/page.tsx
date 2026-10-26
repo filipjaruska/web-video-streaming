@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 
 import { ErrorBanner } from "@/components/error-banner";
 import { PageShell } from "@/components/page-shell";
-import { Chapter5View, ResultsIndex } from "@/feature/results/chapter5-view";
+import { SectionIndex } from "@/components/section-index";
+import { Chapter5View, RESULT_SECTIONS } from "@/feature/results/chapter5-view";
 import { ResultsToolbar } from "@/feature/results/results-toolbar";
 import { loadChapter5 } from "@/lib/results/loadChapter5";
 import type { Chapter5Report } from "@/lib/results/chapter5";
@@ -10,7 +11,7 @@ import { RESULTS_COPY } from "@/lib/siteCopy";
 
 export const metadata: Metadata = {
   title: "Results",
-  description: "Results across all clips, in the order of chapter 5 of the thesis.",
+  description: "Measurements across all videos.",
 };
 
 export default async function ResultsPage() {
@@ -32,7 +33,7 @@ export default async function ResultsPage() {
       {error && <ErrorBanner title="Results unavailable" message={error} />}
       {report && (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-10 xl:grid-cols-[15rem_minmax(0,1fr)]">
-          <ResultsIndex />
+          <SectionIndex sections={RESULT_SECTIONS} />
           <Chapter5View report={report} />
         </div>
       )}

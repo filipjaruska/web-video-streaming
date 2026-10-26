@@ -10,12 +10,12 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Clips" },
+  { href: "/", label: "Videos" },
   { href: "/results", label: "Results" },
   { href: "/method", label: "Method" },
 ] as const;
 
-/** Clip pages live at the root ("/abc123/results"), so everything that isn't another section is Clips. */
+/** Video pages live at the root ("/abc123/results"), so everything that isn't another section is Videos. */
 function isActive(href: string, pathname: string): boolean {
   if (href !== "/") {
     return pathname === href || pathname.startsWith(`${href}/`);

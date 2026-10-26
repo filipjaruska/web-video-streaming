@@ -57,7 +57,7 @@ export interface BenchmarkAggregateDto {
   avgBufferSecMean?: number | null;
   /** The player's own throughput estimate, averaged — what the link actually delivered. */
   avgThroughputBpsMean?: number | null;
-  /** Play request to the end of the clip, milliseconds. */
+  /** Play request to the end of the video, milliseconds. */
   sessionMsMean?: number | null;
   sessionMsStdDev?: number | null;
 }

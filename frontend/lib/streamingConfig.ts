@@ -9,7 +9,7 @@ export const TARGET_BUFFER_SEC = 30;
 
 /**
  * Buffer target of the variable-network run, seconds: either player requests the next segment while
- * less than this is buffered ahead. At 30 s a 4G link fills most of a 30-second clip before the drop
+ * less than this is buffered ahead. At 30 s a 4G link fills most of a 30-second video before the drop
  * to 3G reaches the playhead, so the change never shows on screen and recovery has nothing to
  * measure; at 8 s the player holds little more than one segment ahead and has to ride the change out.
  */
@@ -39,8 +39,8 @@ export const START_BANDWIDTH_FRACTION = 0.9;
  * The rung every adaptive profile starts on: the highest one whose declared bitrate fits the
  * opening estimate, else the lowest.
  *
- * Pinned rather than left to the player's opening guess. Test clips run tens of seconds, so a
- * player starting at the bottom and climbing spends a large share of the clip in that ramp, and
+ * Pinned rather than left to the player's opening guess. Test videos run tens of seconds, so a
+ * player starting at the bottom and climbing spends a large share of the video in that ramp, and
  * switch counts and time-weighted quality would describe the ramp instead of the algorithm. It used
  * to be pinned by index — third rung from the bottom — which lands on a different bitrate on every
  * ladder once derived ladders drop a rung, so the ladders being compared did not start on equal
@@ -69,7 +69,7 @@ export const FAST_START_TIMEOUT_MS = 4000;
  *
  * Deliberately not the browser's downlink hint (Network Information API). It is coarse, capped at
  * 10 Mb/s in Chromium, and blind to local traffic: served from localhost it reported 1.25 Mb/s and
- * "3g", which opened on the bottom rung — and on localhost hls.js buffers the whole clip at that
+ * "3g", which opened on the bottom rung — and on localhost hls.js buffers the whole video at that
  * rung before the first decision, so the opening segment played at 360p regardless. What protects
  * a genuinely slow link is the driver's timeout, which drops to the bottom rung if the opening
  * segment has not arrived within `FAST_START_TIMEOUT_MS`.
@@ -189,7 +189,7 @@ export interface DashSettings {
  * HLS played as before. One segment more makes both request below the same level.
  *
  * Only below the standard target: the profiles at 30 s were measured with dash.js holding at most
- * the 30 s itself, and over clips of about 30 s the extra segment matters little there.
+ * the 30 s itself, and over videos of about 30 s the extra segment matters little there.
  */
 function dashBufferTime(targetBufferSec: number): number {
   return targetBufferSec < TARGET_BUFFER_SEC ? targetBufferSec + SEGMENT_SEC : targetBufferSec;
@@ -205,7 +205,7 @@ export function createDashSettings(
       // browser cache and leaves it out of its throughput estimate; hls.js has no such rule. Served
       // from nearby, most segments fell under it, the estimate sat at its opening default until one
       // happened to be slower, and repeated throughput runs landed anywhere from a fifth to four
-      // fifths of the clip on the top rung. Benchmark runs cannot hit the cache — every request
+      // fifths of the video on the top rung. Benchmark runs cannot hit the cache — every request
       // carries the run's token — so the rule only ever discarded real measurements.
       cacheLoadThresholds: {
         video: 0,

@@ -24,12 +24,12 @@ export type AbrRuleName = "throughput" | "buffer" | "hybrid";
  * controller from {@link createRuleAbrController}, on DASH whenever a segment has been appended — so
  * the clock only keeps DASH's choice current while nothing is being fetched. Deciding on the clock
  * alone would make the outcome depend on where its ticks fall: on a fast link hls.js can fetch most
- * of a short clip at the opening rung between two ticks, and repeated runs would not agree.
+ * of a short video at the opening rung between two ticks, and repeated runs would not agree.
  */
 const TICK_MS = 1000;
 
 /**
- * How close to the end of the media the buffer must reach to count as holding the rest of the clip,
+ * How close to the end of the media the buffer must reach to count as holding the rest of the video,
  * seconds. Covers the tail segment's rounding and small gaps between appended ranges.
  */
 const END_OF_MEDIA_TOLERANCE_SEC = 0.5;
@@ -155,8 +155,8 @@ function createDecider(
         return hold;
       }
 
-      // The rest of the clip is already buffered, so no request remains for a decision to govern.
-      // Deciding anyway read the draining tail as an emergency: the panic rule fired in every clip's
+      // The rest of the video is already buffered, so no request remains for a decision to govern.
+      // Deciding anyway read the draining tail as an emergency: the panic rule fired in every video's
       // last seconds and dropped to the bottom rung for nothing, which the measurement then counted
       // as switches — and on DASH, while switches still replaced the buffer, froze the picture.
       if (state.bufferSec >= reader.readRemainingSec() - END_OF_MEDIA_TOLERANCE_SEC) {
@@ -186,7 +186,7 @@ function bufferAhead(media: HTMLMediaElement | null | undefined): number {
   const { buffered, currentTime } = media;
   for (let i = 0; i < buffered.length; i++) {
     // Without the tolerance the whole buffer read as empty until playback started: the opening rung
-    // was held while hls.js fetched the entire clip back to back, and the run never left it.
+    // was held while hls.js fetched the entire video back to back, and the run never left it.
     if (
       currentTime >= buffered.start(i) - BUFFER_HOLE_TOLERANCE_SEC &&
       currentTime <= buffered.end(i)
@@ -384,7 +384,7 @@ export function driveDash(
   // Deferred to a microtask: that still precedes the next request, which dash.js schedules on a
   // zero-delay timer, but no longer runs inside dash.js's own dispatch of the event, where a switch
   // requested re-entrantly — or an exception — could keep its later handlers from finishing the
-  // append. One DASH run stalled at the end of the clip without ever signalling end of stream.
+  // append. One DASH run stalled at the end of the video without ever signalling end of stream.
   const onAppended = (event: { mediaType?: string }) => {
     if (event.mediaType !== "video") {
       return;

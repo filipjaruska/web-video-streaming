@@ -38,7 +38,7 @@ function sortAggregates(aggregates: BenchmarkAggregateDto[]): BenchmarkAggregate
 
 const mbps = (bps: number) => fixed(bps / 1_000_000);
 
-/** Every saved cell for this clip, averaged over its repetitions by the server. */
+/** Every saved cell for this video, averaged over its repetitions by the server. */
 export function SavedBenchmarks({
   aggregates,
   runs,
@@ -57,44 +57,89 @@ export function SavedBenchmarks({
 
   return (
     <Figure
-      title="Saved results"
+      title="Every saved combination"
       note={`${runs.length} runs${failed > 0 ? `, ${failed} did not start and are left out of the means` : ""}. Mean ± SD over the repetitions; VMAF is time-weighted harmonic VMAF of the rungs played, bitrate the time-weighted bitrate.`}
       actions={
-        <ExportCsvButton
-          filename="benchmark-aggregates"
-          headers={[
-            "network_profile",
-            "ladder",
-            "protocol",
-            "abr_rule",
-            "runs",
-            "startup_ms_mean",
-            "startup_ms_sd",
-            "buffering_ratio_mean",
-            "rebuffer_ms_mean",
-            "rebuffer_count_mean",
-            "quality_switches_mean",
-            "time_weighted_bitrate_mbps",
-            "time_weighted_vmaf_mean",
-            "time_weighted_vmaf_sd",
-          ]}
-          rows={rows.map((row) => [
-            NETWORK_PROFILE_CSV_IDS[profileOf(row)],
-            row.ladderKind,
-            row.protocol,
-            row.abrAlgorithm,
-            row.runs,
-            row.startupMsMean,
-            row.startupMsStdDev,
-            row.bufferingRatioMean,
-            row.rebufferMsMean,
-            row.rebufferCountMean,
-            row.qualitySwitchesMean,
-            row.timeWeightedBitrateBpsMean / 1_000_000,
-            row.timeWeightedVmafMean ?? "",
-            row.timeWeightedVmafStdDev ?? "",
-          ])}
-        />
+        <>
+          <ExportCsvButton
+            label="Runs CSV"
+            filename="benchmark-runs"
+            headers={[
+              "network_profile",
+              "ladder",
+              "protocol",
+              "abr_rule",
+              "repetition",
+              "startup_ms",
+              "buffering_ratio",
+              "rebuffer_count",
+              "rebuffer_ms",
+              "quality_switches",
+              "oscillations",
+              "time_weighted_bitrate_mbps",
+              "dropped_frame_ratio",
+              "recovery_ms",
+              "failed",
+              "error",
+              "created_at_utc",
+            ]}
+            rows={runs.map((run) => [
+              NETWORK_PROFILE_CSV_IDS[profileOf(run)],
+              run.ladderKind,
+              run.protocol,
+              run.abrAlgorithm,
+              run.repetition,
+              run.startupMs ?? "",
+              run.bufferingRatio,
+              run.rebufferCount,
+              run.rebufferMs,
+              run.qualitySwitches,
+              run.oscillations,
+              run.timeWeightedBitrateBps / 1_000_000,
+              run.droppedFrameRatio,
+              run.recoveryMs ?? "",
+              run.failed ? 1 : 0,
+              run.errorMessage ?? "",
+              run.createdAtUtc,
+            ])}
+          />
+          <ExportCsvButton
+            label="Combinations CSV"
+            filename="benchmark-aggregates"
+            headers={[
+              "network_profile",
+              "ladder",
+              "protocol",
+              "abr_rule",
+              "runs",
+              "startup_ms_mean",
+              "startup_ms_sd",
+              "buffering_ratio_mean",
+              "rebuffer_ms_mean",
+              "rebuffer_count_mean",
+              "quality_switches_mean",
+              "time_weighted_bitrate_mbps",
+              "time_weighted_vmaf_mean",
+              "time_weighted_vmaf_sd",
+            ]}
+            rows={rows.map((row) => [
+              NETWORK_PROFILE_CSV_IDS[profileOf(row)],
+              row.ladderKind,
+              row.protocol,
+              row.abrAlgorithm,
+              row.runs,
+              row.startupMsMean,
+              row.startupMsStdDev,
+              row.bufferingRatioMean,
+              row.rebufferMsMean,
+              row.rebufferCountMean,
+              row.qualitySwitchesMean,
+              row.timeWeightedBitrateBpsMean / 1_000_000,
+              row.timeWeightedVmafMean ?? "",
+              row.timeWeightedVmafStdDev ?? "",
+            ])}
+          />
+        </>
       }
     >
       <DataTable

@@ -1,6 +1,6 @@
 import { ErrorBanner } from "@/components/error-banner";
 import { VideoStreamingClient } from "@/components/video-streaming-client";
-import { SavedBenchmarks } from "@/feature/clip/saved-benchmarks";
+import { SavedRunsSummary } from "@/feature/video/saved-runs-summary";
 import { getApiUrl } from "@/lib/env";
 import { getVideoBenchmarks, type VideoBenchmarksResponse } from "@/lib/videoBenchmarksApi";
 
@@ -18,15 +18,15 @@ export default async function BenchmarkPage({ params }: BenchmarkPageProps) {
       next: { revalidate: 60, tags: ["benchmarks"] },
     });
   } catch (err) {
-    error = err instanceof Error ? err.message : "Saved results could not be loaded.";
+    error = err instanceof Error ? err.message : "Saved runs could not be loaded.";
   }
 
   return (
     <div className="space-y-12">
       <VideoStreamingClient routeId={video} mode="benchmark" />
       <section className="border-t pt-8">
-        {error && <ErrorBanner title="Saved results unavailable" message={error} />}
-        {saved && <SavedBenchmarks aggregates={saved.aggregates} runs={saved.runs} />}
+        {error && <ErrorBanner title="Saved runs unavailable" message={error} />}
+        {saved && <SavedRunsSummary routeId={video} runs={saved.runs} />}
       </section>
     </div>
   );

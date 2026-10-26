@@ -24,7 +24,7 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Where the processing time went: the clip's row of Table 8, then every step. Multiples are of
+ * Where the processing time went: the video's row of Table 8, then every step. Multiples are of
  * encoding and packaging the static ladder, the cost of a fixed ladder.
  */
 export function PipelineCostCard({
@@ -52,7 +52,7 @@ export function PipelineCostCard({
   if (!timings || rows.length === 0) {
     return (
       <EmptyState title="No step timings">
-        Clips processed before timings were recorded do not have them.
+        Videos processed before timings were recorded do not have them.
       </EmptyState>
     );
   }
@@ -76,7 +76,7 @@ export function PipelineCostCard({
         />
         <MetricTile
           value={sourceDurationSec ? `${(totalMs / 1000 / sourceDurationSec).toFixed(0)}×` : "—"}
-          label="All steps, of clip length"
+          label="All steps, of video length"
         />
       </MetricTileGrid>
 

@@ -1,11 +1,11 @@
 import { ErrorBanner } from "@/components/error-banner";
 import { PageShell } from "@/components/page-shell";
-import { VideoList, type ClipFigures } from "@/components/video-list";
+import { VideoList, type VideoFigures } from "@/components/video-list";
 import { loadChapter5 } from "@/lib/results/loadChapter5";
 import { HOME_COPY } from "@/lib/siteCopy";
 import { listVideos, type VideoListItem } from "@/lib/videoApi";
 
-async function headlineFigures(): Promise<Record<string, ClipFigures>> {
+async function headlineFigures(): Promise<Record<string, VideoFigures>> {
   // The figures are a bonus on the cards; the catalogue renders without them.
   const report = await loadChapter5().catch(() => null);
   if (!report) {

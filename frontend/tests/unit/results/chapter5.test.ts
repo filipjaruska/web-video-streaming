@@ -12,7 +12,7 @@ import {
   protocolRows,
   tuningByCrf,
   variableRows,
-  type ClipData,
+  type VideoData,
 } from "@/lib/results/chapter5";
 import type { AnalysisTarget, VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 import type {
@@ -22,7 +22,7 @@ import type {
 } from "@/lib/videoBenchmarksApi";
 
 /*
- * Hand-built clips whose expected figures can be worked out on paper. The definitions pinned here
+ * Hand-built videos whose expected figures can be worked out on paper. The definitions pinned here
  * are the thesis's: population SD for SI/TI, both protocols averaged for Tables 10 and 11, steady
  * state from the end of the first 6 s segment, overhead as multiples of the static encode.
  */
@@ -73,10 +73,10 @@ function aggregate(overrides: Partial<BenchmarkAggregateDto>): BenchmarkAggregat
   };
 }
 
-function clip(overrides: Partial<ClipData>): ClipData {
+function video(overrides: Partial<VideoData>): VideoData {
   return {
     routeId: "r",
-    title: "Clip",
+    title: "Video",
     analysis: null,
     benchmarks: null,
     traces: null,
@@ -118,7 +118,7 @@ describe("content characteristics", () => {
   it("uses the population standard deviation over every frame", () => {
     expect(populationStdDev([2, 4, 4, 4, 5, 5, 7, 9])).toBeCloseTo(2, 9);
     const [row] = contentRows([
-      clip({
+      video({
         analysis: analysis([
           source({
             siti: { si: [10, 20, 30], ti: [0, 4] },
@@ -134,7 +134,7 @@ describe("content characteristics", () => {
 
   it("reads progressive playback from the source cells, per profile", () => {
     const [row] = progressiveRows([
-      clip({
+      video({
         benchmarks: benchmarks([
           aggregate({
             protocol: "source",
@@ -182,7 +182,7 @@ describe("ladder comparison", () => {
 
   it("counts rungs per ladder and blanks the figures of a failed comparison", () => {
     const [row] = ladderRows([
-      clip({ analysis: analysis([transcode("static", { ladderComparison: comparison })]) }),
+      video({ analysis: analysis([transcode("static", { ladderComparison: comparison })]) }),
     ]);
     expect(row.rungs).toEqual({ static: 6, dynamic: 7, animation: 1 });
     expect(row.ladders.dynamic).toEqual({
@@ -223,7 +223,7 @@ describe("codec tuning by CRF", () => {
       pair(720, 22, 9, [0, 0]),
     ];
     const [series] = tuningByCrf([
-      clip({
+      video({
         analysis: analysis([transcode("static", { tuningComparison: { decimate: false, pairs } })]),
       }),
     ]);
@@ -239,7 +239,7 @@ describe("computational overhead", () => {
 
   it("expresses each phase as a multiple of the static encode and package", () => {
     const [row] = overheadRows([
-      clip({
+      video({
         analysis: analysis([
           source({
             stageTimings: {
@@ -266,7 +266,9 @@ describe("computational overhead", () => {
   });
 
   it("is empty without stage timings", () => {
-    expect(overheadRows([clip({ analysis: analysis([source({})]) })])[0].productionPath).toBeNull();
+    expect(
+      overheadRows([video({ analysis: analysis([source({})]) })])[0].productionPath,
+    ).toBeNull();
   });
 });
 
@@ -314,7 +316,7 @@ describe("protocols and ladders in playback", () => {
     },
   });
 
-  const data = clip({
+  const data = video({
     analysis: analysis([
       transcode("static", { vmafByFormat: vmafByFormat(40, 96) }),
       transcode("animation", { vmafByFormat: vmafByFormat(60, 94) }),
@@ -388,13 +390,13 @@ describe("protocols and ladders in playback", () => {
 });
 
 describe("the whole chapter", () => {
-  it("orders clips by title and counts every run, failed ones included", () => {
+  it("orders videos by title and counts every run, failed ones included", () => {
     const report = buildChapter5([
-      clip({ routeId: "b", title: "Violet", benchmarks: benchmarks([], 4, 1) }),
-      clip({ routeId: "a", title: "Frieren", benchmarks: benchmarks([], 2) }),
+      video({ routeId: "b", title: "Violet", benchmarks: benchmarks([], 4, 1) }),
+      video({ routeId: "a", title: "Frieren", benchmarks: benchmarks([], 2) }),
     ]);
-    expect(report.clips.map((item) => item.title)).toEqual(["Frieren", "Violet"]);
+    expect(report.videos.map((item) => item.title)).toEqual(["Frieren", "Violet"]);
     expect(report.runs).toEqual({ total: 6, failed: 1 });
-    expect(report.clips.every((item) => !item.complete)).toBe(true);
+    expect(report.videos.every((item) => !item.complete)).toBe(true);
   });
 });

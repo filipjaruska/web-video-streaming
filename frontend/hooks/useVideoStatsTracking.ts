@@ -108,8 +108,8 @@ export function useVideoStatsTracking({
         return;
       }
 
-      // Waiting on the last frames is the end of the clip, not a stall. In roughly one DASH run in
-      // ten dash.js never signalled end of stream although the whole clip was buffered, so the
+      // Waiting on the last frames is the end of the video, not a stall. In roughly one DASH run in
+      // ten dash.js never signalled end of stream although the whole video was buffered, so the
       // element fired "waiting" at the end instead of "ended" — and the run was recorded as a
       // minute-long stall until the runner's timeout. The cause inside dash.js was not found.
       if (

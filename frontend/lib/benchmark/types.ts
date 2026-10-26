@@ -33,8 +33,8 @@ export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
 /**
  * The variable-network run's timeline, from the moment playback is requested.
  *
- * Every phase is shaped. Starting unshaped would let the player fetch the whole 30 s clip within a
- * second, leaving the later phases nothing to act on. The drop to 3G lands mid-clip, and recovery is
+ * Every phase is shaped. Starting unshaped would let the player fetch the whole 30 s video within a
+ * second, leaving the later phases nothing to act on. The drop to 3G lands mid-video, and recovery is
  * timed from it until the player regains its rung once 4G returns.
  *
  * The server applies it — its copy in NetworkShaping.cs must match — to every byte as it is sent,
@@ -218,7 +218,7 @@ export interface BenchmarkTrace {
 export interface BenchmarkMetrics {
   /** Play() to first frame, milliseconds. Null when the run never started. */
   startupMs: number | null;
-  /** Play() to the end of the clip, milliseconds: how long it took to play all of it, stalls included. */
+  /** Play() to the end of the video, milliseconds: how long it took to play all of it, stalls included. */
   sessionMs: number;
   rebufferCount: number;
   rebufferMs: number;

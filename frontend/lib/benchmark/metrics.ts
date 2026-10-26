@@ -442,7 +442,7 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
  * the samples from `fromSec` of media time onwards.
  *
  * The first segment's rung is the player's opening guess, set by the declared bitrates and the
- * initial throughput estimate rather than by the adaptation under test. On ~30 s clips with 6 s
+ * initial throughput estimate rather than by the adaptation under test. On ~30 s videos with 6 s
  * segments it is a fifth of the session, so the whole-session figure largely reflects that guess.
  * Null when the run never started, the ladder is unknown, or nothing played past `fromSec`.
  */
@@ -467,7 +467,7 @@ export function steadyStateVmaf(
  *
  * Sample (n−1) rather than population (÷n) because repetitions of a cell are a sample of the runs
  * that could have happened. SI/TI in `feature/analysis/siti-chart.tsx` uses the population form for
- * the opposite reason — it covers every frame of the clip. The two are meant to differ.
+ * the opposite reason — it covers every frame of the video. The two are meant to differ.
  */
 export function summarize(values: number[]): { mean: number; stdDev: number } {
   const usable = values.filter((value) => Number.isFinite(value));

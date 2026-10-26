@@ -11,9 +11,9 @@ export interface VmafEntry {
 /**
  * Resolution of the analysis targets a video produced.
  *
- * Shared rather than inlined because the per-video analysis view and the cross-clip results page
+ * Shared rather than inlined because the per-video analysis view and the cross-video results page
  * must agree on which packaging run they are reporting. If they resolved targets independently
- * they could show different numbers for the same clip, which is the one failure mode neither page
+ * they could show different numbers for the same video, which is the one failure mode neither page
  * could survive.
  */
 export function pickSourceTarget(targets: AnalysisTarget[]): AnalysisTarget | undefined {

@@ -40,13 +40,13 @@ export interface UploadSessionResponse {
   video: UploadSessionVideo;
 }
 
-export type ClipProcessingStatus = "processing" | "ready" | "failed";
+export type VideoProcessingStatus = "processing" | "ready" | "failed";
 
 export interface VideoListItem {
   routeId: string;
   title: string | null;
   description: string | null;
-  status: ClipProcessingStatus;
+  status: VideoProcessingStatus;
   fileName: string;
   thumbnailUrl: string | null;
   size: number;
@@ -54,6 +54,11 @@ export interface VideoListItem {
   publishedAt: string | null;
   hasHls: boolean;
   hasDash: boolean;
+}
+
+/** The name a video is shown under: the title entered for it, never the uploaded file's name. */
+export function videoTitle(video: { title: string | null }): string {
+  return video.title?.trim() || "Untitled video";
 }
 
 export interface ListVideosResponse {

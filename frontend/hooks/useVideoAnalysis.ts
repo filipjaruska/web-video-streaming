@@ -31,7 +31,7 @@ function finished(response: VideoAnalysisResponse) {
 }
 
 /**
- * The clip's analysis document. Refreshes while a section reports itself running, and with
+ * The video's analysis document. Refreshes while a section reports itself running, and with
  * `poll` also between steps, when no section is running yet the pipeline is still going: the
  * encode grids, for one, write nothing until they finish.
  */

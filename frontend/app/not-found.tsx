@@ -7,11 +7,11 @@ export default function NotFound() {
   return (
     <PageShell
       title="Page not found"
-      description="Nothing lives at this address. If it was a clip, it may have been deleted."
+      description="Nothing lives at this address. If it was a video, it may have been deleted."
     >
       <div className="flex gap-2">
         <Button asChild>
-          <Link href="/">All clips</Link>
+          <Link href="/">All videos</Link>
         </Button>
         <Button asChild variant="outline">
           <Link href="/results">Results</Link>

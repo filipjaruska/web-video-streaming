@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 type Tone = "neutral" | "active" | "good" | "bad";
 
 /**
- * Every status string the API sends (upload sessions, transcodes, analysis sections, clip states),
+ * Every status string the API sends (upload sessions, transcodes, analysis sections, video states),
  * mapped once to a label and a tone, so the same state reads the same everywhere.
  */
 const STATUS: Record<string, { label: string; tone: Tone }> = {

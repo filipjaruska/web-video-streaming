@@ -21,7 +21,7 @@ import {
 import { ChartTooltipBox } from "@/components/chart-tooltip-box";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { ladderColor, ladderLabel } from "@/lib/analysisFormat";
-import { clipName, fixed, signed } from "@/lib/results/format";
+import { fixed, signed } from "@/lib/results/format";
 import type {
   ContentRow,
   SavingPoint,
@@ -29,8 +29,8 @@ import type {
   TuningCrfSeries,
 } from "@/lib/results/chapter5";
 
-/** The colour of a clip, by its position in the (title-ordered) list, the same in every graph. */
-export function clipColor(index: number): string {
+/** The colour of a video, by its position in the (title-ordered) list, the same in every graph. */
+export function videoColor(index: number): string {
   return `var(--chart-${(index % 6) + 1})`;
 }
 
@@ -82,11 +82,11 @@ function DeltaTooltip({ active, payload, label }: TooltipContentProps) {
   );
 }
 
-/** Graph 1: each clip's mean SI and TI, with the region given for live action in ITU-T P.910. */
+/** Graph 1: each video's mean SI and TI, with the region given for live action in ITU-T P.910. */
 export function SiTiPlaneChart({ rows }: { rows: ContentRow[] }) {
   const points = rows.flatMap((row, index) =>
     row.siMean != null && row.tiMean != null
-      ? [{ title: clipName(row.title), si: row.siMean, ti: row.tiMean, index }]
+      ? [{ title: row.title, si: row.siMean, ti: row.tiMean, index }]
       : [],
   );
   const config: ChartConfig = { si: { label: "SI" }, ti: { label: "TI" } };
@@ -127,7 +127,7 @@ export function SiTiPlaneChart({ rows }: { rows: ContentRow[] }) {
             key={point.title}
             name={point.title}
             data={[point]}
-            fill={clipColor(point.index)}
+            fill={videoColor(point.index)}
             isAnimationActive={false}
           >
             <LabelList dataKey="title" position="right" fontSize={11} fill="var(--foreground)" />
@@ -138,14 +138,14 @@ export function SiTiPlaneChart({ rows }: { rows: ContentRow[] }) {
   );
 }
 
-/** Graph 2: full-range BD-rate saving of both derived ladders against the clip's mean TI. */
+/** Graph 2: full-range BD-rate saving of both derived ladders against the video's mean TI. */
 export function SavingsChart({ points }: { points: SavingPoint[] }) {
   const series = (["dynamic", "animation"] as const).map((ladder) => ({
     ladder,
     data: points.flatMap((point) => {
       const bdRate = point[ladder];
       return point.tiMean != null && bdRate != null
-        ? [{ title: clipName(point.title), ti: point.tiMean, saving: -bdRate }]
+        ? [{ title: point.title, ti: point.tiMean, saving: -bdRate }]
         : [];
     }),
   }));
@@ -200,7 +200,7 @@ export function SavingsChart({ points }: { points: SavingPoint[] }) {
   );
 }
 
-/** Graphs 3 and 4: what tuning changes at each CRF, one line per clip. */
+/** Graphs 3 and 4: what tuning changes at each CRF, one line per video. */
 export function TuningByCrfChart({
   series,
   metric,
@@ -221,10 +221,7 @@ export function TuningByCrfChart({
     ),
   }));
   const config: ChartConfig = Object.fromEntries(
-    series.map((item, index) => [
-      item.routeId,
-      { label: clipName(item.title), color: clipColor(index) },
-    ]),
+    series.map((item, index) => [item.routeId, { label: item.title, color: videoColor(index) }]),
   );
   return (
     <ChartContainer config={config} className="aspect-auto h-72 w-full">
@@ -250,8 +247,8 @@ export function TuningByCrfChart({
           <Line
             key={item.routeId}
             dataKey={item.routeId}
-            name={clipName(item.title)}
-            stroke={clipColor(index)}
+            name={item.title}
+            stroke={videoColor(index)}
             strokeWidth={2}
             dot={{ r: 3 }}
             connectNulls
@@ -266,7 +263,7 @@ export function TuningByCrfChart({
 /** Graph 5: animation-optimised minus static, whole session against steady state. */
 export function SteadyStateChart({ points }: { points: SteadyStatePoint[] }) {
   const data = points.map((point) => ({
-    title: clipName(point.title),
+    title: point.title,
     whole: point.whole,
     steady: point.steady,
   }));

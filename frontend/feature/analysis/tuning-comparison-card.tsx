@@ -15,7 +15,7 @@ import { signed } from "@/lib/results/format";
 import type { TuningComparisonDocument } from "@/lib/videoAnalysisApi";
 
 /**
- * Default x264 against `-tune animation` on this clip: its row of Table 7, its Graphs 3 and 4, and
+ * Default x264 against `-tune animation` on this video: its row of Table 7, its Graphs 3 and 4, and
  * the matched samples behind them. A pair shares resolution and CRF, so only the settings differ.
  */
 export function TuningComparisonCard({

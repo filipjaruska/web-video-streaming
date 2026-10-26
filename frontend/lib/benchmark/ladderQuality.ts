@@ -70,7 +70,7 @@ export function ladderQualityForTranscode(
 
 /**
  * The top rung and each rung's measured harmonic VMAF for every packaging run a sweep plays, read
- * from the clip's analysis. This is what turns "which rung was on screen" into "what quality the
+ * from the video's analysis. This is what turns "which rung was on screen" into "what quality the
  * viewer received".
  *
  * Loaded once per sweep, whatever the number of ladders: the analysis document is large — it carries

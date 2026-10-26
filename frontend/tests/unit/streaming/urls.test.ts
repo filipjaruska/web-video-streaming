@@ -12,24 +12,26 @@ const api = "http://api.test";
 
 describe("getVideoUrl", () => {
   it("plays the source over the byte-range endpoint, ignoring any transcode", () => {
-    expect(getVideoUrl("source", api, "clip", "t1")).toBe(`${api}/api/httprange/clip`);
+    expect(getVideoUrl("source", api, "video", "t1")).toBe(`${api}/api/httprange/video`);
   });
 
   it("uses the active-ladder manifests without a transcode", () => {
-    expect(getVideoUrl("hls", api, "clip")).toBe(`${api}/api/hls/clip/master.m3u8`);
-    expect(getVideoUrl("dash", api, "clip", null)).toBe(`${api}/api/dash/clip/manifest.mpd`);
+    expect(getVideoUrl("hls", api, "video")).toBe(`${api}/api/hls/video/master.m3u8`);
+    expect(getVideoUrl("dash", api, "video", null)).toBe(`${api}/api/dash/video/manifest.mpd`);
   });
 
   it("scopes the manifests to a packaging run when one is given", () => {
-    expect(getVideoUrl("hls", api, "clip", "t1")).toBe(`${api}/api/hls/clip/t/t1/master.m3u8`);
-    expect(getVideoUrl("dash", api, "clip", "t1")).toBe(`${api}/api/dash/clip/t/t1/manifest.mpd`);
+    expect(getVideoUrl("hls", api, "video", "t1")).toBe(`${api}/api/hls/video/t/t1/master.m3u8`);
+    expect(getVideoUrl("dash", api, "video", "t1")).toBe(`${api}/api/dash/video/t/t1/manifest.mpd`);
   });
 });
 
 describe("getHlsVariantUrl", () => {
   it("addresses one rung's playlist, with or without a packaging run", () => {
-    expect(getHlsVariantUrl(api, "clip", "360p")).toBe(`${api}/api/hls/clip/360p.m3u8`);
-    expect(getHlsVariantUrl(api, "clip", "360p", "t1")).toBe(`${api}/api/hls/clip/t/t1/360p.m3u8`);
+    expect(getHlsVariantUrl(api, "video", "360p")).toBe(`${api}/api/hls/video/360p.m3u8`);
+    expect(getHlsVariantUrl(api, "video", "360p", "t1")).toBe(
+      `${api}/api/hls/video/t/t1/360p.m3u8`,
+    );
   });
 });
 
@@ -41,7 +43,7 @@ describe("benchmarkRunToken", () => {
 });
 
 describe("tagRunRequest", () => {
-  const url = `${api}/api/hls/clip/master.m3u8`;
+  const url = `${api}/api/hls/video/master.m3u8`;
 
   it("leaves the URL alone outside a benchmark run", () => {
     expect(tagRunRequest(url, null)).toBe(url);

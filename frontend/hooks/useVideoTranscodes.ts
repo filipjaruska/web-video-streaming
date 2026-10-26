@@ -19,7 +19,7 @@ function settled(transcodes: VideoTranscodeListItem[]): boolean {
 }
 
 /**
- * The clip's packaging runs. With `poll`, refreshes until all three ladders have settled, so a
+ * The video's packaging runs. With `poll`, refreshes until all three ladders have settled, so a
  * ladder packaged while the page is open shows up without a reload.
  */
 export function useVideoTranscodes(routeId: string, { poll = false }: { poll?: boolean } = {}) {

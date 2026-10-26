@@ -1,11 +1,11 @@
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
+import { ErrorBanner } from "@/components/error-banner";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { Figure } from "@/components/figure";
 import { Section } from "@/components/section";
 import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
-import { Hint } from "@/components/ui/tooltip";
 import { ladderLabel } from "@/lib/analysisFormat";
 import { NETWORK_PROFILE_CSV_IDS, NETWORK_PROFILE_SHORT } from "@/lib/benchmark/types";
 import {
@@ -17,27 +17,26 @@ import {
   type PerProtocol,
   type Rule,
 } from "@/lib/results/chapter5";
-import { clipName, fixed, multiple, pair, percent, signed, small } from "@/lib/results/format";
+import { fixed, multiple, pair, percent, signed, small } from "@/lib/results/format";
 
 import { SavingsChart, SiTiPlaneChart, SteadyStateChart, TuningByCrfChart } from "./results-charts";
 
 export const RESULT_SECTIONS = [
-  { id: "content", number: "5.1.1", title: "Content characteristics" },
-  { id: "ladders", number: "5.1.2", title: "Ladder design and comparison" },
-  { id: "tuning", number: "5.1.3", title: "Codec tuning for animation" },
-  { id: "overhead", number: "5.1.4", title: "Computational overhead" },
-  { id: "playback", number: "5.1.5", title: "Protocols and ABR" },
-  { id: "variable", number: "5.1.6", title: "Variable network" },
+  { id: "content", title: "Content characteristics" },
+  { id: "ladders", title: "Ladder design and comparison" },
+  { id: "tuning", title: "Codec tuning for animation" },
+  { id: "overhead", title: "Computational overhead" },
+  { id: "playback", title: "Protocols and ABR" },
+  { id: "variable", title: "Variable network" },
 ] as const;
 
-function ClipLink({ routeId, title }: { routeId: string; title: string }) {
+function VideoLink({ routeId, title }: { routeId: string; title: string }) {
   return (
     <Link
       href={`/${routeId}/results`}
-      title={title}
-      className="font-medium whitespace-nowrap underline-offset-4 hover:text-primary hover:underline"
+      className="font-medium underline-offset-4 hover:text-primary hover:underline"
     >
-      {clipName(title)}
+      {title}
     </Link>
   );
 }
@@ -45,7 +44,7 @@ function ClipLink({ routeId, title }: { routeId: string; title: string }) {
 function csv(label: string, headers: string[], rows: Array<Array<string | number | null>>) {
   return (
     <ExportCsvButton
-      filename={`chapter5-${label.toLowerCase().replace(/\s+/g, "-")}`}
+      filename={`results-${label.toLowerCase().replace(/\s+/g, "-")}`}
       headers={headers}
       rows={rows}
     />
@@ -57,34 +56,23 @@ function perProtocol(values: PerProtocol, format: (value: number | null) => stri
   return pair(format(values.hls), format(values.dash));
 }
 
-export function ResultsIndex() {
-  return (
-    <nav aria-label="Sections" className="hidden xl:block">
-      <ol className="sticky top-20 space-y-1 border-l text-sm">
-        {RESULT_SECTIONS.map((section) => (
-          <li key={section.id}>
-            <a
-              href={`#${section.id}`}
-              className="-ml-px flex gap-2 border-l border-transparent py-1 pl-3 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-            >
-              <span className="font-mono text-xs">{section.number}</span>
-              <span>{section.title}</span>
-            </a>
-          </li>
-        ))}
-      </ol>
-    </nav>
-  );
-}
-
 export function Chapter5View({ report }: { report: Chapter5Report }) {
-  if (report.clips.length === 0) {
-    return <EmptyState title="No clips yet">Upload a clip to see results here.</EmptyState>;
+  if (report.videos.length === 0) {
+    return <EmptyState title="No videos yet">Upload a video to see results here.</EmptyState>;
   }
+
+  const failedToLoad = report.videos.filter((video) => video.errors.length > 0);
 
   return (
     <div className="space-y-2">
-      <ClipStrip report={report} />
+      {failedToLoad.length > 0 && (
+        <ErrorBanner
+          title="Some data could not be loaded"
+          message={failedToLoad
+            .map((video) => `${video.title}: ${video.errors.join("; ")}`)
+            .join(" · ")}
+        />
+      )}
       <ContentSection report={report} />
       <LadderSection report={report} />
       <TuningSection report={report} />
@@ -94,47 +82,23 @@ export function Chapter5View({ report }: { report: Chapter5Report }) {
     </div>
   );
 }
-
-function ClipStrip({ report }: { report: Chapter5Report }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pb-6 text-sm">
-      <span className="text-muted-foreground">
-        {report.clips.length} clips · {report.runs.total} playback runs
-        {report.runs.failed > 0 && `, ${report.runs.failed} did not start (left out of the means)`}
-      </span>
-      <span className="flex flex-wrap gap-2">
-        {report.clips.map((clip) => (
-          <Link
-            key={clip.routeId}
-            href={`/${clip.routeId}/results`}
-            title={clip.title}
-            className="rounded-sm border px-2 py-1 text-xs transition-colors hover:border-primary/50 hover:bg-accent"
-          >
-            {clipName(clip.title)}
-            {clip.errors.length > 0 ? (
-              <Hint content={clip.errors.join(" · ")}>
-                <span className="ml-1.5 text-destructive">not loaded</span>
-              </Hint>
-            ) : (
-              !clip.complete && <span className="ml-1.5 text-warning">incomplete</span>
-            )}
-          </Link>
-        ))}
-      </span>
-    </div>
-  );
-}
-
 function ContentSection({ report }: { report: Chapter5Report }) {
   return (
-    <Section id="content" number="5.1.1" title="Content characteristics">
+    <Section id="content" title="Content characteristics">
       <Figure
-        label="Table 4"
-        title="Content of the test clips"
-        note="Measured on each source before encoding. SD is over every frame of the clip."
+        title="Content of the test videos"
+        note="Measured on each source before encoding. SD is over every frame of the video."
         actions={csv(
           "content",
-          ["clip", "si_mean", "si_sd", "ti_mean", "ti_sd", "duplicate_frame_share", "source_cambi"],
+          [
+            "video",
+            "si_mean",
+            "si_sd",
+            "ti_mean",
+            "ti_sd",
+            "duplicate_frame_share",
+            "source_cambi",
+          ],
           report.content.map((row) => [
             row.title,
             row.siMean,
@@ -149,7 +113,7 @@ function ContentSection({ report }: { report: Chapter5Report }) {
         <DataTable
           head={
             <tr className="border-b border-foreground/20">
-              <DataHead>Clip</DataHead>
+              <DataHead>Video</DataHead>
               <DataHead numeric>Mean SI</DataHead>
               <DataHead numeric>SI SD</DataHead>
               <DataHead numeric>Mean TI</DataHead>
@@ -162,7 +126,7 @@ function ContentSection({ report }: { report: Chapter5Report }) {
           {report.content.map((row) => (
             <DataRow key={row.routeId}>
               <DataCell mono={false}>
-                <ClipLink routeId={row.routeId} title={row.title} />
+                <VideoLink routeId={row.routeId} title={row.title} />
               </DataCell>
               <DataCell numeric>{fixed(row.siMean)}</DataCell>
               <DataCell numeric>{fixed(row.siStdDev)}</DataCell>
@@ -176,20 +140,18 @@ function ContentSection({ report }: { report: Chapter5Report }) {
       </Figure>
 
       <Figure
-        label="Graph 1"
-        title="Clips in the SI–TI plane"
+        title="Videos in the SI–TI plane"
         note="Shaded: the region ITU-T P.910 gives for live action (SI above 80, TI above 20)."
       >
         <SiTiPlaneChart rows={report.content} />
       </Figure>
 
       <Figure
-        label="Table 5"
         title="Source file over progressive download"
         note="Startup (ms) / buffering ratio, mean over the repetitions."
         actions={csv(
           "progressive",
-          ["clip", "network", "startup_ms", "buffering_ratio"],
+          ["video", "network", "startup_ms", "buffering_ratio"],
           report.progressive.flatMap((row) =>
             PROFILES.map((profile) => [
               row.title,
@@ -203,7 +165,7 @@ function ContentSection({ report }: { report: Chapter5Report }) {
         <DataTable
           head={
             <tr className="border-b border-foreground/20">
-              <DataHead>Clip</DataHead>
+              <DataHead>Video</DataHead>
               {PROFILES.map((profile) => (
                 <DataHead key={profile} numeric>
                   {NETWORK_PROFILE_SHORT[profile]}
@@ -215,7 +177,7 @@ function ContentSection({ report }: { report: Chapter5Report }) {
           {report.progressive.map((row) => (
             <DataRow key={row.routeId}>
               <DataCell mono={false}>
-                <ClipLink routeId={row.routeId} title={row.title} />
+                <VideoLink routeId={row.routeId} title={row.title} />
               </DataCell>
               {PROFILES.map((profile) => {
                 const cell = row.byProfile[profile];
@@ -254,15 +216,14 @@ function ladderCells(figures: LadderFigures | null) {
 
 function LadderSection({ report }: { report: Chapter5Report }) {
   return (
-    <Section id="ladders" number="5.1.2" title="Ladder design and comparison">
+    <Section id="ladders" title="Ladder design and comparison">
       <Figure
-        label="Table 6"
         title="Derived ladders against the static ladder"
         note="Rungs: static / content-adaptive / animation-optimised. Negative BD-rate is a saving at equal quality, positive BD-VMAF more quality at equal bitrate. Akima interpolation, PCHIP where Akima is not monotone."
         actions={csv(
           "ladders",
           [
-            "clip",
+            "video",
             "rungs_static",
             "rungs_content_adaptive",
             "rungs_animation_optimised",
@@ -291,7 +252,7 @@ function LadderSection({ report }: { report: Chapter5Report }) {
           head={
             <>
               <tr>
-                <DataHead rowSpan={2}>Clip</DataHead>
+                <DataHead rowSpan={2}>Video</DataHead>
                 <DataHead rowSpan={2} numeric>
                   Rungs
                 </DataHead>
@@ -321,7 +282,7 @@ function LadderSection({ report }: { report: Chapter5Report }) {
           {report.ladders.map((row) => (
             <DataRow key={row.routeId}>
               <DataCell mono={false}>
-                <ClipLink routeId={row.routeId} title={row.title} />
+                <VideoLink routeId={row.routeId} title={row.title} />
               </DataCell>
               <DataCell numeric>
                 {[row.rungs.static, row.rungs.dynamic, row.rungs.animation]
@@ -336,7 +297,6 @@ function LadderSection({ report }: { report: Chapter5Report }) {
       </Figure>
 
       <Figure
-        label="Graph 2"
         title="Bitrate saving of the derived ladders against temporal complexity"
         note="Saving is the full-range BD-rate with the sign flipped."
       >
@@ -348,15 +308,14 @@ function LadderSection({ report }: { report: Chapter5Report }) {
 
 function TuningSection({ report }: { report: Chapter5Report }) {
   return (
-    <Section id="tuning" number="5.1.3" title="Codec tuning for animation">
+    <Section id="tuning" title="Codec tuning for animation">
       <Figure
-        label="Table 7"
         title="Effect of -tune animation over paired encode-grid samples"
         note="n is the number of pairs at the same resolution and CRF; ΔVMAF (mean over frames) and ΔCAMBI are means over them, a positive ΔCAMBI is more banding. BD-rate is fitted per resolution over both grids' curves (Akima); the mean is over resolutions."
         actions={csv(
           "tuning",
           [
-            "clip",
+            "video",
             "pairs",
             "vmaf_delta",
             "cambi_delta",
@@ -377,7 +336,7 @@ function TuningSection({ report }: { report: Chapter5Report }) {
           head={
             <>
               <tr>
-                <DataHead rowSpan={2}>Clip</DataHead>
+                <DataHead rowSpan={2}>Video</DataHead>
                 <DataHead rowSpan={2} numeric>
                   n
                 </DataHead>
@@ -405,7 +364,7 @@ function TuningSection({ report }: { report: Chapter5Report }) {
           {report.tuning.map((row) => (
             <DataRow key={row.routeId}>
               <DataCell mono={false}>
-                <ClipLink routeId={row.routeId} title={row.title} />
+                <VideoLink routeId={row.routeId} title={row.title} />
               </DataCell>
               <DataCell numeric>{row.pairs ?? "—"}</DataCell>
               <DataCell numeric>{signed(row.vmafDelta, 3)}</DataCell>
@@ -425,14 +384,12 @@ function TuningSection({ report }: { report: Chapter5Report }) {
 
       <div className="grid gap-8 lg:grid-cols-2">
         <Figure
-          label="Graph 3"
           title="Change in VMAF from tuning against CRF"
           note="Mean over the resolutions, at the CRFs where both grids encoded every resolution."
         >
           <TuningByCrfChart series={report.tuningByCrf} metric="vmafDelta" />
         </Figure>
         <Figure
-          label="Graph 4"
           title="Change in CAMBI from tuning against CRF"
           note="Positive means more banding with tuning."
         >
@@ -445,15 +402,14 @@ function TuningSection({ report }: { report: Chapter5Report }) {
 
 function OverheadSection({ report }: { report: Chapter5Report }) {
   return (
-    <Section id="overhead" number="5.1.4" title="Computational overhead">
+    <Section id="overhead" title="Computational overhead">
       <Figure
-        label="Table 8"
         title="Relative cost of the processing phases"
-        note="Multiples of encoding and packaging the static ladder of the same clip. The production path is both grids, the derivation, and encoding plus packaging the animation-optimised ladder."
+        note="Multiples of encoding and packaging the static ladder of the same video. The production path is both grids, the derivation, and encoding plus packaging the animation-optimised ladder."
         actions={csv(
           "overhead",
           [
-            "clip",
+            "video",
             "grid_samples_default",
             "grid_samples_tuned",
             "default_grid_x",
@@ -475,7 +431,7 @@ function OverheadSection({ report }: { report: Chapter5Report }) {
         <DataTable
           head={
             <tr className="border-b border-foreground/20">
-              <DataHead>Clip</DataHead>
+              <DataHead>Video</DataHead>
               <DataHead numeric>Grid samples (default / tuned)</DataHead>
               <DataHead numeric>Default grid</DataHead>
               <DataHead numeric>Tuned grid</DataHead>
@@ -487,7 +443,7 @@ function OverheadSection({ report }: { report: Chapter5Report }) {
           {report.overhead.map((row) => (
             <DataRow key={row.routeId}>
               <DataCell mono={false}>
-                <ClipLink routeId={row.routeId} title={row.title} />
+                <VideoLink routeId={row.routeId} title={row.title} />
               </DataCell>
               <DataCell numeric>
                 {pair(String(row.samplesDefault ?? "—"), String(row.samplesTuned ?? "—"))}
@@ -510,14 +466,17 @@ const RULES: Rule[] = ["throughput", "hybrid", "buffer"];
 
 function PlaybackSection({ report }: { report: Chapter5Report }) {
   return (
-    <Section id="playback" number="5.1.5" title="Protocols and ABR">
+    <Section
+      id="playback"
+      title="Protocols and ABR"
+      description={`${report.runs.total} playback runs over all videos${report.runs.failed > 0 ? `; ${report.runs.failed} did not start and are left out of the means` : ""}.`}
+    >
       <Figure
-        label="Table 9"
         title="Delivered quality, HLS against DASH"
         note="HLS − DASH in points of time-weighted harmonic VMAF over the session, as throughput / hybrid rule. Positive means higher quality over HLS."
         actions={csv(
           "protocols",
-          ["clip", "ladder", "network", "throughput_hls_minus_dash", "hybrid_hls_minus_dash"],
+          ["video", "ladder", "network", "throughput_hls_minus_dash", "hybrid_hls_minus_dash"],
           report.protocols.flatMap((row) =>
             PROFILES.map((profile) => [
               row.title,
@@ -532,7 +491,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
         <DataTable
           head={
             <tr className="border-b border-foreground/20">
-              <DataHead>Clip</DataHead>
+              <DataHead>Video</DataHead>
               <DataHead>Ladder</DataHead>
               {PROFILES.map((profile) => (
                 <DataHead key={profile} numeric>
@@ -545,7 +504,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
           {report.protocols.map((row) => (
             <DataRow key={`${row.routeId}-${row.ladder}`}>
               <DataCell mono={false}>
-                {row.ladder === "static" && <ClipLink routeId={row.routeId} title={row.title} />}
+                {row.ladder === "static" && <VideoLink routeId={row.routeId} title={row.title} />}
               </DataCell>
               <DataCell mono={false} className="text-muted-foreground">
                 {ladderLabel(row.ladder)}
@@ -564,14 +523,13 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
       </Figure>
 
       <Figure
-        label="Table 10"
         title="Delivered quality and bitrate, animation-optimised against static"
         note="ΔVMAF is animation-optimised − static in points of time-weighted harmonic VMAF; steady state leaves out the first 6 s segment. Saving is the relative reduction of time-weighted bitrate, negative means more bits. Both protocols and all repetitions averaged."
         actions={csv(
           "ladder-playback",
           [
             "network",
-            "clip",
+            "video",
             ...RULES.flatMap((rule) => [
               `${rule}_vmaf_delta_session`,
               `${rule}_vmaf_delta_steady`,
@@ -594,7 +552,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
             <>
               <tr>
                 <DataHead rowSpan={2}>Network</DataHead>
-                <DataHead rowSpan={2}>Clip</DataHead>
+                <DataHead rowSpan={2}>Video</DataHead>
                 <DataHead colSpan={3} className="border-b text-center">
                   Throughput
                 </DataHead>
@@ -634,7 +592,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
                   {index === 0 ? NETWORK_PROFILE_SHORT[profile] : ""}
                 </DataCell>
                 <DataCell mono={false}>
-                  <ClipLink routeId={row.routeId} title={row.title} />
+                  <VideoLink routeId={row.routeId} title={row.title} />
                 </DataCell>
                 {(["throughput", "hybrid"] as const).flatMap((rule) => [
                   <DataCell key={`${rule}-s`} numeric>
@@ -656,7 +614,6 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
       </Figure>
 
       <Figure
-        label="Graph 5"
         title="Animation-optimised against static, whole session and steady state"
         note="Throughput rule, 4G profile, points of time-weighted harmonic VMAF."
       >
@@ -668,15 +625,14 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
 
 function VariableSection({ report }: { report: Chapter5Report }) {
   return (
-    <Section id="variable" number="5.1.6" title="Variable network">
+    <Section id="variable" title="Variable network">
       <Figure
-        label="Table 11"
         title="Playback over 4G, 3G and back to 4G"
         note="Values as HLS / DASH, mean over the repetitions. Target buffer 8 s; VMAF is time-weighted harmonic over the session."
         actions={csv(
           "variable",
           [
-            "clip",
+            "video",
             "ladder",
             "throughput_buffering_hls",
             "throughput_buffering_dash",
@@ -705,7 +661,7 @@ function VariableSection({ report }: { report: Chapter5Report }) {
           head={
             <>
               <tr>
-                <DataHead rowSpan={2}>Clip</DataHead>
+                <DataHead rowSpan={2}>Video</DataHead>
                 <DataHead rowSpan={2}>Ladder</DataHead>
                 <DataHead colSpan={3} className="border-b text-center">
                   Throughput rule
@@ -724,7 +680,7 @@ function VariableSection({ report }: { report: Chapter5Report }) {
           {report.variable.map((row) => (
             <DataRow key={`${row.routeId}-${row.ladder}`}>
               <DataCell mono={false}>
-                {row.ladder === "static" && <ClipLink routeId={row.routeId} title={row.title} />}
+                {row.ladder === "static" && <VideoLink routeId={row.routeId} title={row.title} />}
               </DataCell>
               <DataCell mono={false} className="text-muted-foreground">
                 {ladderLabel(row.ladder)}

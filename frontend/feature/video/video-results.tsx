@@ -5,6 +5,7 @@ import { useMemo, type ReactNode } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorBanner } from "@/components/error-banner";
 import { Section } from "@/components/section";
+import { SectionIndex } from "@/components/section-index";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ContentCharacteristicsCard } from "@/feature/analysis/content-characteristics-card";
 import { DerivedLadderTable } from "@/feature/analysis/derived-ladder-table";
@@ -22,7 +23,7 @@ import { getHlsVariantUrl } from "@/lib/streamingLabels";
 
 import { PackagedVmaf } from "./packaged-vmaf";
 
-export const CLIP_RESULT_SECTIONS = [
+export const VIDEO_RESULT_SECTIONS = [
   { id: "content", title: "Content" },
   { id: "ladder", title: "Ladders" },
   { id: "tuning", title: "Codec tuning" },
@@ -31,36 +32,17 @@ export const CLIP_RESULT_SECTIONS = [
   { id: "cost", title: "Pipeline cost" },
 ] as const;
 
-function SectionIndex() {
-  return (
-    <nav aria-label="Sections" className="hidden xl:block">
-      <ol className="sticky top-20 space-y-1 border-l text-sm">
-        {CLIP_RESULT_SECTIONS.map((section) => (
-          <li key={section.id}>
-            <a
-              href={`#${section.id}`}
-              className="-ml-px block border-l border-transparent py-1 pl-3 text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-            >
-              {section.title}
-            </a>
-          </li>
-        ))}
-      </ol>
-    </nav>
-  );
-}
-
-/** One clip's results, in the order of its appendix in the thesis. */
-export function ClipResults({
+/** One video's results, in the order of its appendix in the thesis. */
+export function VideoResults({
   routeId,
   poll,
   report,
   playback,
 }: {
   routeId: string;
-  /** Keep refreshing: the clip is still being processed. */
+  /** Keep refreshing: the video is still being processed. */
   poll: boolean;
-  /** This clip's chapter 5 rows, reduced on the server. */
+  /** This video's chapter 5 rows, reduced on the server. */
   report: Chapter5Report | null;
   /** The playback tables, rendered on the server from the same report. */
   playback: ReactNode;
@@ -103,7 +85,7 @@ export function ClipResults({
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-10 xl:grid-cols-[11rem_minmax(0,1fr)]">
-      <SectionIndex />
+      <SectionIndex sections={VIDEO_RESULT_SECTIONS} />
       <div>
         {isPolling && (
           <p className="mb-4 text-sm text-muted-foreground">

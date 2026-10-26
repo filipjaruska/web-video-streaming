@@ -26,7 +26,7 @@ describe("csvEscape", () => {
 describe("rowsToCsv", () => {
   it("prefixes a BOM and ends every line with CRLF", () => {
     const csv = rowsToCsv(
-      ["clip", "bdRate"],
+      ["video", "bdRate"],
       [
         ["a,b", -8.1],
         ["c", null],
@@ -34,7 +34,7 @@ describe("rowsToCsv", () => {
     );
     // By code point, so the expected string carries no invisible character.
     expect(csv.codePointAt(0)).toBe(0xfeff);
-    expect(csv.slice(1)).toBe('clip,bdRate\r\n"a,b",-8.1\r\nc,\r\n');
+    expect(csv.slice(1)).toBe('video,bdRate\r\n"a,b",-8.1\r\nc,\r\n');
   });
 });
 

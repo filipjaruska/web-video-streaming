@@ -87,7 +87,7 @@ export type PhaseState = "done" | "current" | "failed" | "pending";
 
 /**
  * Where each phase stands, from the session status and the step the backend reports. A phase is
- * done once the current step lies past all of its steps; steps a clip skips (no subtitles, say)
+ * done once the current step lies past all of its steps; steps a video skips (no subtitles, say)
  * change nothing, since only the position of the current step is compared.
  */
 export function phaseStates(

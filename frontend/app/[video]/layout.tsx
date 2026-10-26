@@ -4,43 +4,43 @@ import type { ReactNode } from "react";
 
 import { PageShell } from "@/components/page-shell";
 import { StatusBadge } from "@/components/status-badge";
-import { ClipManageMenu } from "@/feature/clip/clip-manage-menu";
-import { ClipTabs } from "@/feature/clip/clip-tabs";
-import { findClip } from "@/lib/clipLookup";
+import { VideoManageMenu } from "@/feature/video/video-manage-menu";
+import { VideoTabs } from "@/feature/video/video-tabs";
+import { videoTitle } from "@/lib/videoApi";
+import { findVideo } from "@/lib/videoLookup";
 
-type ClipLayoutProps = {
+type VideoLayoutProps = {
   params: Promise<{ video: string }>;
   children: ReactNode;
 };
 
 export async function generateMetadata({
   params,
-}: Pick<ClipLayoutProps, "params">): Promise<Metadata> {
-  const { video } = await params;
-  const clip = await findClip(video);
-  const title = clip ? clip.title || clip.fileName : video;
-  return { title, description: clip?.description ?? `Playback and results for ${title}` };
+}: Pick<VideoLayoutProps, "params">): Promise<Metadata> {
+  const { video: routeId } = await params;
+  const video = await findVideo(routeId);
+  const title = video ? videoTitle(video) : routeId;
+  return { title, description: video?.description ?? `Playback and results for ${title}` };
 }
 
-export default async function ClipLayout({ params, children }: ClipLayoutProps) {
-  const { video } = await params;
-  const clip = await findClip(video);
-  if (clip === null) {
+export default async function VideoLayout({ params, children }: VideoLayoutProps) {
+  const { video: routeId } = await params;
+  const video = await findVideo(routeId);
+  if (video === null) {
     notFound();
   }
 
   return (
     <PageShell
-      eyebrow={clip ? <span className="font-mono">{clip.fileName}</span> : undefined}
       title={
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          {clip ? clip.title || clip.fileName : video}
-          {clip && clip.status !== "ready" && <StatusBadge status={clip.status} />}
+          {video ? videoTitle(video) : routeId}
+          {video && video.status !== "ready" && <StatusBadge status={video.status} />}
         </span>
       }
-      description={clip?.description ?? undefined}
-      actions={clip ? <ClipManageMenu video={clip} /> : undefined}
-      below={<ClipTabs routeId={video} />}
+      description={video?.description ?? undefined}
+      actions={video ? <VideoManageMenu video={video} /> : undefined}
+      below={<VideoTabs routeId={routeId} />}
     >
       <div className="pt-6">{children}</div>
     </PageShell>

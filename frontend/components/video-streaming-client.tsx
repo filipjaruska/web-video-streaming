@@ -5,7 +5,7 @@ import type { StreamingMethod, AbrAlgorithm, PlaybackEvent } from "@/types/strea
 import { SOURCE_RUN_ID, isSourceRun } from "@/types/streaming";
 import { StreamingControls } from "@/components/streaming-controls";
 import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
-import { BenchmarkPanel } from "@/components/benchmark-panel";
+import { BenchmarkPanel, BenchmarkSessionResults } from "@/components/benchmark-panel";
 import { useBenchmarkRunner } from "@/hooks/useBenchmarkRunner";
 import { usePlaybackCapabilities } from "@/hooks/usePlaybackCapabilities";
 import type { BenchmarkLadder } from "@/lib/benchmark/types";
@@ -22,7 +22,7 @@ interface VideoStreamingClientProps {
   routeId: string;
   /** Watch: player and stream settings. Benchmark: the runner above the player. */
   mode: "watch" | "benchmark";
-  /** Keep the ladder list fresh: the clip is still being processed. */
+  /** Keep the ladder list fresh: the video is still being processed. */
   poll?: boolean;
 }
 
@@ -245,7 +245,7 @@ export function VideoStreamingClient({ routeId, mode, poll = false }: VideoStrea
   useEffect(() => {
     attemptedFallbackRef.current.clear();
     setFallbackNotice(null);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new clip or packaging run is the trigger: fallbacks tried for the old one no longer apply
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new video or packaging run is the trigger: fallbacks tried for the old one no longer apply
   }, [routeId, effectivePackagingRunId]);
 
   const handleFatalError = useCallback(
@@ -313,22 +313,29 @@ export function VideoStreamingClient({ routeId, mode, poll = false }: VideoStrea
 
   if (mode === "benchmark") {
     return (
-      <div className="space-y-6">
-        <BenchmarkPanel
-          progress={benchmarkProgress}
-          results={benchmarkResults}
-          ladders={benchmarkLadders}
-          onStart={(profile, selection) => {
-            // A sweep sets configurations directly, so Best mode has to be off or its sync effect
-            // would put its own choice back on the next render.
-            setBestMode(false);
-            void startBenchmark(selection, profile);
-          }}
-          onCancel={cancelBenchmark}
-          disabled={transcodesLoading}
-        />
-        <div className="max-w-4xl space-y-4">{player}</div>
-        <PlaybackStats stats={stats} />
+      <div className="space-y-10">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="min-w-0 space-y-8">
+            <div className="space-y-4">{player}</div>
+            <PlaybackStats stats={stats} />
+          </div>
+          <aside className="xl:sticky xl:top-20 xl:self-start">
+            <BenchmarkPanel
+              progress={benchmarkProgress}
+              results={benchmarkResults}
+              ladders={benchmarkLadders}
+              onStart={(profiles, selection) => {
+                // A sweep sets configurations directly, so Best mode has to be off or its sync
+                // effect would put its own choice back on the next render.
+                setBestMode(false);
+                void startBenchmark(selection, profiles);
+              }}
+              onCancel={cancelBenchmark}
+              disabled={transcodesLoading}
+            />
+          </aside>
+        </div>
+        <BenchmarkSessionResults results={benchmarkResults} />
       </div>
     );
   }

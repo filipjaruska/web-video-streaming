@@ -35,17 +35,17 @@ describe.skipIf(!backendUp)(`read API at ${apiUrl}`, () => {
     expect(new TextDecoder().decode(head)).toBe("SQLite format 3");
   });
 
-  it("builds the chapter 5 report from every clip without a load error", async () => {
+  it("builds the chapter 5 report from every video without a load error", async () => {
     const report = await fetchChapter5(apiUrl);
-    expect(report.clips.map((clip) => clip.routeId).toSorted()).toEqual(routeIds.toSorted());
-    for (const clip of report.clips) {
-      expect(clip.errors, clip.routeId).toEqual([]);
+    expect(report.videos.map((video) => video.routeId).toSorted()).toEqual(routeIds.toSorted());
+    for (const video of report.videos) {
+      expect(video.errors, video.routeId).toEqual([]);
     }
     expect(report.content).toHaveLength(routeIds.length);
   });
 });
 
-describe.skipIf(!backendUp || routeIds.length === 0).each(routeIds)("clip %s", (routeId) => {
+describe.skipIf(!backendUp || routeIds.length === 0).each(routeIds)("video %s", (routeId) => {
   it("serves its packaging runs, analysis, benchmarks, subtitles and thumbnail", async () => {
     const transcodes = await checkTranscodes(routeId);
     await checkAnalysis(routeId, isFullyProcessed(transcodes));

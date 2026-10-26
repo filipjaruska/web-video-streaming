@@ -12,11 +12,11 @@ const TABS = [
   { segment: "raw", label: "Raw data" },
 ] as const;
 
-export function ClipTabs({ routeId }: { routeId: string }) {
+export function VideoTabs({ routeId }: { routeId: string }) {
   const pathname = usePathname();
   const current = pathname.split("/")[2] ?? "";
   return (
-    <nav aria-label="Clip" className="-mb-px flex gap-1 overflow-x-auto border-b">
+    <nav aria-label="Video" className="-mb-px flex gap-1 overflow-x-auto border-b">
       {TABS.map((tab) => {
         const active = current === tab.segment;
         return (

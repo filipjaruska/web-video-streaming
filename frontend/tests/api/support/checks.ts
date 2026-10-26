@@ -32,8 +32,8 @@ import {
 } from "./schemas";
 
 /*
- * The checks one published clip has to pass, shared by the read suites (every clip the backend has)
- * and the upload end-to-end test (the clip it just processed). Every call goes through the frontend's
+ * The checks one published video has to pass, shared by the read suites (every video the backend has)
+ * and the upload end-to-end test (the video it just processed). Every call goes through the frontend's
  * own client function, so these exercise the URLs and error handling the UI actually uses.
  */
 
@@ -245,7 +245,7 @@ export async function checkByteRange(routeId: string): Promise<void> {
   expect((await res.arrayBuffer()).byteLength).toBe(1024);
 }
 
-/** Every delivery path of a clip: each packaging run over both protocols, and the source. */
+/** Every delivery path of a video: each packaging run over both protocols, and the source. */
 export async function checkDelivery(
   routeId: string,
   transcodes: VideoTranscodesResponse,
@@ -304,8 +304,8 @@ async function statusOf(path: string, init?: RequestInit): Promise<number> {
   return (await fetch(`${apiUrl}${path}`, init)).status;
 }
 
-/** What an existing clip answers for runs, rungs and files it does not have, and for hostile names. */
-export async function checkClipErrors(routeId: string): Promise<void> {
+/** What an existing video answers for runs, rungs and files it does not have, and for hostile names. */
+export async function checkVideoErrors(routeId: string): Promise<void> {
   for (const path of [
     `/api/hls/${routeId}/t/no-such-run/master.m3u8`,
     `/api/dash/${routeId}/t/no-such-run/manifest.mpd`,

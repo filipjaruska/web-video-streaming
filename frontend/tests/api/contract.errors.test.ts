@@ -6,11 +6,11 @@ import { getVideoBenchmarks } from "@/lib/videoBenchmarksApi";
 import { getVideoSubtitles } from "@/lib/videoSubtitlesApi";
 import { getVideoTranscodes } from "@/lib/videoTranscodesApi";
 
-import { checkClipErrors } from "./support/checks";
+import { checkVideoErrors } from "./support/checks";
 import { apiUrl, backendUp, listRouteIds } from "./support/env";
 
-const unknown = "no-such-clip";
-const [someClip] = await listRouteIds();
+const unknown = "no-such-video";
+const [someVideo] = await listRouteIds();
 
 async function status(path: string, init?: RequestInit): Promise<number> {
   return (await fetch(`${apiUrl}${path}`, init)).status;
@@ -32,12 +32,12 @@ describe.skipIf(!backendUp)("error contract", () => {
     expect(await status(path)).toBe(404);
   });
 
-  it("turns a missing clip into the result each client promises the UI", async () => {
+  it("turns a missing video into the result each client promises the UI", async () => {
     await expect(getVideoTranscodes(apiUrl, unknown)).rejects.toThrow(/404/);
     await expect(getVideoAnalysis(apiUrl, unknown)).rejects.toThrow(/404/);
     await expect(getVideoBenchmarks(apiUrl, unknown)).rejects.toThrow(/404/);
     await expect(getUploadSession(apiUrl, crypto.randomUUID())).rejects.toThrow(/404/);
-    // Subtitles are optional on the player page, so a missing clip just has none.
+    // Subtitles are optional on the player page, so a missing video just has none.
     expect(await getVideoSubtitles(apiUrl, unknown)).toEqual({
       routeId: unknown,
       tracks: [],
@@ -45,11 +45,11 @@ describe.skipIf(!backendUp)("error contract", () => {
     });
   });
 
-  // On a fresh backend (CI) there is no clip yet; e2e.upload.test.ts runs this on the one it uploads.
-  it.skipIf(!someClip)(
-    "refuses unknown runs, rungs, tracks, path traversal and out-of-range bytes on an existing clip",
+  // On a fresh backend (CI) there is no video yet; e2e.upload.test.ts runs this on the one it uploads.
+  it.skipIf(!someVideo)(
+    "refuses unknown runs, rungs, tracks, path traversal and out-of-range bytes on an existing video",
     async () => {
-      await checkClipErrors(someClip);
+      await checkVideoErrors(someVideo);
     },
   );
 });

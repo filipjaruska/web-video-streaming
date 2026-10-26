@@ -34,7 +34,7 @@ interface VmafChartProps {
   data: VmafSeriesData;
   label: string;
   format: "hls" | "dash";
-  /** Clip length, to put the frames on a time axis. */
+  /** Video length, to put the frames on a time axis. */
   durationSec?: number | null;
 }
 

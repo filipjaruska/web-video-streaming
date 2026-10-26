@@ -12,7 +12,7 @@ type UploadPageProps = {
 
 export const metadata: Metadata = {
   title: "Upload",
-  description: "Upload a clip and follow its processing.",
+  description: "Upload a video and follow its processing.",
 };
 
 export default async function UploadPage({ params }: UploadPageProps) {
@@ -23,10 +23,10 @@ export default async function UploadPage({ params }: UploadPageProps) {
   return (
     <PageShell
       eyebrow="Upload"
-      title={session.video.title || session.video.originalFileName || "New clip"}
+      title={session.video.title?.trim() || "New video"}
       description={
         awaitingFile
-          ? "The clip is analysed, packaged as three ladders and compared. This page can be left and reopened; processing carries on."
+          ? "The video is analysed, packaged as three ladders and compared. This page can be left and reopened; processing carries on."
           : "Results fill in below as each step finishes. This page can be left and reopened."
       }
     >

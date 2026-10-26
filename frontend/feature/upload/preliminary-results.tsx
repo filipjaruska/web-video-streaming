@@ -51,7 +51,7 @@ function rungSpan(ladder: DerivedLadderDocument | undefined): string | null {
 
 /**
  * What processing has produced so far, in the order the pipeline produces it. Each block appears
- * once its data exists, so the page fills in while the clip is still being processed.
+ * once its data exists, so the page fills in while the video is still being processed.
  */
 export function PreliminaryResults({
   routeId,

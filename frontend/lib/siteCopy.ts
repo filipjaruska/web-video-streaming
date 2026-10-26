@@ -3,15 +3,14 @@
  * never shows different copy from the page it stands in for.
  */
 export const HOME_COPY = {
-  title: "Clips",
+  title: "Videos",
   description:
-    "Animated clips, each packaged as a static, a content-adaptive and an animation-optimised ladder and played over HLS and DASH.",
+    "Animated videos, each packaged as a static, a content-adaptive and an animation-optimised ladder and played over HLS and DASH.",
 } as const;
 
 export const RESULTS_COPY = {
   title: "Results",
-  description:
-    "Every clip measured the same way, laid out as in chapter 5. Select a clip for its own results.",
+  description: "Every video measured the same way. Select a video for its own results.",
 } as const;
 
 export const METHOD_COPY = {

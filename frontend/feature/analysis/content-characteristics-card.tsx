@@ -18,7 +18,7 @@ function mean(values: number[] | undefined): number | null {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-/** The clip's row of Table 4: SI and TI with their spread, repeats and source banding. */
+/** The video's content row: SI and TI with their spread, repeats and source banding. */
 export function ContentCharacteristicsCard({
   series,
   durationSec,

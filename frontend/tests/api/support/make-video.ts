@@ -4,17 +4,17 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /**
- * Generates the clip the upload end-to-end test pushes through the pipeline, so nothing binary is
+ * Generates the video the upload end-to-end test pushes through the pipeline, so nothing binary is
  * committed: a 1080p test pattern with a tone and one SRT subtitle track, muxed to MKV like the
- * thesis clips. Needs ffmpeg on PATH.
+ * thesis videos. Needs ffmpeg on PATH.
  *
  * Kept short because the pipeline's cost scales with duration (every rung, the CRF grids and VMAF
- * all run over the whole clip).
+ * all run over the whole video).
  */
-export function makeClip(outDir: string, seconds = 4): string {
+export function makeVideo(outDir: string, seconds = 4): string {
   mkdirSync(outDir, { recursive: true });
-  const srtPath = join(outDir, "e2e-clip.srt");
-  const clipPath = join(outDir, "e2e-clip.mkv");
+  const srtPath = join(outDir, "e2e-video.srt");
+  const videoPath = join(outDir, "e2e-video.mkv");
 
   writeFileSync(
     srtPath,
@@ -60,19 +60,19 @@ export function makeClip(outDir: string, seconds = 4): string {
       "srt",
       "-metadata:s:s:0",
       "language=eng",
-      clipPath,
+      videoPath,
     ],
     { encoding: "utf8" },
   );
 
   if (result.error || result.status !== 0) {
-    throw new Error(`ffmpeg could not generate the e2e clip: ${result.error ?? result.stderr}`);
+    throw new Error(`ffmpeg could not generate the e2e video: ${result.error ?? result.stderr}`);
   }
 
-  return clipPath;
+  return videoPath;
 }
 
-// `node make-clip.ts <outDir> [seconds]` for generating the clip by hand.
+// `node make-video.ts <outDir> [seconds]` for generating the video by hand.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  console.log(makeClip(process.argv[2] ?? ".", Number(process.argv[3] ?? 4)));
+  console.log(makeVideo(process.argv[2] ?? ".", Number(process.argv[3] ?? 4)));
 }

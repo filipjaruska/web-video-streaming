@@ -23,7 +23,7 @@ import { slugFilename } from "@/lib/csvExport";
 
 /**
  * Highest to lowest; legend and series always follow this order. The resolutions of the static
- * ladder (Apple's HLS authoring spec) and, before it, of the ladder clips analysed earlier used.
+ * ladder (Apple's HLS authoring spec) and, before it, of the ladder videos analysed earlier used.
  */
 const HEIGHT_KEYS = [1080, 720, 540, 480, 432, 360, 240, 234] as const;
 

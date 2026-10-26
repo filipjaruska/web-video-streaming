@@ -18,7 +18,7 @@ interface PageShellProps {
   eyebrow?: ReactNode;
   /** Buttons or menus on the right of the title. */
   actions?: ReactNode;
-  /** Rendered under the title row, e.g. the tab bar of a clip. */
+  /** Rendered under the title row, e.g. the tab bar of a video. */
   below?: ReactNode;
   children: ReactNode;
 }

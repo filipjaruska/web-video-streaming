@@ -26,12 +26,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { refreshData } from "@/lib/cacheActions";
 import { getPublicApiUrl } from "@/lib/env";
-import { deleteVideo, updateVideo, type VideoListItem } from "@/lib/videoApi";
+import { deleteVideo, updateVideo, videoTitle, type VideoListItem } from "@/lib/videoApi";
 
 type Open = "edit" | "delete" | null;
 
-/** Rename, describe or delete a clip. Both go through the same password gate as every mutation. */
-export function ClipManageMenu({ video }: { video: VideoListItem }) {
+/** Rename, describe or delete a video. Both go through the same password gate as every mutation. */
+export function VideoManageMenu({ video }: { video: VideoListItem }) {
   const router = useRouter();
   const { requireAuth } = useActionAuth();
   const [open, setOpen] = useState<Open>(null);
@@ -40,7 +40,7 @@ export function ClipManageMenu({ video }: { video: VideoListItem }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const label = video.title || video.fileName;
+  const label = videoTitle(video);
 
   function show(dialog: Open) {
     setTitle(video.title ?? "");
@@ -98,7 +98,7 @@ export function ClipManageMenu({ video }: { video: VideoListItem }) {
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={() => show("delete")}>
             <Trash2 />
-            Delete clip
+            Delete video
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -106,8 +106,8 @@ export function ClipManageMenu({ video }: { video: VideoListItem }) {
       <Dialog open={open === "edit"} onOpenChange={(next) => !next && setOpen(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit clip</DialogTitle>
-            <DialogDescription className="font-mono text-xs">{video.fileName}</DialogDescription>
+            <DialogTitle>Edit video</DialogTitle>
+            <DialogDescription>Shown wherever the video is listed.</DialogDescription>
           </DialogHeader>
           <form
             className="space-y-4"
@@ -117,19 +117,18 @@ export function ClipManageMenu({ video }: { video: VideoListItem }) {
             }}
           >
             <div className="space-y-1.5">
-              <Label htmlFor="clip-title">Title</Label>
+              <Label htmlFor="video-title">Title</Label>
               <Input
-                id="clip-title"
+                id="video-title"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 maxLength={200}
-                placeholder={video.fileName}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="clip-description">Description</Label>
+              <Label htmlFor="video-description">Description</Label>
               <Textarea
-                id="clip-description"
+                id="video-description"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={4000}

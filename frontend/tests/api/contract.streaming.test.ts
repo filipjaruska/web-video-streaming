@@ -5,8 +5,8 @@ import { getVideoTranscodes } from "@/lib/videoTranscodesApi";
 import { checkCors, checkDelivery, checkNetworkShaping } from "./support/checks";
 import { apiUrl, backendUp, listRouteIds } from "./support/env";
 
-// On a fresh backend (CI) there are no clips yet; e2e.upload.test.ts runs these same checks on the
-// clip it uploads.
+// On a fresh backend (CI) there are no videos yet; e2e.upload.test.ts runs these same checks on the
+// video it uploads.
 const routeIds = await listRouteIds();
 
 describe.skipIf(!backendUp || routeIds.length === 0)("network shaping", () => {
