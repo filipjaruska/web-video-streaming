@@ -61,6 +61,16 @@ export default defineConfig({
         rules: {
           // Fixture helpers live inside the describe block whose cases use them.
           "unicorn/consistent-function-scoping": "off",
+          // Vitest takes a failure message as expect's second argument.
+          "vitest/valid-expect": ["error", { maxArgs: 2 }],
+          // The API suites assert through shared check* helpers in tests/api/support/checks.ts.
+          "vitest/expect-expect": ["error", { assertFunctionNames: ["expect", "check*"] }],
+        },
+      },
+      {
+        files: ["frontend/tests/api/support/**"],
+        rules: {
+          "vitest/valid-expect": ["error", { maxArgs: 2 }],
         },
       },
     ],

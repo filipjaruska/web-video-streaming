@@ -13,7 +13,9 @@ Run these from the repo root.
 - `vp run frontend#dev` / `vp run api:dev`: start only one of them
 - `vp check`: format check, lint and type check
 - `vp check --fix`: the same, applying fixes
-- `vp run frontend#test`: frontend unit tests (Vitest), or `vp test` inside `frontend/`
+- `vp run frontend#test`: frontend unit tests (Vitest)
+- `vp run frontend#test:api`: API tests against the running backend (see [Testing](#testing))
+- `vp run frontend#test:api:record`: re-record the API golden snapshots
 - `vp run frontend#build`: production build of the frontend
 - `vp run api:build`: build the backend
 - `vp run api:format`: format all C# with `dotnet format`
@@ -68,6 +70,8 @@ frontend/              Next.js app (pnpm workspace member)
   hooks/               playback telemetry and the benchmark runner
   lib/abr/             ABR rules and the driver that applies them to hls.js and dash.js
   lib/benchmark/       benchmark matrix, metric definitions and types
+  tests/unit/          pure frontend logic: ABR rules, metrics, matrix, URLs, results rows, CSV
+  tests/api/           the API as the frontend consumes it (contracts, goldens, upload end-to-end)
 backend/               ASP.NET Core API
   Api/                 controllers: videos, upload sessions, streaming, benchmarks, database
   Core/                upload, transcoding pipeline, processing queue, FFmpeg wrappers
@@ -75,6 +79,28 @@ backend/               ASP.NET Core API
   Data/                EF Core DbContext and entities (SQLite)
 vite.config.ts         lint, format, staged-file and task config for the whole repo
 ```
+
+## Testing
+
+All tests live in `frontend/tests/` and run on Vitest through Vite+.
+
+- **Unit (`tests/unit/`):** `vp run frontend#test`. Pure logic, no backend. They run in CI, and `vp check` type-checks them.
+- **API (`tests/api/`):** `vp run frontend#test:api`. These run against the backend at `API_URL` (default `http://localhost:5000`) and skip cleanly when none is running. Every call goes through the frontend's own client functions (`lib/*Api.ts`).
+  - **Contracts:**
+    - Every response is checked against zod schemas bound to the frontend's TypeScript types.
+    - Every HLS/DASH manifest and segment of every packaging run must resolve, plus byte ranges and CORS.
+    - A request tagged with the 3G profile must actually be throttled to its rate.
+    - Unknown resources get 404s, and path-traversal segment names are refused.
+  - **Golden snapshots:**
+    - What's recorded: the raw responses (analysis, benchmarks, transcodes, subtitles, the catalogue), every manifest, and a fingerprint of one segment per run.
+    - Where they live: `tests/__golden__/`, gitignored, because they hold your measurement data and only match the database they came from.
+    - On a later run, any change shows as a value-level diff.
+    - Record them before a backend refactor with `vp run frontend#test:api:record`. Re-record after deliberately reprocessing a clip or adding benchmark runs.
+  - **Upload end-to-end:**
+    - Only runs with `API_TESTS_WRITE=1`.
+    - It generates a 4 s clip with ffmpeg, uploads it, waits for the whole pipeline (about 9 minutes locally), runs every contract on it, submits a benchmark, renames the video and deletes it.
+    - It only touches the video it creates, but it writes to the backend's database and occupies its processing queue. **Don't set it against a backend whose data matters.**
+- **CI:** the `api` job starts a backend on a fresh database with the same FFmpeg build as the Docker image, then runs the API project with writes enabled. That includes the upload end-to-end test, so every push runs the whole processing pipeline once.
 
 ## Tooling
 

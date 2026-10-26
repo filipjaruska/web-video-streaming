@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { getDashQuality } from "./useVideoStatsTracking";
+import { getDashQuality } from "@/hooks/useVideoStatsTracking";
 
 /** A derived ladder with two 720p rungs; dash.js lists representations by ascending bandwidth. */
 const representations = [

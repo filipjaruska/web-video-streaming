@@ -7,7 +7,7 @@ import {
   decide,
   hybridRule,
   throughputRule,
-} from "./rules";
+} from "@/lib/abr/rules";
 
 /**
  * These assert the properties each rule is claimed to have rather than fixed outputs, so the

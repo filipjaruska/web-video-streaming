@@ -49,3 +49,52 @@ jobs:
 
       - name: Format check
         run: dotnet format web-video-streaming.sln --no-restore --verify-no-changes
+
+  # The API as the frontend consumes it, against a throwaway backend: the contract suites, then the
+  # upload end-to-end test, which pushes a generated clip through the whole processing pipeline.
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      API_URL: http://localhost:5000
+      API_TESTS_WRITE: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: backend/global.json
+
+      # The same static build as backend/Dockerfile: the GPL variant carries libvmaf, which the
+      # runner image's ffmpeg lacks.
+      - name: Install FFmpeg 8.1 with libvmaf
+        run: |
+          curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz -o "$RUNNER_TEMP/ffmpeg.tar.xz"
+          tar -xJf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP"
+          sudo install -m 755 "$RUNNER_TEMP"/ffmpeg-*/bin/ffmpeg /usr/local/bin/ffmpeg
+          sudo install -m 755 "$RUNNER_TEMP"/ffmpeg-*/bin/ffprobe /usr/local/bin/ffprobe
+          ffmpeg -hide_banner -filters | grep -E ' (libvmaf|siti) '
+
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version: "24"
+          cache: true
+
+      - name: Start the backend on a fresh database
+        env:
+          PORT: "5000"
+          ASPNETCORE_ENVIRONMENT: Development
+          VIDEO_STORAGE_ROOT: ${{ runner.temp }}/media
+          ConnectionStrings__DefaultConnection: Data Source=${{ runner.temp }}/app.db
+        run: |
+          dotnet build backend/WebWVideoStreamingAPI.csproj -c Release
+          nohup dotnet backend/bin/Release/net10.0/WebWVideoStreamingAPI.dll > "$RUNNER_TEMP/backend.log" 2>&1 &
+          for _ in $(seq 1 60); do curl -fs http://localhost:5000/health && break; sleep 2; done
+          curl -fs http://localhost:5000/health
+
+      - name: API contract and upload end-to-end tests
+        run: vp run frontend#test:api
+
+      - name: Backend log
+        if: failure()
+        run: tail -n 300 "$RUNNER_TEMP/backend.log"

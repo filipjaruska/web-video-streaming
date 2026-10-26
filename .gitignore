@@ -16,6 +16,9 @@ App_Data/
 # Dependencies
 node_modules/
 
+# API golden snapshots: local measurement data, recorded against a local database
+frontend/tests/__golden__/
+
 # Build outputs
 dist/
 dist-ssr/

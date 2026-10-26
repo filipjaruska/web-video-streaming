@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { computeMetrics, summarize } from "./metrics";
-import type { BenchmarkEvent, BenchmarkSample, BenchmarkTrace, LadderQuality } from "./types";
+import { computeMetrics, summarize } from "@/lib/benchmark/metrics";
+import type {
+  BenchmarkEvent,
+  BenchmarkSample,
+  BenchmarkTrace,
+  LadderQuality,
+} from "@/lib/benchmark/types";
 
 /**
  * Traces here are hand-built so every expected value can be computed on paper. A wrong metric
