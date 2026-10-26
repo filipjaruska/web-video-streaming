@@ -16,7 +16,7 @@ import { SitiChart } from "@/feature/analysis/siti-chart";
 import { TuningComparisonCard } from "@/feature/analysis/tuning-comparison-card";
 import { useScrollToHash } from "@/hooks/useScrollToHash";
 import { useVideoAnalysis } from "@/hooks/useVideoAnalysis";
-import { pickSourceTarget, pickStaticTranscode } from "@/lib/analysisTargets";
+import { pickPreviewRung, pickSourceTarget, pickStaticTranscode } from "@/lib/analysisTargets";
 import type { Chapter5Report } from "@/lib/results/chapter5";
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { getPublicApiUrl } from "@/lib/env";
@@ -63,7 +63,15 @@ export function VideoResults({
     [source],
   );
   const durationSec = source?.series.siti?.timeSec?.at(-1) ?? null;
-  const previewSrc = useMemo(() => getHlsVariantUrl(getPublicApiUrl(), routeId, "360p"), [routeId]);
+  // From the static ladder, which exists first and whose rungs never change; a derived ladder may
+  // have dropped 360p, which the helper steps down from.
+  const previewRung = pickPreviewRung(staticRun);
+  const previewSrc = getHlsVariantUrl(
+    getPublicApiUrl(),
+    routeId,
+    previewRung,
+    staticRun?.transcodeId,
+  );
 
   if (loading && !data) {
     return (
@@ -106,7 +114,7 @@ export function VideoResults({
                   stats={sitiNode}
                   showStats={false}
                   videoSrc={previewSrc}
-                  videoLabel="HLS 360p"
+                  videoLabel={`HLS ${previewRung}`}
                 />
               )}
             </>

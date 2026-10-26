@@ -75,3 +75,34 @@ export function pickPackagedWithVmaf(targets: AnalysisTarget[]): AnalysisTarget[
     (target) => collectVmafEntries(target.series.vmafByFormat).length > 0,
   );
 }
+
+/** The rung height previews are drawn from: small enough to load fast while scrubbing. */
+const PREVIEW_HEIGHT = 360;
+
+function rungHeight(label: string): number | null {
+  const match = /^(\d+)p/.exec(label);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * The HLS rung a preview plays from a packaging run: 360p when the ladder has it, otherwise the
+ * highest rung below it, otherwise the lowest there is. Derived ladders can drop 360p, so asking
+ * for it blindly fails on them. The rungs are read off what the run's analysis measured; before
+ * any of that exists, 360p is the guess.
+ */
+export function pickPreviewRung(target: AnalysisTarget | undefined): string {
+  const labels = [
+    ...Object.keys(target?.series.vmafByFormat?.hls ?? {}),
+    ...Object.keys(target?.series.sitiByFormat?.hls ?? {}),
+  ];
+  const rungs = [...new Set(labels)]
+    .map((label) => ({ label, height: rungHeight(label) }))
+    .filter((rung): rung is { label: string; height: number } => rung.height !== null)
+    // Plain labels ("360p") ahead of gap-filling rungs at the same height ("360p-250k").
+    .toSorted((a, b) => b.height - a.height || a.label.length - b.label.length);
+
+  if (rungs.length === 0) {
+    return `${PREVIEW_HEIGHT}p`;
+  }
+  return (rungs.find((rung) => rung.height <= PREVIEW_HEIGHT) ?? rungs.at(-1)!).label;
+}

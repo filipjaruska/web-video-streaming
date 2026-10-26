@@ -24,6 +24,8 @@ interface TranscodeAnalysisCardProps {
   transcodeNumber: number;
   /** Progressive source MP4 — used as a scene-time reference for SI/TI scrubbing. */
   videoSrc?: string;
+  /** The rung `videoSrc` plays, for its label. */
+  previewRung?: string;
 }
 
 function sectionStatusBadge(status?: AnalysisSectionStatus) {
@@ -43,10 +45,13 @@ function FormatSitiCharts({
   formatLabel,
   sitiByRendition,
   videoSrc,
+  previewRung = "360p",
 }: {
   formatLabel: string;
   sitiByRendition: Record<string, SitiSeriesData>;
   videoSrc?: string;
+  /** The rung `videoSrc` plays, for its label. */
+  previewRung?: string;
 }) {
   const labels = useMemo(
     () => sortRenditionLabels(Object.keys(sitiByRendition)),
@@ -86,7 +91,7 @@ function FormatSitiCharts({
           title={`${formatLabel} ${active}: SI and TI over time`}
           note={`ITU-T P.910, per frame of the ${active} rendition.`}
           videoSrc={videoSrc}
-          videoLabel="Scene reference (HLS 360p)"
+          videoLabel={`Scene reference (HLS ${previewRung})`}
         />
       )}
     </div>
@@ -97,10 +102,13 @@ function FormatBox({
   section,
   sitiByRendition,
   videoSrc,
+  previewRung = "360p",
 }: {
   section: AnalysisTreeNode;
   sitiByRendition?: Record<string, SitiSeriesData>;
   videoSrc?: string;
+  /** The rung `videoSrc` plays, for its label. */
+  previewRung?: string;
 }) {
   const hasTree = (section.children?.length ?? 0) > 0;
   const hasSiti = !!sitiByRendition && Object.keys(sitiByRendition).length > 0;
@@ -125,6 +133,7 @@ function FormatBox({
             formatLabel={section.label}
             sitiByRendition={sitiByRendition}
             videoSrc={videoSrc}
+            previewRung={previewRung}
           />
         )}
       </div>
@@ -136,6 +145,7 @@ export function TranscodeAnalysisCard({
   target,
   transcodeNumber,
   videoSrc,
+  previewRung = "360p",
 }: TranscodeAnalysisCardProps) {
   const isActive = target.label.includes("(active)");
   const hls = target.tree.children.find((child) => child.id === "hls");
@@ -172,6 +182,7 @@ export function TranscodeAnalysisCard({
               section={section}
               sitiByRendition={siti}
               videoSrc={videoSrc}
+              previewRung={previewRung}
             />
           ))
         ) : (

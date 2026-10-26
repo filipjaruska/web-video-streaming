@@ -10,7 +10,7 @@ import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { TranscodeAnalysisCard } from "@/feature/analysis/transcode-analysis-card";
 import { useScrollToHash } from "@/hooks/useScrollToHash";
 import { useVideoAnalysis } from "@/hooks/useVideoAnalysis";
-import { pickSourceTarget, pickTranscodeTargets } from "@/lib/analysisTargets";
+import { pickPreviewRung, pickSourceTarget, pickTranscodeTargets } from "@/lib/analysisTargets";
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { getPublicApiUrl } from "@/lib/env";
 import { getHlsVariantUrl } from "@/lib/streamingLabels";
@@ -56,7 +56,13 @@ export function VideoRaw({ routeId, poll }: { routeId: string; poll: boolean }) 
               key={target.id}
               target={target}
               transcodeNumber={index + 1}
-              videoSrc={getHlsVariantUrl(getPublicApiUrl(), routeId, "360p", target.transcodeId)}
+              previewRung={pickPreviewRung(target)}
+              videoSrc={getHlsVariantUrl(
+                getPublicApiUrl(),
+                routeId,
+                pickPreviewRung(target),
+                target.transcodeId,
+              )}
             />
           ))
         )}

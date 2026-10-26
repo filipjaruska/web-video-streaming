@@ -303,9 +303,7 @@ export function SitiChart({
           if (!error.fatal || cancelled) {
             return;
           }
-          setPreviewError(
-            "HLS 360p preview unavailable. Re-upload or wait for packaging to finish.",
-          );
+          setPreviewError("Preview unavailable: this rung could not be loaded.");
         });
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = videoSrc;
