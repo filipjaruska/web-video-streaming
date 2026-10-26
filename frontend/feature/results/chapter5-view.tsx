@@ -87,6 +87,7 @@ function ContentSection({ report }: { report: Chapter5Report }) {
     <Section id="content" title="Content characteristics">
       <Figure
         title="Content of the test videos"
+        description="How demanding each source is to encode: SI is the detail within a frame, TI how much changes from one frame to the next, each with its spread over the video. Duplicate frames is the share of frames that repeat the previous one, and source CAMBI the banding already in the source. Lower SI and TI make a video cheaper to encode."
         note="Measured on each source before encoding. SD is over every frame of the video."
         actions={csv(
           "content",
@@ -141,6 +142,7 @@ function ContentSection({ report }: { report: Chapter5Report }) {
 
       <Figure
         title="Videos in the SI–TI plane"
+        description="Each video placed by its mean SI and TI. The shaded corner is where ITU-T P.910 places live action, the content generic ladders are designed for."
         note="Shaded: the region ITU-T P.910 gives for live action (SI above 80, TI above 20)."
       >
         <SiTiPlaneChart rows={report.content} />
@@ -148,6 +150,7 @@ function ContentSection({ report }: { report: Chapter5Report }) {
 
       <Figure
         title="Source file over progressive download"
+        description="The untouched source file downloaded progressively, at one quality with no ladder: time to the first frame and the share of the session spent buffering, on each network. The reference the adaptive ladders are compared with."
         note="Startup (ms) / buffering ratio, mean over the repetitions."
         actions={csv(
           "progressive",
@@ -219,6 +222,7 @@ function LadderSection({ report }: { report: Chapter5Report }) {
     <Section id="ladders" title="Ladder design and comparison">
       <Figure
         title="Derived ladders against the static ladder"
+        description="How much each derived ladder saves against the static one. BD-rate is the average bitrate difference at equal quality over the range both ladders cover; the VMAF ≥ 60 column limits that to the qualities viewers are normally served. BD-VMAF is the average quality difference at equal bitrate."
         note="Rungs: static / content-adaptive / animation-optimised. Negative BD-rate is a saving at equal quality, positive BD-VMAF more quality at equal bitrate. Akima interpolation, PCHIP where Akima is not monotone."
         actions={csv(
           "ladders",
@@ -298,6 +302,7 @@ function LadderSection({ report }: { report: Chapter5Report }) {
 
       <Figure
         title="Bitrate saving of the derived ladders against temporal complexity"
+        description="Each derived ladder's bitrate saving plotted against the video's mean TI, to show how the saving relates to the amount of motion."
         note="Saving is the full-range BD-rate with the sign flipped."
       >
         <SavingsChart points={report.savings} />
@@ -311,6 +316,7 @@ function TuningSection({ report }: { report: Chapter5Report }) {
     <Section id="tuning" title="Codec tuning for animation">
       <Figure
         title="Effect of -tune animation over paired encode-grid samples"
+        description="What x264's -tune animation changes when nothing else does: pairs of encodes at the same resolution and CRF, default against tuned. ΔVMAF and ΔCAMBI are the average differences in quality and banding; BD-rate compares the two settings' rate–quality curves."
         note="n is the number of pairs at the same resolution and CRF; ΔVMAF (mean over frames) and ΔCAMBI are means over them, a positive ΔCAMBI is more banding. BD-rate is fitted per resolution over both grids' curves (Akima); the mean is over resolutions."
         actions={csv(
           "tuning",
@@ -385,12 +391,14 @@ function TuningSection({ report }: { report: Chapter5Report }) {
       <div className="grid gap-8 lg:grid-cols-2">
         <Figure
           title="Change in VMAF from tuning against CRF"
+          description="The quality change from tuning at each CRF, averaged over the resolutions. Above zero, the tuned encode scores higher."
           note="Mean over the resolutions, at the CRFs where both grids encoded every resolution."
         >
           <TuningByCrfChart series={report.tuningByCrf} metric="vmafDelta" />
         </Figure>
         <Figure
           title="Change in CAMBI from tuning against CRF"
+          description="The banding change from tuning at each CRF, averaged over the resolutions. Above zero, the tuned encode bands more."
           note="Positive means more banding with tuning."
         >
           <TuningByCrfChart series={report.tuningByCrf} metric="cambiDelta" />
@@ -405,6 +413,7 @@ function OverheadSection({ report }: { report: Chapter5Report }) {
     <Section id="overhead" title="Computational overhead">
       <Figure
         title="Relative cost of the processing phases"
+        description="Processing time of each phase as a multiple of encoding and packaging the static ladder. The production path is what a service would run to ship the animation-optimised ladder; analysis done only for these measurements is left out."
         note="Multiples of encoding and packaging the static ladder of the same video. The production path is both grids, the derivation, and encoding plus packaging the animation-optimised ladder."
         actions={csv(
           "overhead",
@@ -473,6 +482,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
     >
       <Figure
         title="Delivered quality, HLS against DASH"
+        description="Whether the protocol changes the quality delivered when ladder, rule and network are the same: HLS minus DASH for the throughput and hybrid rules on each network. Values near zero mean both protocols play the ladder alike."
         note="HLS − DASH in points of time-weighted harmonic VMAF over the session, as throughput / hybrid rule. Positive means higher quality over HLS."
         actions={csv(
           "protocols",
@@ -524,6 +534,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
 
       <Figure
         title="Delivered quality and bitrate, animation-optimised against static"
+        description="The animation-optimised ladder against the static one during playback, per network and ABR rule: the change in delivered quality over the whole session and in steady state, after the first segment, and how much less bitrate was streamed."
         note="ΔVMAF is animation-optimised − static in points of time-weighted harmonic VMAF; steady state leaves out the first 6 s segment. Saving is the relative reduction of time-weighted bitrate, negative means more bits. Both protocols and all repetitions averaged."
         actions={csv(
           "ladder-playback",
@@ -615,6 +626,7 @@ function PlaybackSection({ report }: { report: Chapter5Report }) {
 
       <Figure
         title="Animation-optimised against static, whole session and steady state"
+        description="The same comparison on 4G with the throughput rule, per video. A difference between the two bars comes from the first segment, which the player often fetches at a lower rung."
         note="Throughput rule, 4G profile, points of time-weighted harmonic VMAF."
       >
         <SteadyStateChart points={report.steadyState} />
@@ -628,6 +640,7 @@ function VariableSection({ report }: { report: Chapter5Report }) {
     <Section id="variable" title="Variable network">
       <Figure
         title="Playback over 4G, 3G and back to 4G"
+        description="Each ladder on a connection that drops from 4G to 3G and recovers: the share of time spent buffering, seconds stalled and delivered quality, over HLS and DASH."
         note="Values as HLS / DASH, mean over the repetitions. Target buffer 8 s; VMAF is time-weighted harmonic over the session."
         actions={csv(
           "variable",
