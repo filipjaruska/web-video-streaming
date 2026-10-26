@@ -3,7 +3,7 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
-video/
+/video/
 
 wwwroot/
 sample.mp4
