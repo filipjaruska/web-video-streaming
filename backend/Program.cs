@@ -76,7 +76,7 @@ builder.Services.AddCors(options => {
         .WithOrigins(allowedOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()
-        .WithExposedHeaders(HttpRangeController.VideoCodecHeader));
+        .WithExposedHeaders(HttpRangeController.VideoCodecHeader, "Content-Disposition"));
 });
 
 // Railway's deploy healthcheck: traffic moves to a new instance only once it can reach its database.

@@ -58,6 +58,7 @@ export function VideoStreamingClient({ routeId, mode, poll = false }: VideoStrea
   const {
     progress: benchmarkProgress,
     results: benchmarkResults,
+    saveError: benchmarkSaveError,
     start: startBenchmark,
     cancel: cancelBenchmark,
     handlePlaybackEvent,
@@ -323,6 +324,7 @@ export function VideoStreamingClient({ routeId, mode, poll = false }: VideoStrea
             <BenchmarkPanel
               progress={benchmarkProgress}
               results={benchmarkResults}
+              saveError={benchmarkSaveError}
               ladders={benchmarkLadders}
               onStart={(profiles, selection) => {
                 // A sweep sets configurations directly, so Best mode has to be off or its sync

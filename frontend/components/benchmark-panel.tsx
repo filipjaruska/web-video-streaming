@@ -52,6 +52,8 @@ import type { BenchmarkProgress } from "@/hooks/useBenchmarkRunner";
 interface BenchmarkPanelProps {
   progress: BenchmarkProgress;
   results: BenchmarkRunResult[];
+  /** Why the last sweep stopped saving, if it did. */
+  saveError?: string | null;
   /** The video's packaged ladders that a sweep can play. */
   ladders: BenchmarkLadder[];
   /** One profile for a custom run; all four for Run all. */
@@ -196,6 +198,7 @@ function fullSelection(ladders: BenchmarkLadder[]): BenchmarkSelection {
 export function BenchmarkPanel({
   progress,
   results,
+  saveError,
   ladders,
   onStart,
   onCancel,
@@ -420,6 +423,8 @@ export function BenchmarkPanel({
           </details>
         </>
       )}
+
+      {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
       {mismatched.length > 0 && (
         <div className="space-y-1.5 rounded-sm border border-warning/40 bg-warning/10 p-3 text-xs">

@@ -51,6 +51,7 @@ public class BenchmarksController : ControllerBase {
         return NoContent();
     }
 
+    [RequireActionPassword]
     [HttpPost]
     [ProducesResponseType<BenchmarkRunDto>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

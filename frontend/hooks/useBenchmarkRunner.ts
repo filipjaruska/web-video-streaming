@@ -11,6 +11,7 @@ import {
   describeCell,
   toSamples,
 } from "@/lib/benchmark/matrix";
+import { actionFetch } from "@/lib/actionPassword";
 import { loadLadderQualities } from "@/lib/benchmark/ladderQuality";
 import { benchmarkRunToken } from "@/lib/streamingConfig";
 import {
@@ -87,6 +88,7 @@ export function useBenchmarkRunner({
 }: UseBenchmarkRunnerProps) {
   const [progress, setProgress] = useState<BenchmarkProgress>(IDLE);
   const [results, setResults] = useState<BenchmarkRunResult[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const eventsRef = useRef<BenchmarkEvent[]>([]);
   const runStartRef = useRef(0);
@@ -277,7 +279,7 @@ export function useBenchmarkRunner({
   const submit = useCallback(
     async (result: BenchmarkRunResult) => {
       try {
-        await fetch(`${apiUrl}/api/benchmarks`, {
+        const res = await actionFetch(`${apiUrl}/api/benchmarks`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -307,6 +309,14 @@ export function useBenchmarkRunner({
             },
           }),
         });
+        // A rejected password fails every run after it the same way, so the sweep stops rather than
+        // play on without saving anything.
+        if (res.status === 401) {
+          cancelRef.current = true;
+          setSaveError(
+            "The password was not accepted, so the run was not saved. The sweep stopped.",
+          );
+        }
       } catch {
         // A failed upload must not abort the sweep — the result is still held in local state and
         // can be exported to CSV.
@@ -324,6 +334,7 @@ export function useBenchmarkRunner({
     async (selection: BenchmarkSelection, profiles: NetworkProfile[]) => {
       cancelRef.current = false;
       setResults([]);
+      setSaveError(null);
 
       const matrix = buildMatrix(selection);
       const collected: BenchmarkRunResult[] = [];
@@ -396,7 +407,15 @@ export function useBenchmarkRunner({
     },
     [apiUrl, routeId, runOne, submit],
   );
-  return { progress, results, start, cancel, handlePlaybackEvent, networkProfileNow };
+  return {
+    progress,
+    results,
+    saveError,
+    start,
+    cancel,
+    handlePlaybackEvent,
+    networkProfileNow,
+  };
 }
 
 function delay(ms: number) {

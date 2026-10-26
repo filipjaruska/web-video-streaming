@@ -49,16 +49,17 @@ The defaults work for local development without editing either `.env.example`.
 | `NEXT_PUBLIC_API_URL`  | Backend URL used by the browser (default `http://localhost:5000`) |
 | `API_URL`              | Optional server-only backend URL for SSR, sitemap and robots      |
 | `NEXT_PUBLIC_SITE_URL` | Public origin for `sitemap.xml` and `robots.txt`                  |
-| `ACTION_PASSWORD`      | Password for uploads and metadata edits. Empty disables it        |
+| `ACTION_PASSWORD`      | Password the UI asks for before any action. Empty disables it     |
 
-**Backend:** environment variables override `appsettings.json`, and nested keys use `__`. See `backend/.env.example`.
+**Backend:** environment variables override `appsettings.json`, and nested keys use `__`. See `backend/.env.example`. CORS only limits browsers, so in production set `ACTION_PASSWORD` on both services: it is what stops direct requests from changing data.
 
-| Variable                               | Purpose                                                        |
-| -------------------------------------- | -------------------------------------------------------------- |
-| `PORT`                                 | Listen port (default `5000`)                                   |
-| `VIDEO_STORAGE_ROOT`                   | Uploads, transcodes and thumbnails (default `App_Data/media`)  |
-| `ConnectionStrings__DefaultConnection` | SQLite database (default `App_Data/app.db`)                    |
-| `AllowedOrigins__0`                    | CORS origin for the frontend (default `http://localhost:3000`) |
+| Variable                               | Purpose                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `PORT`                                 | Listen port (default `5000`)                                                                      |
+| `VIDEO_STORAGE_ROOT`                   | Uploads, transcodes and thumbnails (default `App_Data/media`)                                     |
+| `ConnectionStrings__DefaultConnection` | SQLite database (default `App_Data/app.db`)                                                       |
+| `AllowedOrigins__0`                    | CORS origin for the frontend (default `http://localhost:3000`)                                    |
+| `ACTION_PASSWORD`                      | Same value as the frontend; required on changes and the database download. Empty leaves them open |
 
 ## Layout
 

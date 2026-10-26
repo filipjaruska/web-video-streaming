@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { actionFetch } from "@/lib/actionPassword";
 import { getApiUrl } from "@/lib/env";
 
 export interface UploadSessionVideo {
@@ -71,13 +72,18 @@ export interface UpdateUploadSessionVideoRequest {
   description: string;
 }
 
+function failure(action: string, status: number): string {
+  return status === 401
+    ? `${action}: the password was not accepted. Try again to enter it.`
+    : `${action}: ${status}`;
+}
 export async function createUploadSession(apiUrl: string): Promise<UploadSessionResponse> {
-  const res = await fetch(`${apiUrl}/api/uploadSessions`, {
+  const res = await actionFetch(`${apiUrl}/api/uploadSessions`, {
     method: "POST",
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to create upload session: ${res.status}`);
+    throw new Error(failure("Failed to create upload session", res.status));
   }
 
   return res.json() as Promise<UploadSessionResponse>;
@@ -103,7 +109,7 @@ export async function updateUploadSessionVideo(
   sessionId: string,
   payload: UpdateUploadSessionVideoRequest,
 ): Promise<UploadSessionResponse> {
-  const res = await fetch(`${apiUrl}/api/uploadSessions/${sessionId}/video`, {
+  const res = await actionFetch(`${apiUrl}/api/uploadSessions/${sessionId}/video`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -112,7 +118,7 @@ export async function updateUploadSessionVideo(
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to update upload session: ${res.status}`);
+    throw new Error(failure("Failed to update upload session", res.status));
   }
 
   return res.json() as Promise<UploadSessionResponse>;
@@ -126,7 +132,7 @@ export async function uploadSessionFile(
   const form = new FormData();
   form.append("file", file);
 
-  const res = await fetch(`${apiUrl}/api/uploadSessions/${sessionId}/upload`, {
+  const res = await actionFetch(`${apiUrl}/api/uploadSessions/${sessionId}/upload`, {
     method: "POST",
     body: form,
   });
@@ -136,7 +142,7 @@ export async function uploadSessionFile(
     const message =
       body && typeof body === "object" && "message" in body
         ? String((body as { message: unknown }).message)
-        : `Upload failed: ${res.status}`;
+        : failure("Upload failed", res.status);
     throw new Error(message);
   }
 
@@ -155,26 +161,26 @@ export async function updateVideo(
   routeId: string,
   payload: { title?: string | null; description?: string | null },
 ): Promise<UpdateVideoResponse> {
-  const res = await fetch(`${apiUrl}/api/videos/${routeId}`, {
+  const res = await actionFetch(`${apiUrl}/api/videos/${routeId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to update video: ${res.status}`);
+    throw new Error(failure("Failed to update video", res.status));
   }
 
   return res.json() as Promise<UpdateVideoResponse>;
 }
 
 export async function deleteVideo(apiUrl: string, routeId: string): Promise<void> {
-  const res = await fetch(`${apiUrl}/api/videos/${routeId}`, {
+  const res = await actionFetch(`${apiUrl}/api/videos/${routeId}`, {
     method: "DELETE",
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to delete video: ${res.status}`);
+    throw new Error(failure("Failed to delete video", res.status));
   }
 }
 

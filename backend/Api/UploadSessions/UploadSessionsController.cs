@@ -62,6 +62,7 @@ public class UploadSessionsController : ControllerBase {
         _queue = queue;
     }
 
+    [RequireActionPassword]
     [HttpPost]
     [ProducesResponseType<UploadSessionResponse>(StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateSession(CancellationToken cancellationToken) {
@@ -79,6 +80,7 @@ public class UploadSessionsController : ControllerBase {
             : Ok(await RespondAsync(session, cancellationToken));
     }
 
+    [RequireActionPassword]
     [HttpPatch("{sessionId:guid}/video")]
     [ProducesResponseType<UploadSessionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -97,6 +99,7 @@ public class UploadSessionsController : ControllerBase {
             : Ok(await RespondAsync(session, cancellationToken));
     }
 
+    [RequireActionPassword]
     [HttpPost("{sessionId:guid}/upload")]
     [ProducesResponseType<UploadSessionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

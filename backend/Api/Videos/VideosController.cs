@@ -184,6 +184,7 @@ public class VideosController : ControllerBase {
     /// is not exposed once the video is published — so this is the only way to rename a clip after
     /// the fact.
     /// </remarks>
+    [RequireActionPassword]
     [HttpPatch("{routeId}")]
     [ProducesResponseType<UpdateVideoResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -213,6 +214,7 @@ public class VideosController : ControllerBase {
     /// stored, replacing the previous one — for a change to the derivation, without re-running the
     /// grids. Synchronous: the response comes once the new ladder is packaged and verified.
     /// </summary>
+    [RequireActionPassword]
     [HttpPost("{routeId}/ladders/{ladder}/rederive")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -235,6 +237,7 @@ public class VideosController : ControllerBase {
     /// Re-runs the refinement of a derived ladder's grid from its stored coarse samples under the
     /// current derivation and settings. Re-derive afterwards to package a ladder from it.
     /// </summary>
+    [RequireActionPassword]
     [HttpPost("{routeId}/ladders/{ladder}/refine-grid")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -257,6 +260,7 @@ public class VideosController : ControllerBase {
     /// Recomputes the ladder and tuning comparisons (BD-rates) from the stored measurements, without
     /// encoding or packaging anything — for a change to how they are computed.
     /// </summary>
+    [RequireActionPassword]
     [HttpPost("{routeId}/comparisons/recompute")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -276,6 +280,7 @@ public class VideosController : ControllerBase {
         _ => null
     };
 
+    [RequireActionPassword]
     [HttpDelete("{routeId}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
