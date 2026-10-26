@@ -45,7 +45,8 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Null until mounted: a clock read during server rendering never matches the client's.
+  const [nowMs, setNowMs] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const state = session.session;
@@ -54,7 +55,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
   const awaitingFile = status === "AwaitingUpload" || (status === "Failed" && !state.uploadedAtUtc);
 
   const elapsedSeconds = useMemo(() => {
-    if (!isProcessing || !state.processingStartedAtUtc) {
+    if (!isProcessing || !state.processingStartedAtUtc || nowMs === null) {
       return null;
     }
     const started = new Date(state.processingStartedAtUtc).getTime();
@@ -67,6 +68,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     if (!isProcessing) {
       return;
     }
+    setNowMs(Date.now());
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [isProcessing]);
