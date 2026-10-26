@@ -8,6 +8,7 @@ import { Section } from "@/components/section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { TranscodeAnalysisCard } from "@/feature/analysis/transcode-analysis-card";
+import { useScrollToHash } from "@/hooks/useScrollToHash";
 import { useVideoAnalysis } from "@/hooks/useVideoAnalysis";
 import { pickSourceTarget, pickTranscodeTargets } from "@/lib/analysisTargets";
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
@@ -17,6 +18,8 @@ import { getHlsVariantUrl } from "@/lib/streamingLabels";
 /** Probe metadata of the source and every packaging run, as the backend recorded it. */
 export function VideoRaw({ routeId, poll }: { routeId: string; poll: boolean }) {
   const { data, error, loading } = useVideoAnalysis(routeId, { poll });
+  // The sections render only once the analysis is in, after the browser has looked for the hash.
+  useScrollToHash(data !== null);
   const targets = useMemo(() => data?.targets ?? [], [data]);
   const source = pickSourceTarget(targets);
   const transcodes = pickTranscodeTargets(targets);

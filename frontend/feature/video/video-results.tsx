@@ -14,6 +14,7 @@ import { PipelineCostCard } from "@/feature/analysis/pipeline-cost-card";
 import { RdScatterChart } from "@/feature/analysis/rd-scatter-chart";
 import { SitiChart } from "@/feature/analysis/siti-chart";
 import { TuningComparisonCard } from "@/feature/analysis/tuning-comparison-card";
+import { useScrollToHash } from "@/hooks/useScrollToHash";
 import { useVideoAnalysis } from "@/hooks/useVideoAnalysis";
 import { pickSourceTarget, pickStaticTranscode } from "@/lib/analysisTargets";
 import type { Chapter5Report } from "@/lib/results/chapter5";
@@ -48,6 +49,8 @@ export function VideoResults({
   playback: ReactNode;
 }) {
   const { data, error, loading, isPolling } = useVideoAnalysis(routeId, { poll });
+  // The sections render only once the analysis is in, after the browser has looked for the hash.
+  useScrollToHash(data !== null);
 
   const targets = useMemo(() => data?.targets ?? [], [data]);
   const source = pickSourceTarget(targets);
