@@ -215,6 +215,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         return;
       }
 
+      // No casting: switched off on the element as soon as the provider exists, before loading.
+      if (isVideoProvider(provider) || isHLSProvider(provider) || isDASHProvider(provider)) {
+        provider.video.disableRemotePlayback = true;
+      }
+
       // Fixed for the player's life: it remounts for every run, so this is the run's own profile.
       const targetBufferSec = targetBufferFor(networkProfileRef.current?.());
 
@@ -381,7 +386,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             />
           ))}
         </MediaProvider>
-        <DefaultVideoLayout icons={defaultLayoutIcons} />
+        <DefaultVideoLayout icons={defaultLayoutIcons} slots={{ googleCastButton: null }} />
       </MediaPlayer>
     </div>
   );
