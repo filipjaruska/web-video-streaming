@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { PageShell } from "@/components/page-shell";
 import { StatusBadge } from "@/components/status-badge";
+import { DownloadRawData } from "@/feature/video/download-raw-data";
 import { VideoManageMenu } from "@/feature/video/video-manage-menu";
 import { VideoTabs } from "@/feature/video/video-tabs";
 import { videoTitle } from "@/lib/videoApi";
@@ -39,7 +40,14 @@ export default async function VideoLayout({ params, children }: VideoLayoutProps
         </span>
       }
       description={video?.description ?? undefined}
-      actions={video ? <VideoManageMenu video={video} /> : undefined}
+      actions={
+        video ? (
+          <>
+            <DownloadRawData video={video} />
+            <VideoManageMenu video={video} />
+          </>
+        ) : undefined
+      }
       below={<VideoTabs routeId={routeId} />}
     >
       <div className="pt-6">{children}</div>
