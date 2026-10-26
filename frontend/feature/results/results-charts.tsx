@@ -21,7 +21,7 @@ import {
 import { ChartTooltipBox } from "@/components/chart-tooltip-box";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { ladderColor, ladderLabel } from "@/lib/analysisFormat";
-import { fixed, signed } from "@/lib/results/format";
+import { clipName, fixed, signed } from "@/lib/results/format";
 import type {
   ContentRow,
   SavingPoint,
@@ -35,12 +35,6 @@ export function clipColor(index: number): string {
 }
 
 const AXIS = { tickLine: false, axisLine: false, tickMargin: 8, fontSize: 12 } as const;
-
-function shortTitle(title: string): string {
-  // Catalogue titles are file names ("frieren_s01e06_t0738-0808"); the series name reads better.
-  const name = title.split(/[_.]/)[0].replace(/-/g, " ");
-  return name.replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
 
 function NamedPointTooltip({ active, payload }: TooltipContentProps) {
   const point = payload?.[0]?.payload as { title?: string; x?: number; y?: number } | undefined;
@@ -92,7 +86,7 @@ function DeltaTooltip({ active, payload, label }: TooltipContentProps) {
 export function SiTiPlaneChart({ rows }: { rows: ContentRow[] }) {
   const points = rows.flatMap((row, index) =>
     row.siMean != null && row.tiMean != null
-      ? [{ title: shortTitle(row.title), si: row.siMean, ti: row.tiMean, index }]
+      ? [{ title: clipName(row.title), si: row.siMean, ti: row.tiMean, index }]
       : [],
   );
   const config: ChartConfig = { si: { label: "SI" }, ti: { label: "TI" } };
@@ -134,6 +128,7 @@ export function SiTiPlaneChart({ rows }: { rows: ContentRow[] }) {
             name={point.title}
             data={[point]}
             fill={clipColor(point.index)}
+            isAnimationActive={false}
           >
             <LabelList dataKey="title" position="right" fontSize={11} fill="var(--foreground)" />
           </Scatter>
@@ -150,7 +145,7 @@ export function SavingsChart({ points }: { points: SavingPoint[] }) {
     data: points.flatMap((point) => {
       const bdRate = point[ladder];
       return point.tiMean != null && bdRate != null
-        ? [{ title: shortTitle(point.title), ti: point.tiMean, saving: -bdRate }]
+        ? [{ title: clipName(point.title), ti: point.tiMean, saving: -bdRate }]
         : [];
     }),
   }));
@@ -188,7 +183,7 @@ export function SavingsChart({ points }: { points: SavingPoint[] }) {
             name={ladderLabel(ladder)}
             data={data}
             fill={ladderColor(ladder)}
-            line={{ strokeOpacity: 0.4 }}
+            isAnimationActive={false}
           >
             {ladder === "animation" && (
               <LabelList
@@ -228,7 +223,7 @@ export function TuningByCrfChart({
   const config: ChartConfig = Object.fromEntries(
     series.map((item, index) => [
       item.routeId,
-      { label: shortTitle(item.title), color: clipColor(index) },
+      { label: clipName(item.title), color: clipColor(index) },
     ]),
   );
   return (
@@ -253,7 +248,7 @@ export function TuningByCrfChart({
           <Line
             key={item.routeId}
             dataKey={item.routeId}
-            name={shortTitle(item.title)}
+            name={clipName(item.title)}
             stroke={clipColor(index)}
             strokeWidth={2}
             dot={{ r: 3 }}
@@ -269,7 +264,7 @@ export function TuningByCrfChart({
 /** Graph 5: animation-optimised minus static, whole session against steady state. */
 export function SteadyStateChart({ points }: { points: SteadyStatePoint[] }) {
   const data = points.map((point) => ({
-    title: shortTitle(point.title),
+    title: clipName(point.title),
     whole: point.whole,
     steady: point.steady,
   }));

@@ -5,7 +5,7 @@ import { RESULTS_COPY } from "@/lib/siteCopy";
 export default function Loading() {
   return (
     <PageShell title={RESULTS_COPY.title} description={RESULTS_COPY.description}>
-      <div className="grid gap-10 xl:grid-cols-[13rem_minmax(0,1fr)]">
+      <div className="grid gap-10 xl:grid-cols-[15rem_minmax(0,1fr)]">
         <div className="hidden space-y-3 xl:block">
           {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={index} className="h-4 w-40" />

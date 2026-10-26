@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { loadChapter5 } from "@/lib/results/loadChapter5";
+import { fetchChapter5 } from "@/lib/results/loadChapter5";
 import { listVideos } from "@/lib/videoApi";
 
 import {
@@ -36,7 +36,7 @@ describe.skipIf(!backendUp)(`read API at ${apiUrl}`, () => {
   });
 
   it("builds the chapter 5 report from every clip without a load error", async () => {
-    const report = await loadChapter5();
+    const report = await fetchChapter5(apiUrl);
     expect(report.clips.map((clip) => clip.routeId).toSorted()).toEqual(routeIds.toSorted());
     for (const clip of report.clips) {
       expect(clip.errors, clip.routeId).toEqual([]);

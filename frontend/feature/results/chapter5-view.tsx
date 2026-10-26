@@ -17,7 +17,7 @@ import {
   type PerProtocol,
   type Rule,
 } from "@/lib/results/chapter5";
-import { fixed, multiple, pair, percent, signed, small } from "@/lib/results/format";
+import { clipName, fixed, multiple, pair, percent, signed, small } from "@/lib/results/format";
 
 import { SavingsChart, SiTiPlaneChart, SteadyStateChart, TuningByCrfChart } from "./results-charts";
 
@@ -41,9 +41,10 @@ function ClipLink({ routeId, title }: { routeId: string; title: string }) {
   return (
     <Link
       href={`/${routeId}/results`}
-      className="font-medium underline-offset-4 hover:text-primary hover:underline"
+      title={title}
+      className="font-medium whitespace-nowrap underline-offset-4 hover:text-primary hover:underline"
     >
-      {title}
+      {clipName(title)}
     </Link>
   );
 }
@@ -113,9 +114,10 @@ function ClipStrip({ report }: { report: Chapter5Report }) {
           <Link
             key={clip.routeId}
             href={`/${clip.routeId}/results`}
+            title={clip.title}
             className="rounded-sm border px-2 py-1 text-xs transition-colors hover:border-primary/50 hover:bg-accent"
           >
-            {clip.title}
+            {clipName(clip.title)}
             {clip.errors.length > 0 ? (
               <Hint content={clip.errors.join(" · ")}>
                 <span className="ml-1.5 text-destructive">not loaded</span>

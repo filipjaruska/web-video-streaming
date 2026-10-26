@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { Chapter5Report } from "@/lib/results/chapter5";
-import { loadChapter5 } from "@/lib/results/loadChapter5";
+import { fetchChapter5 } from "@/lib/results/loadChapter5";
 import type { AnalysisTarget, VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 import type { ListVideosResponse, VideoListItem } from "@/lib/videoApi";
 import type {
@@ -146,7 +146,7 @@ beforeEach(async () => {
       });
     }),
   );
-  report = await loadChapter5();
+  report = await fetchChapter5(API);
 });
 
 afterEach(() => {
@@ -154,7 +154,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("loadChapter5", () => {
+describe("fetchChapter5", () => {
   it("keeps one row per clip, ordered by title, even for failures", () => {
     expect(report.clips.map((clip) => clip.title)).toEqual(["alpha", "broken.mkv", "zeta"]);
     expect(report.content.map((row) => row.routeId)).toEqual(["alpha", "broken", "zeta"]);
