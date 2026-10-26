@@ -5,11 +5,11 @@ import { Download } from "lucide-react";
 
 import { useActionAuth } from "@/components/action-auth-provider";
 import { Button } from "@/components/ui/button";
-import { getPublicApiUrl } from "@/lib/env";
+import { currentDocument, getPublicApiUrl } from "@/lib/env";
 import { videoTitle, type VideoListItem } from "@/lib/videoApi";
 
 async function readJson(url: string): Promise<unknown> {
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, currentDocument());
   if (!res.ok) {
     throw new Error(`${new URL(url).pathname} answered ${res.status}`);
   }

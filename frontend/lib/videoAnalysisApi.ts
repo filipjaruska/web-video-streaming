@@ -1,3 +1,4 @@
+import { currentDocument } from "@/lib/env";
 import type { LadderKind } from "@/lib/analysisFormat";
 
 export type AnalysisSectionStatus = "pending" | "running" | "completed" | "failed";
@@ -323,7 +324,7 @@ export interface VideoAnalysisResponse {
 export async function getVideoAnalysis(
   apiUrl: string,
   routeId: string,
-  init: RequestInit = { cache: "no-store" },
+  init: RequestInit = currentDocument(),
 ): Promise<VideoAnalysisResponse> {
   const res = await fetch(`${apiUrl}/api/videos/${routeId}/analysis`, init);
 

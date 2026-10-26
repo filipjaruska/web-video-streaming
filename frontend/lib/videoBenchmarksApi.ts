@@ -1,3 +1,4 @@
+import { currentDocument } from "@/lib/env";
 import type { BenchmarkTrace, BenchmarkTraceSummary, NetworkProfile } from "@/lib/benchmark/types";
 import { fromServerProfile } from "@/lib/benchmark/types";
 
@@ -93,7 +94,7 @@ export interface VideoBenchmarkTracesResponse {
 export async function getVideoBenchmarkTraces(
   apiUrl: string,
   routeId: string,
-  init: RequestInit = { cache: "no-store" },
+  init: RequestInit = currentDocument(),
 ): Promise<VideoBenchmarkTracesResponse> {
   const res = await fetch(`${apiUrl}/api/videos/${routeId}/benchmarks/traces`, init);
 
@@ -112,7 +113,7 @@ export function profileOf(aggregate: { networkProfile: string }): NetworkProfile
 export async function getVideoBenchmarks(
   apiUrl: string,
   routeId: string,
-  init: RequestInit = { cache: "no-store" },
+  init: RequestInit = currentDocument(),
 ): Promise<VideoBenchmarksResponse> {
   const res = await fetch(`${apiUrl}/api/videos/${routeId}/benchmarks`, init);
 

@@ -1,3 +1,4 @@
+import { currentDocument } from "@/lib/env";
 import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
 import { SOURCE_RUN_ID } from "@/types/streaming";
 import type { LadderKind } from "@/lib/analysisFormat";
@@ -33,9 +34,7 @@ export async function getVideoTranscodes(
   apiUrl: string,
   routeId: string,
 ): Promise<VideoTranscodesResponse> {
-  const res = await fetch(`${apiUrl}/api/videos/${routeId}/transcodes`, {
-    cache: "no-store",
-  });
+  const res = await fetch(`${apiUrl}/api/videos/${routeId}/transcodes`, currentDocument());
 
   if (!res.ok) {
     throw new Error(`Failed to load transcodes: ${res.status}`);
