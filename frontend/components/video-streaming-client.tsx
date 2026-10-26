@@ -22,6 +22,8 @@ interface VideoStreamingClientProps {
   routeId: string;
   /** Watch: player and stream settings. Benchmark: the runner above the player. */
   mode: "watch" | "benchmark";
+  /** Keep the ladder list fresh: the clip is still being processed. */
+  poll?: boolean;
 }
 
 function deliveryForLadder(
@@ -36,9 +38,13 @@ function deliveryForLadder(
   return null;
 }
 
-export function VideoStreamingClient({ routeId, mode }: VideoStreamingClientProps) {
+export function VideoStreamingClient({ routeId, mode, poll = false }: VideoStreamingClientProps) {
   const apiUrl = getPublicApiUrl();
-  const { transcodes, activeTranscodeId, loading: transcodesLoading } = useVideoTranscodes(routeId);
+  const {
+    transcodes,
+    activeTranscodeId,
+    loading: transcodesLoading,
+  } = useVideoTranscodes(routeId, { poll });
   const { tracks: subtitleTracks } = useVideoSubtitles(routeId);
 
   const [bestMode, setBestMode] = useState(true);
@@ -264,7 +270,7 @@ export function VideoStreamingClient({ routeId, mode }: VideoStreamingClientProp
       setAbrAlgorithm(effectiveAbr);
       setRunNonce((nonce) => nonce + 1);
       setFallbackNotice(
-        `${method.toUpperCase()} failed to play in this browser — retrying over ${other.toUpperCase()}.`,
+        `${method.toUpperCase()} failed to play in this browser, so playback switched to ${other.toUpperCase()}.`,
       );
     },
     [benchmarkProgress.running, bestMode, effectivePackagingRunId, effectiveAbr, transcodes],

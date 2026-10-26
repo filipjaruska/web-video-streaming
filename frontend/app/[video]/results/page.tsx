@@ -1,5 +1,6 @@
 import { ClipPlayback } from "@/feature/clip/clip-playback";
 import { ClipResults } from "@/feature/clip/clip-results";
+import { isProcessing } from "@/lib/clipLookup";
 import { loadClipReport } from "@/lib/results/loadChapter5";
 
 type ClipResultsPageProps = {
@@ -14,6 +15,7 @@ export default async function ClipResultsPage({ params }: ClipResultsPageProps) 
   return (
     <ClipResults
       routeId={video}
+      poll={await isProcessing(video)}
       report={report}
       playback={report ? <ClipPlayback report={report} routeId={video} /> : null}
     />

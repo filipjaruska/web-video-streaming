@@ -82,3 +82,35 @@ export const PIPELINE_STEP_KEYS: readonly string[] = PIPELINE_PHASES.flatMap((ph
 export function stepIndex(key: string | null | undefined): number {
   return key ? PIPELINE_STEP_KEYS.indexOf(key) : -1;
 }
+
+export type PhaseState = "done" | "current" | "failed" | "pending";
+
+/**
+ * Where each phase stands, from the session status and the step the backend reports. A phase is
+ * done once the current step lies past all of its steps; steps a clip skips (no subtitles, say)
+ * change nothing, since only the position of the current step is compared.
+ */
+export function phaseStates(
+  status: string,
+  currentStepKey: string | null | undefined,
+): Record<PipelinePhase["id"], PhaseState> {
+  const current = stepIndex(currentStepKey);
+  const entries = PIPELINE_PHASES.map((phase) => {
+    if (status === "Completed") {
+      return [phase.id, "done"] as const;
+    }
+    if ((status !== "Processing" && status !== "Failed") || current < 0) {
+      return [phase.id, "pending"] as const;
+    }
+    const first = stepIndex(phase.steps[0].key);
+    const last = stepIndex(phase.steps.at(-1)!.key);
+    if (current > last) {
+      return [phase.id, "done"] as const;
+    }
+    if (current >= first) {
+      return [phase.id, status === "Failed" ? "failed" : "current"] as const;
+    }
+    return [phase.id, "pending"] as const;
+  });
+  return Object.fromEntries(entries) as Record<PipelinePhase["id"], PhaseState>;
+}

@@ -53,16 +53,19 @@ function SectionIndex() {
 /** One clip's results, in the order of its appendix in the thesis. */
 export function ClipResults({
   routeId,
+  poll,
   report,
   playback,
 }: {
   routeId: string;
+  /** Keep refreshing: the clip is still being processed. */
+  poll: boolean;
   /** This clip's chapter 5 rows, reduced on the server. */
   report: Chapter5Report | null;
   /** The playback tables, rendered on the server from the same report. */
   playback: ReactNode;
 }) {
-  const { data, error, loading, isPolling } = useVideoAnalysis(routeId);
+  const { data, error, loading, isPolling } = useVideoAnalysis(routeId, { poll });
 
   const targets = useMemo(() => data?.targets ?? [], [data]);
   const source = pickSourceTarget(targets);

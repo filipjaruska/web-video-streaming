@@ -6,22 +6,12 @@ import { PageShell } from "@/components/page-shell";
 import { StatusBadge } from "@/components/status-badge";
 import { ClipManageMenu } from "@/feature/clip/clip-manage-menu";
 import { ClipTabs } from "@/feature/clip/clip-tabs";
-import { listVideos, type VideoListItem } from "@/lib/videoApi";
+import { findClip } from "@/lib/clipLookup";
 
 type ClipLayoutProps = {
   params: Promise<{ video: string }>;
   children: ReactNode;
 };
-
-/** The clip, or `undefined` when the catalogue cannot be reached (the page still renders then). */
-async function findClip(routeId: string): Promise<VideoListItem | null | undefined> {
-  try {
-    const { videos } = await listVideos();
-    return videos.find((video) => video.routeId === routeId) ?? null;
-  } catch {
-    return undefined;
-  }
-}
 
 export async function generateMetadata({
   params,

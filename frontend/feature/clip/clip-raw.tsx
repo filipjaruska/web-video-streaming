@@ -15,8 +15,8 @@ import { getPublicApiUrl } from "@/lib/env";
 import { getHlsVariantUrl } from "@/lib/streamingLabels";
 
 /** Probe metadata of the source and every packaging run, as the backend recorded it. */
-export function ClipRaw({ routeId }: { routeId: string }) {
-  const { data, error, loading } = useVideoAnalysis(routeId);
+export function ClipRaw({ routeId, poll }: { routeId: string; poll: boolean }) {
+  const { data, error, loading } = useVideoAnalysis(routeId, { poll });
   const targets = useMemo(() => data?.targets ?? [], [data]);
   const source = pickSourceTarget(targets);
   const transcodes = pickTranscodeTargets(targets);
