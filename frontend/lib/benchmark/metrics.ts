@@ -438,6 +438,31 @@ export function computeMetrics(trace: BenchmarkTrace, ladder?: LadderQuality): B
 }
 
 /**
+ * Delivered VMAF in steady state: the same media-time-weighted quality as `timeWeightedVmaf`, over
+ * the samples from `fromSec` of media time onwards.
+ *
+ * The first segment's rung is the player's opening guess, set by the declared bitrates and the
+ * initial throughput estimate rather than by the adaptation under test. On ~30 s clips with 6 s
+ * segments it is a fifth of the session, so the whole-session figure largely reflects that guess.
+ * Null when the run never started, the ladder is unknown, or nothing played past `fromSec`.
+ */
+export function steadyStateVmaf(
+  trace: BenchmarkTrace,
+  ladder: LadderQuality | undefined,
+  fromSec: number,
+): number | null {
+  const startup = firstEvent(trace.events, "startup");
+  if (!startup || !ladder) {
+    return null;
+  }
+
+  const tail = trace.samples.filter((sample) => sample.playbackSec >= fromSec);
+  const share = resolutionShare(tail, startup.atMs);
+  const byRung = ladder.rungs ? rungShare(tail, startup.atMs, ladder) : null;
+  return deliveredVmaf(share, byRung, ladder);
+}
+
+/**
  * Mean and sample standard deviation, which is what the results tables print per cell.
  *
  * Sample (n−1) rather than population (÷n) because repetitions of a cell are a sample of the runs

@@ -14,7 +14,7 @@ export const HOME_COPY = {
 export const RESULTS_COPY = {
   title: "Results",
   description:
-    "Ladder efficiency, codec tuning and playback telemetry across every clip in the catalogue.",
+    "Every clip measured the same way, laid out as in chapter 5. Select a clip for its own results.",
 } as const;
 
 export const CONCEPTS_COPY = {

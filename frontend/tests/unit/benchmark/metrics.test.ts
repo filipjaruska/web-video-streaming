@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { computeMetrics, summarize } from "@/lib/benchmark/metrics";
+import { computeMetrics, steadyStateVmaf, summarize } from "@/lib/benchmark/metrics";
 import type {
   BenchmarkEvent,
   BenchmarkSample,
@@ -198,6 +198,32 @@ describe("ladders that repeat a resolution", () => {
   it("weights each rung's measured bitrate", () => {
     // (2·0.16 + 4·0.5 + 4·1.9) / 10 Mb/s
     expect(result.timeWeightedBitrateBps).toBeCloseTo(992_000, 0);
+  });
+});
+
+describe("steady state", () => {
+  const ladder: LadderQuality = { topHeight: 1080, vmafByHeight: { 360: 40, 1080: 95 } };
+  const at = (playbackSec: number, height: number): BenchmarkSample => ({
+    ...sample(1000 + playbackSec * 1000, height === 1080 ? 1 : 0),
+    playbackSec,
+    height,
+  });
+  // The opening guess (360p) holds the first 6 s, then the player settles on 1080p.
+  const run = trace(
+    [0, 1, 2, 3, 4, 5].map((s) => at(s, 360)).concat([6, 7, 8, 9, 10, 11].map((s) => at(s, 1080))),
+    [started],
+    13_000,
+  );
+
+  it("leaves out the first segment that the whole-session figure includes", () => {
+    expect(computeMetrics(run, ladder).timeWeightedVmaf).toBeCloseTo((6 * 40 + 6 * 95) / 12, 6);
+    expect(steadyStateVmaf(run, ladder, 6)).toBeCloseTo(95, 6);
+  });
+
+  it("reports null without a start, a ladder or anything past the first segment", () => {
+    expect(steadyStateVmaf(trace(run.samples, [], 13_000), ladder, 6)).toBeNull();
+    expect(steadyStateVmaf(run, undefined, 6)).toBeNull();
+    expect(steadyStateVmaf(run, ladder, 60)).toBeNull();
   });
 });
 

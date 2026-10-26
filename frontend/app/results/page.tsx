@@ -1,64 +1,40 @@
-import Link from "next/link";
 import type { Metadata } from "next";
-import { PageShell } from "@/components/page-shell";
-import { Separator } from "@/components/ui/separator";
+
 import { ErrorBanner } from "@/components/error-banner";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { ResultsTables } from "@/feature/results/results-tables";
-import { loadAllResults, type ClipResult } from "@/lib/resultsApi";
+import { PageShell } from "@/components/page-shell";
+import { Chapter5View, ResultsIndex } from "@/feature/results/chapter5-view";
+import { ResultsToolbar } from "@/feature/results/results-toolbar";
+import { loadChapter5 } from "@/lib/results/loadChapter5";
+import type { Chapter5Report } from "@/lib/results/chapter5";
 import { RESULTS_COPY } from "@/lib/siteCopy";
 
 export const metadata: Metadata = {
-  title: RESULTS_COPY.title,
-  description: RESULTS_COPY.description,
+  title: "Results",
+  description: "Results across all clips, in the order of chapter 5 of the thesis.",
 };
 
 export default async function ResultsPage() {
-  let clips: ClipResult[] = [];
+  let report: Chapter5Report | null = null;
   let error: string | null = null;
 
   try {
-    clips = await loadAllResults();
+    report = await loadChapter5();
   } catch (err) {
-    error = err instanceof Error ? err.message : "Failed to load results";
+    error = err instanceof Error ? err.message : "The results could not be loaded.";
   }
 
   return (
     <PageShell
       title={RESULTS_COPY.title}
       description={RESULTS_COPY.description}
-      breadcrumb={
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link href="/">Videos</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>Results</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      }
+      actions={<ResultsToolbar />}
     >
-      <Separator className="mb-6" />
-      {error ? (
-        <ErrorBanner title="Failed to load results" message={error} />
-      ) : clips.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No clips in the catalogue yet. Upload one to start measuring.
-        </p>
-      ) : (
-        <ResultsTables clips={clips} />
+      {error && <ErrorBanner title="Results unavailable" message={error} />}
+      {report && (
+        <div className="grid gap-10 xl:grid-cols-[13rem_minmax(0,1fr)]">
+          <ResultsIndex />
+          <Chapter5View report={report} />
+        </div>
       )}
     </PageShell>
   );
