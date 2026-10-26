@@ -7,6 +7,10 @@ namespace WebWVideoStreamingAPI.Core;
 public sealed class VideoListItem {
     public required string RouteId { get; init; }
     public string? Title { get; init; }
+    public string? Description { get; init; }
+
+    /// <summary>"processing" while the pipeline still runs, "failed" when it gave up, otherwise "ready".</summary>
+    public required string Status { get; init; }
     public string? FileName { get; init; }
     public string? ThumbnailUrl { get; init; }
     public long Size { get; init; }
@@ -111,6 +115,12 @@ public sealed class VideoCatalogService {
         return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
 
+    private static string ClipStatus(UploadSessionStatus status) => status switch {
+        UploadSessionStatus.Uploading or UploadSessionStatus.Queued or UploadSessionStatus.Processing => "processing",
+        UploadSessionStatus.Failed => "failed",
+        _ => "ready"
+    };
+
     public async Task<ListVideosResponse> ListPublishedAsync(CancellationToken cancellationToken = default) {
         var videos = await _dbContext.Videos
             .AsNoTracking()
@@ -119,9 +129,21 @@ public sealed class VideoCatalogService {
             .OrderByDescending(video => video.PublishedAtUtc)
             .ToListAsync(cancellationToken);
 
+        // The latest session decides whether a published clip is still being processed. The table
+        // holds one row per upload, so reading it whole is cheaper than a grouped query.
+        var sessions = await _dbContext.UploadSessions
+            .AsNoTracking()
+            .Select(session => new { session.VideoId, session.Status, session.CreatedAtUtc })
+            .ToListAsync(cancellationToken);
+        var latestStatus = sessions
+            .GroupBy(session => session.VideoId)
+            .ToDictionary(group => group.Key, group => group.MaxBy(session => session.CreatedAtUtc)!.Status);
+
         var items = videos.Select(video => new VideoListItem {
             RouteId = video.RouteId,
             Title = video.Title,
+            Description = video.Description,
+            Status = latestStatus.TryGetValue(video.Id, out var status) ? ClipStatus(status) : "ready",
             FileName = video.OriginalFileName ?? MediaNames.SourceFile,
             ThumbnailUrl = video.ThumbnailUrl,
             Size = video.SourceSizeBytes ?? 0,

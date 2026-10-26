@@ -24,6 +24,11 @@ export interface UploadSessionState {
   completedAtUtc: string | null;
   processingStartedAtUtc?: string | null;
   estimatedRemainingSeconds?: number | null;
+  /** The pipeline step behind `currentStep` (a backend `PipelineStep` name), null outside processing. */
+  currentStepKey?: string | null;
+  /** Progress inside the current step, e.g. grid samples 12 of 51. */
+  currentStepDone?: number | null;
+  currentStepTotal?: number | null;
   /** While `Queued`: how many videos the worker takes before this one. */
   queuePosition?: number | null;
 }
@@ -35,9 +40,13 @@ export interface UploadSessionResponse {
   video: UploadSessionVideo;
 }
 
+export type ClipProcessingStatus = "processing" | "ready" | "failed";
+
 export interface VideoListItem {
   routeId: string;
   title: string | null;
+  description: string | null;
+  status: ClipProcessingStatus;
   fileName: string;
   thumbnailUrl: string | null;
   size: number;

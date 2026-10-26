@@ -5,6 +5,7 @@ import { listVideos } from "@/lib/videoApi";
 
 import {
   checkAnalysis,
+  checkBenchmarkTraces,
   checkBenchmarks,
   checkSubtitles,
   checkThumbnail,
@@ -48,7 +49,7 @@ describe.skipIf(!backendUp || routeIds.length === 0).each(routeIds)("clip %s", (
   it("serves its packaging runs, analysis, benchmarks, subtitles and thumbnail", async () => {
     const transcodes = await checkTranscodes(routeId);
     await checkAnalysis(routeId, isFullyProcessed(transcodes));
-    await checkBenchmarks(routeId);
+    await checkBenchmarkTraces(routeId, await checkBenchmarks(routeId));
     await checkSubtitles(routeId);
     await checkThumbnail(routeId);
   });

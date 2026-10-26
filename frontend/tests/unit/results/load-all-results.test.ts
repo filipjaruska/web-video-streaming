@@ -11,6 +11,8 @@ function video(routeId: string, title: string | null = routeId): VideoListItem {
   return {
     routeId,
     title,
+    description: null,
+    status: "ready",
     fileName: `${routeId}.mkv`,
     thumbnailUrl: null,
     size: 1,
@@ -104,6 +106,8 @@ const aggregate: BenchmarkAggregateDto = {
   qualitySwitchesMean: 2,
   oscillationsMean: 0,
   timeWeightedBitrateBpsMean: 4_000_000,
+  rebufferMsMean: 0,
+  rebufferCountMean: 0,
 };
 
 type Route = { status: number; body?: unknown };

@@ -199,6 +199,8 @@ export interface LadderComparisonEntry {
   bdRateHighBandPercent?: number;
   bitrateSavingPercent?: number;
   vmafGainAtEqualBitrate?: number;
+  /** Harmonic VMAF gained at equal bitrate, averaged over the shared rate range (BD-VMAF). */
+  bdVmaf?: number;
   points: LadderComparisonPoint[];
   error?: string;
 }

@@ -21,6 +21,9 @@ public static class BenchmarkSchema {
 // Serialized straight to the wire — property names are the JSON field names.
 public sealed class BenchmarkRunDto {
     public required string Id { get; init; }
+
+    /// <summary>The packaging run played; null for the source file over HTTP Range.</summary>
+    public string? TranscodeId { get; init; }
     public required string Mode { get; init; }
     public required string NetworkProfile { get; init; }
     public required string LadderKind { get; init; }
@@ -57,6 +60,12 @@ public sealed class BenchmarkAggregateDto {
     public required double TimeWeightedBitrateBpsMean { get; init; }
     public double? RecoveryMsMean { get; init; }
 
+    /// <summary>Stalled time after the first frame, milliseconds, averaged over the runs.</summary>
+    public required double RebufferMsMean { get; init; }
+
+    /// <summary>Stalls after the first frame, averaged over the runs.</summary>
+    public required double RebufferCountMean { get; init; }
+
     /// <summary>
     /// Harmonic VMAF delivered: each played rung's measured score weighted by its share of played
     /// time. Null when no run of the cell carried it (runs recorded before it existed, the source cell).
@@ -88,6 +97,27 @@ public sealed class VideoBenchmarksResponse {
     public int SchemaVersion { get; init; } = BenchmarkSchema.Version;
     public required IReadOnlyList<BenchmarkRunDto> Runs { get; init; }
     public required IReadOnlyList<BenchmarkAggregateDto> Aggregates { get; init; }
+}
+
+/// <summary>One run's identity and the trace the client recorded, stored verbatim.</summary>
+public sealed class BenchmarkTraceDto {
+    public required string Id { get; init; }
+    public string? TranscodeId { get; init; }
+    public required string NetworkProfile { get; init; }
+    public required string LadderKind { get; init; }
+    public required string Protocol { get; init; }
+    public required string AbrAlgorithm { get; init; }
+    public required int Repetition { get; init; }
+    public required bool Failed { get; init; }
+
+    /// <summary><c>{ samples, events, durationMs, summary }</c> as posted by the runner; null when none was sent.</summary>
+    public JsonElement? Trace { get; init; }
+}
+
+public sealed class VideoBenchmarkTracesResponse {
+    public required string RouteId { get; init; }
+    public int SchemaVersion { get; init; } = BenchmarkSchema.Version;
+    public required IReadOnlyList<BenchmarkTraceDto> Runs { get; init; }
 }
 
 public sealed class SaveBenchmarkResult {
@@ -183,6 +213,56 @@ public sealed class PlaybackBenchmarkStore {
     }
 
     /// <summary>
+    /// Every run's recorded trace, for metrics derived from the samples themselves (such as the
+    /// steady-state quality after the first segment) rather than from the stored per-run columns.
+    /// </summary>
+    public async Task<VideoBenchmarkTracesResponse?> ListTracesAsync(
+        string routeId,
+        CancellationToken cancellationToken = default) {
+        var video = await _dbContext.Videos
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
+
+        if (video == null) {
+            return null;
+        }
+
+        var rows = await _dbContext.PlaybackBenchmarks
+            .AsNoTracking()
+            .Where(benchmark => benchmark.VideoId == video.Id)
+            .OrderBy(benchmark => benchmark.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+        return new VideoBenchmarkTracesResponse {
+            RouteId = routeId,
+            Runs = rows.Select(row => new BenchmarkTraceDto {
+                Id = row.Id.ToString("N"),
+                TranscodeId = row.TranscodeId?.ToString("N"),
+                NetworkProfile = row.NetworkProfile.ToString(),
+                LadderKind = row.LadderKind,
+                Protocol = row.Protocol,
+                AbrAlgorithm = row.AbrAlgorithm,
+                Repetition = row.Repetition,
+                Failed = row.Failed,
+                Trace = ParseTrace(row.TraceJson)
+            }).ToList()
+        };
+    }
+
+    private static JsonElement? ParseTrace(string? traceJson) {
+        if (string.IsNullOrWhiteSpace(traceJson)) {
+            return null;
+        }
+
+        try {
+            using var document = JsonDocument.Parse(traceJson);
+            return document.RootElement.Clone();
+        } catch (JsonException) {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Collapses repetitions of the same cell into a mean and spread. Failed runs are excluded —
     /// a run that never played is not a slow run, and averaging it in would understate the rest.
     /// </summary>
@@ -217,6 +297,8 @@ public sealed class PlaybackBenchmarkStore {
                     OscillationsMean = group.Average(row => (double)row.Oscillations),
                     TimeWeightedBitrateBpsMean = group.Average(row => row.TimeWeightedBitrateBps),
                     RecoveryMsMean = recovery.Count > 0 ? recovery.Average() : null,
+                    RebufferMsMean = group.Average(row => row.RebufferMs),
+                    RebufferCountMean = group.Average(row => (double)row.RebufferCount),
                     TimeWeightedVmafMean = vmafValues.Count > 0 ? vmaf.Mean : null,
                     TimeWeightedVmafStdDev = vmafValues.Count > 0 ? vmaf.StdDev : null,
                     TopRungShareMean = topShares.Count > 0 ? topShares.Average() : null,
@@ -319,6 +401,7 @@ public sealed class PlaybackBenchmarkStore {
 
     private static BenchmarkRunDto ToDto(PlaybackBenchmark benchmark) => new() {
         Id = benchmark.Id.ToString("N"),
+        TranscodeId = benchmark.TranscodeId?.ToString("N"),
         Mode = benchmark.Mode.ToString(),
         NetworkProfile = benchmark.NetworkProfile.ToString(),
         LadderKind = benchmark.LadderKind,

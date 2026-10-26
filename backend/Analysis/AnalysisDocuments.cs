@@ -533,6 +533,13 @@ public sealed class LadderComparisonEntry {
     public double? VmafGainAtEqualBitrate { get; set; }
 
     /// <summary>
+    /// BD-VMAF: harmonic VMAF gained at equal bitrate, averaged over the whole overlapping
+    /// log-rate range. Positive means more quality for the same bits than the static ladder.
+    /// </summary>
+    [JsonPropertyName("bdVmaf")]
+    public double? BdVmaf { get; set; }
+
+    /// <summary>
     /// How the curves behind <see cref="BdRatePercent"/> and <see cref="BitrateSavingPercent"/> were
     /// interpolated: akima, pchip where Akima was not monotone over the range, or linear.
     /// </summary>

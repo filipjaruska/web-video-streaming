@@ -23,6 +23,12 @@ public sealed class BdRateResult {
     public double? QualityGainAtEqualBitrate { get; init; }
 
     /// <summary>
+    /// Average quality difference at equal bitrate over the whole overlapping log-rate range
+    /// (Bjøntegaard delta quality). Positive means the test ladder delivers more quality per bit.
+    /// </summary>
+    public double? BdQuality { get; init; }
+
+    /// <summary>
     /// How the curves behind <see cref="BdRatePercent"/> and <see cref="BitrateSavingPercent"/> were
     /// interpolated; one of <see cref="BdRateInterpolation"/>.
     /// </summary>
@@ -129,12 +135,16 @@ public static class BdRate {
                 (Math.Pow(10, testCurve.Evaluate(midQuality) - refCurve.Evaluate(midQuality)) - 1) * 100,
             Interpolation = method,
             QualityGainAtEqualBitrate = gain?.Value,
+            BdQuality = gain?.BdQuality,
             QualityGainInterpolation = gain?.Method
         };
     }
 
-    /// <summary>Quality difference at equal bitrate, interpolating quality over log₁₀(rate).</summary>
-    private static (double Value, string Method)? QualityGain(
+    /// <summary>
+    /// Quality difference at equal bitrate, interpolating quality over log₁₀(rate): at the midpoint
+    /// of the shared rate range, and averaged over all of it (BD-quality, e.g. BD-VMAF).
+    /// </summary>
+    private static (double Value, double BdQuality, string Method)? QualityGain(
         IReadOnlyList<RateQualityPoint> reference,
         IReadOnlyList<RateQualityPoint> test) {
         var refByRate = CleanByRate(reference);
@@ -163,7 +173,8 @@ public static class BdRate {
 
         var (refCurve, testCurve, method) = curves.Value;
         var mid = (low + high) / 2;
-        return (testCurve.Evaluate(mid) - refCurve.Evaluate(mid), method);
+        var bdQuality = (testCurve.Integrate(low, high) - refCurve.Integrate(low, high)) / (high - low);
+        return (testCurve.Evaluate(mid) - refCurve.Evaluate(mid), bdQuality, method);
     }
 
     /// <summary>

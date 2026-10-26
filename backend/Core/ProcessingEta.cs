@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using WebWVideoStreamingAPI.Analysis;
 
 namespace WebWVideoStreamingAPI.Core;
@@ -107,6 +108,34 @@ public static class ProcessingEta {
     }
 
     public static string SubLabel(PipelineStep step, int done, int total) => $"{LabelFor(step)} ({done}/{total})";
+
+    private static readonly Regex SubProgress = new(@"^(?<label>.*) \((?<done>\d+)/(?<total>\d+)\)$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Reads a stored step label back into its step and sub-progress, so clients get a stable key
+    /// without the session having to store one. Null for labels outside the pipeline ("Uploading file").
+    /// </summary>
+    public static (PipelineStep Step, int? Done, int? Total)? ParseLabel(string? label) {
+        if (string.IsNullOrWhiteSpace(label)) {
+            return null;
+        }
+
+        int? done = null, total = null;
+        var match = SubProgress.Match(label);
+        if (match.Success) {
+            label = match.Groups["label"].Value;
+            done = int.Parse(match.Groups["done"].Value);
+            total = int.Parse(match.Groups["total"].Value);
+        }
+
+        foreach (var (step, entry) in Steps) {
+            if (entry.Label == label) {
+                return (step, done, total);
+            }
+        }
+
+        return null;
+    }
 
     internal static bool IsGrid(PipelineStep step) => step is PipelineStep.EncodeGrid or PipelineStep.AnimationGrid;
 

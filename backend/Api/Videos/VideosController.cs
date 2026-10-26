@@ -89,6 +89,14 @@ public class VideosController : ControllerBase {
         return response == null ? NotFound(new { message = "Video not found" }) : Ok(response);
     }
 
+    [HttpGet("{routeId}/benchmarks/traces")]
+    [ProducesResponseType<VideoBenchmarkTracesResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListBenchmarkTraces(string routeId, CancellationToken cancellationToken) {
+        var response = await _benchmarks.ListTracesAsync(routeId, cancellationToken);
+        return response == null ? NotFound(new { message = "Video not found" }) : Ok(response);
+    }
+
     [HttpGet("{routeId}/subs")]
     [ProducesResponseType<VideoSubtitlesResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

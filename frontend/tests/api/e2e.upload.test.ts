@@ -29,6 +29,7 @@ import type { VideoTranscodesResponse } from "@/lib/videoTranscodesApi";
 
 import {
   checkAnalysis,
+  checkBenchmarkTraces,
   checkBenchmarks,
   checkClipErrors,
   checkCors,
@@ -106,6 +107,7 @@ describe.skipIf(!writesEnabled)("upload end to end", () => {
     "runs the whole processing pipeline to completion",
     async () => {
       const deadline = Date.now() + PROCESSING_TIMEOUT_MS;
+      const stepKeys = new Set<string>();
       let last = session;
       while (Date.now() < deadline) {
         last = expectSchema(
@@ -113,6 +115,9 @@ describe.skipIf(!writesEnabled)("upload end to end", () => {
           await getUploadSession(apiUrl, session.sessionId),
           "session",
         );
+        if (last.session.currentStepKey) {
+          stepKeys.add(last.session.currentStepKey);
+        }
         if (["completed", "failed", "expired"].includes(statusOf(last))) {
           break;
         }
@@ -125,6 +130,8 @@ describe.skipIf(!writesEnabled)("upload end to end", () => {
       ).toBe("completed");
       expect(last.session.progressPercent).toBe(100);
       expect(last.session.completedAtUtc).not.toBeNull();
+      // The upload page's timeline keys on these; the grids run long enough to be seen every time.
+      expect([...stepKeys], "step keys reported while processing").toContain("EncodeGrid");
     },
     PROCESSING_TIMEOUT_MS + 60_000,
   );
@@ -225,6 +232,14 @@ describe.skipIf(!writesEnabled)("upload end to end", () => {
     // The per-run figures that travel inside the trace must reach the aggregate too.
     expect(aggregate.sessionMsMean).toBe(metrics.sessionMs);
     expect(aggregate.avgBufferSecMean).toBe(metrics.avgBufferSec);
+    expect(aggregate.rebufferMsMean).toBe(metrics.rebufferMs);
+    expect(stored.runs[0].transcodeId).toBe(staticRun?.id);
+
+    // The trace comes back as stored, so steady-state metrics can be derived from its samples.
+    const traces = await checkBenchmarkTraces(routeId, stored);
+    expect(traces.runs[0].transcodeId).toBe(staticRun?.id);
+    expect(traces.runs[0].trace?.samples).toHaveLength(samples.length);
+    expect(traces.runs[0].trace?.events.map((event) => event.kind)).toEqual(["startup", "ended"]);
   });
 
   it("marks the start of a benchmark run for the variable network's clock", async () => {

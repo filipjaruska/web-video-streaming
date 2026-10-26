@@ -12,8 +12,10 @@ import { tagRunRequest } from "@/lib/streamingConfig";
 import { getVideoUrl, getHlsVariantUrl } from "@/lib/streamingLabels";
 import { getVideoAnalysis, type VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 import {
+  getVideoBenchmarkTraces,
   getVideoBenchmarks,
   profileOf,
+  type VideoBenchmarkTracesResponse,
   type VideoBenchmarksResponse,
 } from "@/lib/videoBenchmarksApi";
 import { getVideoSubtitles } from "@/lib/videoSubtitlesApi";
@@ -22,6 +24,7 @@ import { getVideoTranscodes, type VideoTranscodesResponse } from "@/lib/videoTra
 import { apiUrl, fetchOk } from "./env";
 import {
   analysisResponse,
+  benchmarkTracesResponse,
   benchmarksResponse,
   expectSchema,
   subtitlesResponse,
@@ -123,6 +126,20 @@ export async function checkBenchmarks(routeId: string): Promise<VideoBenchmarksR
     // The source cell is the only one without a ladder.
     expect(["static", "dynamic", "animation", "source"]).toContain(aggregate.ladderKind);
   }
+  return body;
+}
+
+/** Every stored run comes back with its trace, so steady-state metrics can be derived from it. */
+export async function checkBenchmarkTraces(
+  routeId: string,
+  benchmarks: VideoBenchmarksResponse,
+): Promise<VideoBenchmarkTracesResponse> {
+  const body = await getVideoBenchmarkTraces(apiUrl, routeId);
+  expectSchema(benchmarkTracesResponse, body, "benchmark traces");
+  expect(body.routeId).toBe(routeId);
+  expect(body.runs.map((run) => run.id).toSorted()).toEqual(
+    benchmarks.runs.map((run) => run.id).toSorted(),
+  );
   return body;
 }
 
