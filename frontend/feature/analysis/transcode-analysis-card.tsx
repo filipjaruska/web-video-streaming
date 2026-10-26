@@ -9,7 +9,11 @@ import type {
 } from "@/lib/videoAnalysisApi";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
 import { SitiChart } from "@/feature/analysis/siti-chart";
+import { ChevronRight } from "lucide-react";
+
 import { StatusBadge } from "@/components/status-badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 import { ladderLongLabel } from "@/lib/analysisFormat";
 import {
   Select,
@@ -124,7 +128,7 @@ function FormatBox({
           <p className="mb-2 text-sm text-muted-foreground">{section.meta.error}</p>
         )}
         {hasTree ? (
-          <AnalysisTree nodes={section.children!} defaultOpen />
+          <AnalysisTree nodes={section.children!} />
         ) : (
           !section.meta?.error && <p className="text-sm text-muted-foreground">Not probed yet.</p>
         )}
@@ -147,6 +151,7 @@ export function TranscodeAnalysisCard({
   videoSrc,
   previewRung = "360p",
 }: TranscodeAnalysisCardProps) {
+  const [open, setOpen] = useState(false);
   const isActive = target.label.includes("(active)");
   const hls = target.tree.children.find((child) => child.id === "hls");
   const dash = target.tree.children.find((child) => child.id === "dash");
@@ -165,16 +170,22 @@ export function TranscodeAnalysisCard({
   );
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h3 className="font-medium">
+    <Collapsible open={open} onOpenChange={setOpen} className="rounded-sm border">
+      <CollapsibleTrigger className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40">
+        <span className="flex items-center gap-2 font-medium">
+          <ChevronRight
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-90",
+            )}
+          />
           {target.ladderKind ? ladderLongLabel(target.ladderKind) : `Run ${transcodeNumber}`}
           {isActive ? " (active)" : ""}
-          <span className="ml-2 text-sm font-normal text-muted-foreground">{createdLabel}</span>
-        </h3>
+          <span className="text-sm font-normal text-muted-foreground">{createdLabel}</span>
+        </span>
         <StatusBadge status={target.status} />
-      </div>
-      <div className="space-y-3">
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-3 border-t px-4 py-4">
         {boxes.length > 0 ? (
           boxes.map(({ section, siti }) => (
             <FormatBox
@@ -188,7 +199,7 @@ export function TranscodeAnalysisCard({
         ) : (
           <p className="text-sm text-muted-foreground">No HLS or DASH probe for this run.</p>
         )}
-      </div>
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
