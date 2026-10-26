@@ -22,7 +22,7 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
 
 const TONE_CLASS: Record<Tone, string> = {
   neutral: "border-border text-muted-foreground",
-  active: "border-primary/40 bg-primary/10 text-primary",
+  active: "border-primary/40 bg-primary/10 text-primary-ink",
   good: "border-success/40 bg-success/10 text-success",
   bad: "border-destructive/40 bg-destructive/10 text-destructive",
 };

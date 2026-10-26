@@ -34,7 +34,7 @@ function VideoLink({ routeId, title }: { routeId: string; title: string }) {
   return (
     <Link
       href={`/${routeId}/results`}
-      className="font-medium underline-offset-4 hover:text-primary hover:underline"
+      className="font-medium underline-offset-4 hover:text-primary-ink hover:underline"
     >
       {title}
     </Link>

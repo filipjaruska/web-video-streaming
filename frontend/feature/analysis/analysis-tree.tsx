@@ -138,7 +138,7 @@ function TreeGroup({ node, depth }: { node: AnalysisTreeNode; depth: number }) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className={cn(depth > 0 && "border-l pl-4")}>
-      <CollapsibleTrigger className="flex w-full items-center gap-2 py-2 text-left text-sm font-medium transition-colors hover:text-primary">
+      <CollapsibleTrigger className="flex w-full items-center gap-2 py-2 text-left text-sm font-medium transition-colors hover:text-primary-ink">
         <ChevronRight
           className={cn(
             "size-4 shrink-0 text-muted-foreground transition-transform",

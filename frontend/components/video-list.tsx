@@ -102,7 +102,7 @@ export function VideoList({
                 )}
               </div>
               <div className="space-y-1">
-                <h2 className="truncate font-medium transition-colors group-hover:text-primary">
+                <h2 className="truncate font-medium transition-colors group-hover:text-primary-ink">
                   {videoTitle(video)}
                 </h2>
                 {video.description && (
