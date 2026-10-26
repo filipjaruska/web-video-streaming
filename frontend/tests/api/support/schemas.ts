@@ -328,7 +328,7 @@ const derivedVariant = z.object({
   onEnvelope: z.boolean().nullish().transform(absent),
   hullDeficit: finite.nullish().transform(absent),
   placement: z
-    .enum(["lambda", "window", "cap", "spacing", "floor", "cambi", "gap"])
+    .enum(["lambda", "window", "cap", "spacing", "floor", "cambi", "gap", "top"])
     .nullish()
     .transform(absent),
   cambiLimit: z.enum(["met", "binding", "cambi-unmet"]).nullish().transform(absent),

@@ -64,8 +64,14 @@ function placementFlag(variant: DerivedLadderVariant): RungFlag | null {
     case "gap":
       return {
         label: "gap",
-        title: `Inserted at the geometric mean of a gap wider than ×2 between ${formatBitrate(variant.intervalHighBps)} and ${formatBitrate(variant.intervalLowBps)}, at the resolution and setting that predict best there.`,
+        title: `Inserted at the geometric mean of a gap wider than ×2 between ${formatBitrate(variant.intervalHighBps)} and ${formatBitrate(variant.intervalLowBps)}: a resolution the ladder did not have, the one that predicts best there.`,
         variant: "outline",
+      };
+    case "top":
+      return {
+        label: "top",
+        title: `This resolution never wins on the envelope, but every ladder keeps the highest resolution: placed at its λ point, or ×1.5 above the rung below (${formatBitrate(variant.intervalLowBps)}) when that is higher.`,
+        variant: "secondary",
       };
     case "cambi":
       return {

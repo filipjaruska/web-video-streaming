@@ -114,7 +114,7 @@ export interface DerivedLadderVariant {
    * The rule that placed the rung: at its λ point, or clamped to the bound of its admissible
    * interval named here.
    */
-  placement?: "lambda" | "window" | "cap" | "spacing" | "floor" | "cambi" | "gap";
+  placement?: "lambda" | "window" | "cap" | "spacing" | "floor" | "cambi" | "gap" | "top";
   /**
    * When the CAMBI limit covers the rung: met by its placement, binding (it raised the rung), or
    * unmet inside its interval — the rung then stays where the other rules put it.
