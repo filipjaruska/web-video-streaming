@@ -21,6 +21,7 @@ import type { Chapter5Report } from "@/lib/results/chapter5";
 import { splitSourceAnalysisTree } from "@/lib/analysisTree";
 import { getPublicApiUrl } from "@/lib/env";
 import { getHlsVariantUrl } from "@/lib/streamingLabels";
+import type { VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 
 import { PackagedVmaf } from "./packaged-vmaf";
 
@@ -37,18 +38,21 @@ export const VIDEO_RESULT_SECTIONS = [
 export function VideoResults({
   routeId,
   poll,
+  initial,
   report,
   playback,
 }: {
   routeId: string;
   /** Keep refreshing: the video is still being processed. */
   poll: boolean;
+  /** The analysis reduced on the server; `null` leaves it to the browser. */
+  initial: VideoAnalysisResponse | null;
   /** This video's chapter 5 rows, reduced on the server. */
   report: Chapter5Report | null;
   /** The playback tables, rendered on the server from the same report. */
   playback: ReactNode;
 }) {
-  const { data, error, loading, isPolling } = useVideoAnalysis(routeId, { poll });
+  const { data, error, loading, isPolling } = useVideoAnalysis(routeId, { poll, initial });
   // The sections render only once the analysis is in, after the browser has looked for the hash.
   useScrollToHash(data !== null);
 
@@ -170,7 +174,7 @@ export function VideoResults({
         </Section>
 
         <Section id="vmaf" title="Packaged quality">
-          <PackagedVmaf targets={targets} durationSec={durationSec} />
+          <PackagedVmaf routeId={routeId} targets={targets} durationSec={durationSec} />
         </Section>
 
         <Section id="playback" title="Playback">

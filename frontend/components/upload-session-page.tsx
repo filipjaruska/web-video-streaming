@@ -111,6 +111,16 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     return () => window.clearInterval(timer);
   }, [status, session.sessionId]);
 
+  // The results and the catalogue are cached on the server; a pipeline that finishes while this
+  // page watches expires them, so "Open the results" shows the finished video.
+  const previousStatus = useRef(status);
+  useEffect(() => {
+    if (status === "Completed" && previousStatus.current !== "Completed") {
+      void refreshData();
+    }
+    previousStatus.current = status;
+  }, [status]);
+
   useEffect(() => {
     if (savedAt === null) {
       return;

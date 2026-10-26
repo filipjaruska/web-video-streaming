@@ -1,20 +1,60 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { VmafChart } from "@/feature/analysis/vmaf-chart";
 import { formatBitrate, formatNumber, ladderLabel } from "@/lib/analysisFormat";
-import { collectVmafEntries, pickPackagedWithVmaf, type FormatKey } from "@/lib/analysisTargets";
-import type { AnalysisTarget } from "@/lib/videoAnalysisApi";
+import {
+  collectVmafEntries,
+  pickPackagedWithVmaf,
+  type FormatKey,
+  type VmafEntry,
+} from "@/lib/analysisTargets";
+import { getVmafFrames } from "@/lib/results/vmafFramesAction";
+import type { AnalysisTarget, VmafSeriesData } from "@/lib/videoAnalysisApi";
+
+/**
+ * The rung's per-frame series. The server-rendered analysis carries only the summaries, so the
+ * scores of the charted rung are loaded on their own, once per rung.
+ */
+function useFrameSeries(
+  routeId: string,
+  targetId: string | undefined,
+  entry: VmafEntry | undefined,
+): VmafSeriesData | undefined {
+  const [loaded, setLoaded] = useState<Record<string, VmafSeriesData>>({});
+  const requested = useRef(new Set<string>());
+  const key = targetId && entry ? `${targetId}/${entry.format}/${entry.label}` : null;
+  const missing = !!entry && entry.data.scores.length === 0;
+
+  useEffect(() => {
+    if (!key || !targetId || !entry || !missing || requested.current.has(key)) {
+      return;
+    }
+    requested.current.add(key);
+    const keep = (frames: Partial<VmafSeriesData> | null) =>
+      setLoaded((previous) => ({ ...previous, [key]: { ...entry.data, ...frames } }));
+    // Failing leaves the summary without a series, which the chart shows as such.
+    getVmafFrames(routeId, targetId, entry.format, entry.label).then(keep, () => keep(null));
+  }, [routeId, targetId, entry, key, missing]);
+
+  if (!entry) {
+    return undefined;
+  }
+  return missing && key ? loaded[key] : entry.data;
+}
 
 /** Measured quality of every packaged rung, per ladder and format, with the per-frame series. */
 export function PackagedVmaf({
+  routeId,
   targets,
   durationSec,
 }: {
+  routeId: string;
   targets: AnalysisTarget[];
   durationSec?: number | null;
 }) {
@@ -29,6 +69,7 @@ export function PackagedVmaf({
   const activeFormat = format && formats.includes(format) ? format : (formats[0] ?? "hls");
   const rungs = entries.filter((entry) => entry.format === activeFormat);
   const activeRung = rungs.find((entry) => entry.label === rung) ?? rungs[0];
+  const frames = useFrameSeries(routeId, ladder?.id, activeRung);
 
   if (!ladder || entries.length === 0) {
     return (
@@ -118,12 +159,16 @@ export function PackagedVmaf({
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-          <VmafChart
-            data={activeRung.data}
-            label={activeRung.label}
-            format={activeFormat}
-            durationSec={durationSec}
-          />
+          {frames ? (
+            <VmafChart
+              data={frames}
+              label={activeRung.label}
+              format={activeFormat}
+              durationSec={durationSec}
+            />
+          ) : (
+            <Skeleton className="h-80 w-full" />
+          )}
         </div>
       )}
     </div>

@@ -34,11 +34,18 @@ function finished(response: VideoAnalysisResponse) {
  * The video's analysis document. Refreshes while a section reports itself running, and with
  * `poll` also between steps, when no section is running yet the pipeline is still going: the
  * encode grids, for one, write nothing until they finish.
+ *
+ * With `initial` (rendered on the server) nothing is fetched for a finished video. An unfinished
+ * one is fetched once anyway, since the server's copy may be a minute old, and then polled.
  */
-export function useVideoAnalysis(routeId: string, { poll = false }: { poll?: boolean } = {}) {
-  const [data, setData] = useState<VideoAnalysisResponse | null>(null);
+export function useVideoAnalysis(
+  routeId: string,
+  { poll = false, initial = null }: { poll?: boolean; initial?: VideoAnalysisResponse | null } = {},
+) {
+  const [data, setData] = useState<VideoAnalysisResponse | null>(initial);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initial === null);
+  const settled = initial !== null && finished(initial);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -54,9 +61,12 @@ export function useVideoAnalysis(routeId: string, { poll = false }: { poll?: boo
   }, [routeId]);
 
   useEffect(() => {
+    if (settled) {
+      return;
+    }
     setLoading(true);
     void reload();
-  }, [reload]);
+  }, [reload, settled]);
 
   const running = data != null && hasRunningSections(data);
   const isPolling = running || (poll && !(data && finished(data)));
