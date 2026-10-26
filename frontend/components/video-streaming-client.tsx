@@ -334,7 +334,7 @@ export function VideoStreamingClient({ routeId, mode, poll = false }: VideoStrea
   }
 
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="min-w-0 space-y-8">
         <div className="space-y-4">{player}</div>
         <PlaybackStats stats={stats} />

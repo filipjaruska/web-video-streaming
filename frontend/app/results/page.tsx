@@ -31,7 +31,7 @@ export default async function ResultsPage() {
     >
       {error && <ErrorBanner title="Results unavailable" message={error} />}
       {report && (
-        <div className="grid gap-10 xl:grid-cols-[15rem_minmax(0,1fr)]">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-10 xl:grid-cols-[15rem_minmax(0,1fr)]">
           <ResultsIndex />
           <Chapter5View report={report} />
         </div>

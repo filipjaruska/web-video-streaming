@@ -175,7 +175,7 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     : null;
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[18rem_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[18rem_minmax(0,1fr)]">
       <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">

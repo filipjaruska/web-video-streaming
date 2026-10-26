@@ -102,7 +102,7 @@ export function ClipResults({
     series?.ladderComparison?.ladders.find((entry) => entry.ladderKind === kind)?.points;
 
   return (
-    <div className="grid gap-10 xl:grid-cols-[11rem_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-10 xl:grid-cols-[11rem_minmax(0,1fr)]">
       <SectionIndex />
       <div>
         {isPolling && (

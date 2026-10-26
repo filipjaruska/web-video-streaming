@@ -11,7 +11,7 @@ export function Header() {
       <Container className="flex h-14 items-center gap-6">
         <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
           <span aria-hidden className="h-5 w-1.5 rounded-[1px] bg-primary" />
-          <span className="hidden sm:inline">Video Streaming</span>
+          <span>Video Streaming</span>
         </Link>
         <HeaderNav />
         <div className="ml-auto flex items-center gap-2">
