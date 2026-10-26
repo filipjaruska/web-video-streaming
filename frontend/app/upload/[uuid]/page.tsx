@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { PageShell } from "@/components/page-shell";
 import { UploadSessionPage } from "@/components/upload-session-page";
 import { getApiUrl } from "@/lib/env";
 import { getUploadSession } from "@/lib/videoApi";
@@ -18,19 +17,7 @@ export const metadata: Metadata = {
 export default async function UploadPage({ params }: UploadPageProps) {
   const { uuid } = await params;
   const session = await getUploadSession(getApiUrl(), uuid).catch(() => notFound());
-  const awaitingFile = session.session.status === "AwaitingUpload";
 
-  return (
-    <PageShell
-      eyebrow="Upload"
-      title={session.video.title?.trim() || "New video"}
-      description={
-        awaitingFile
-          ? "The video is analysed, packaged as three ladders and compared. This page can be left and reopened; processing carries on."
-          : "Results fill in below as each step finishes. This page can be left and reopened."
-      }
-    >
-      <UploadSessionPage initialSession={session} />
-    </PageShell>
-  );
+  // The page renders its own header: the title and description follow the form as it is edited.
+  return <UploadSessionPage initialSession={session} />;
 }
