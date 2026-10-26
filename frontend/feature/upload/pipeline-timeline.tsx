@@ -76,7 +76,7 @@ export function PipelineTimeline({ session }: { session: UploadSessionState }) {
                         <div className="flex items-baseline justify-between gap-3">
                           <span>{step.label}</span>
                           {running && total ? (
-                            <span className="font-mono tabular text-muted-foreground">
+                            <span className="shrink-0 font-mono whitespace-nowrap tabular text-muted-foreground">
                               {done ?? 0} of {total}
                             </span>
                           ) : null}
