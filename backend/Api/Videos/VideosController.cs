@@ -66,6 +66,7 @@ public class VideosController : ControllerBase {
     }
 
     [HttpGet("{routeId}/transcodes")]
+    [ConditionalJson]
     [ProducesResponseType<VideoTranscodesResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ListTranscodes(string routeId, CancellationToken cancellationToken) {
@@ -74,6 +75,7 @@ public class VideosController : ControllerBase {
     }
 
     [HttpGet("{routeId}/analysis")]
+    [ConditionalJson]
     [ProducesResponseType<VideoAnalysisResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAnalysis(string routeId, CancellationToken cancellationToken) {
@@ -82,6 +84,7 @@ public class VideosController : ControllerBase {
     }
 
     [HttpGet("{routeId}/benchmarks")]
+    [ConditionalJson]
     [ProducesResponseType<VideoBenchmarksResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ListBenchmarks(string routeId, CancellationToken cancellationToken) {
@@ -90,6 +93,7 @@ public class VideosController : ControllerBase {
     }
 
     [HttpGet("{routeId}/benchmarks/traces")]
+    [ConditionalJson]
     [ProducesResponseType<VideoBenchmarkTracesResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ListBenchmarkTraces(string routeId, CancellationToken cancellationToken) {
