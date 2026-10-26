@@ -11,14 +11,22 @@ async function headlineFigures(): Promise<Record<string, VideoFigures>> {
   if (!report) {
     return {};
   }
+  // The report's rows share one order, so a video's rows sit at the same index in each.
   return Object.fromEntries(
-    report.content.map((row, index) => [
-      row.routeId,
-      {
-        tiMean: row.tiMean,
-        animationBdRate: report.ladders[index]?.ladders.animation?.bdRate ?? null,
-      },
-    ]),
+    report.content.map((row, index) => {
+      const video = report.videos[index];
+      const ladders = report.ladders[index]?.ladders;
+      const issues = [
+        ...(video?.errors ?? []),
+        ...(video && !video.complete ? ["The ladder comparison has not been written."] : []),
+        ...(ladders?.dynamic?.error ? [`Content-adaptive: ${ladders.dynamic.error}`] : []),
+        ...(ladders?.animation?.error ? [`Animation-optimised: ${ladders.animation.error}`] : []),
+      ];
+      return [
+        row.routeId,
+        { tiMean: row.tiMean, animationBdRate: ladders?.animation?.bdRate ?? null, issues },
+      ];
+    }),
   );
 }
 

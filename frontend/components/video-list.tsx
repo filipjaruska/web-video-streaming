@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Film } from "lucide-react";
+import { Check, Film, TriangleAlert } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
+import { Hint } from "@/components/ui/tooltip";
 import { getPublicApiUrl } from "@/lib/env";
 import { fixed, signed } from "@/lib/results/format";
 import { videoTitle, type VideoListItem } from "@/lib/videoApi";
@@ -11,6 +12,8 @@ import { videoTitle, type VideoListItem } from "@/lib/videoApi";
 export interface VideoFigures {
   tiMean: number | null;
   animationBdRate: number | null;
+  /** What kept the video from going through the pipeline cleanly; empty when nothing did. */
+  issues: string[];
 }
 
 function Figure({ label, value }: { label: string; value: string }) {
@@ -22,19 +25,34 @@ function Figure({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Whether the video is packaged for a protocol; a missing one means that packaging failed. */
-function DeliveryTag({ label, ready }: { label: string; ready: boolean }) {
+/**
+ * Whether a processed video went through the whole pipeline: packaged for HLS and DASH, all of
+ * its data loadable, and both derived ladders compared. Processing and failed videos carry their
+ * status badge on the thumbnail instead.
+ */
+function PipelineBadge({ video, issues }: { video: VideoListItem; issues: string[] }) {
+  const problems = [
+    ...(video.hasHls ? [] : ["Not packaged for HLS."]),
+    ...(video.hasDash ? [] : ["Not packaged for DASH."]),
+    ...issues,
+  ];
+  if (problems.length === 0) {
+    return (
+      <Hint content="Analysed, packaged for HLS and DASH, and compared without errors.">
+        <span className="inline-flex items-center gap-1 rounded-sm border border-success/40 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
+          <Check className="size-3" strokeWidth={3} />
+          OK
+        </span>
+      </Hint>
+    );
+  }
   return (
-    <span
-      title={ready ? `Packaged for ${label}` : `Not packaged for ${label}`}
-      className={
-        ready
-          ? "rounded-sm border border-success/40 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success"
-          : "rounded-sm border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground line-through"
-      }
-    >
-      {label}
-    </span>
+    <Hint content={problems.join(" ")}>
+      <span className="inline-flex items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning">
+        <TriangleAlert className="size-3" />
+        Check
+      </span>
+    </Hint>
   );
 }
 
@@ -105,10 +123,9 @@ export function VideoList({
                 ) : (
                   <span />
                 )}
-                <div className="flex shrink-0 gap-1">
-                  <DeliveryTag label="HLS" ready={video.hasHls} />
-                  <DeliveryTag label="DASH" ready={video.hasDash} />
-                </div>
+                {video.status === "ready" && figure && (
+                  <PipelineBadge video={video} issues={figure.issues} />
+                )}
               </div>
             </Link>
           </li>
