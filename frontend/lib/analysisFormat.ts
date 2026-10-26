@@ -18,15 +18,15 @@ export function isLadderKind(value: string | null | undefined): value is LadderK
   return typeof value === "string" && (LADDER_KINDS as readonly string[]).includes(value);
 }
 
-/** Short form for badges and table cells. */
+/** Short form for badges and table cells, in the thesis's terms. */
 export function ladderLabel(kind: string | null | undefined): string {
   switch (kind) {
     case "static":
       return "Static";
     case "dynamic":
-      return "Dynamic";
+      return "Content-adaptive";
     case "animation":
-      return "Animation-tuned";
+      return "Animation-optimised";
     case "source":
       return "Source";
     default:
@@ -34,19 +34,33 @@ export function ladderLabel(kind: string | null | undefined): string {
   }
 }
 
-/** Long form, matching `AnalysisTargetBuilder.LadderLabel` on the backend. */
+/** Long form for headings. */
 export function ladderLongLabel(kind: string | null | undefined): string {
   switch (kind) {
     case "static":
       return "Static ladder";
     case "dynamic":
-      return "Dynamic ladder (VMAF crossover)";
+      return "Content-adaptive ladder";
     case "animation":
-      return "Animation ladder (pooled)";
+      return "Animation-optimised ladder";
     case "source":
-      return "Source (original)";
+      return "Source file";
     default:
       return kind ?? "Unknown ladder";
+  }
+}
+
+/** The CSS colour of a ladder, the same in every chart, table and badge. */
+export function ladderColor(kind: string | null | undefined): string {
+  switch (kind) {
+    case "static":
+      return "var(--ladder-static)";
+    case "dynamic":
+      return "var(--ladder-dynamic)";
+    case "animation":
+      return "var(--ladder-animation)";
+    default:
+      return "var(--protocol-source)";
   }
 }
 

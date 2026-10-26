@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Lexend_Deca } from "next/font/google";
 import "./globals.css";
 import { ActionAuthProvider } from "@/components/action-auth-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Header } from "@/components/header";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+const lexendDeca = Lexend_Deca({
+  variable: "--font-lexend-deca",
+  subsets: ["latin", "latin-ext"],
 });
 
 const geistMono = Geist_Mono({
@@ -50,7 +51,7 @@ export default function RootLayout({
       */}
       <body
         suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
+        className={`${lexendDeca.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <ThemeProvider
           attribute="class"
@@ -58,12 +59,14 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <ActionAuthProvider>
-            <Header />
-            {children}
-            <Analytics />
-            <SpeedInsights />
-          </ActionAuthProvider>
+          <TooltipProvider>
+            <ActionAuthProvider>
+              <Header />
+              {children}
+              <Analytics />
+              <SpeedInsights />
+            </ActionAuthProvider>
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>

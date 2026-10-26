@@ -4,7 +4,7 @@ import { VideoPlayerSkeleton } from "@/components/video-player-skeleton";
 
 export default function Loading() {
   return (
-    <PageShell title="Loading…" actionLabel="Analysis">
+    <PageShell title="Loading…">
       <Separator className="mb-6" />
       <VideoPlayerSkeleton />
     </PageShell>

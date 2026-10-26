@@ -43,7 +43,8 @@ describe("ladder kinds", () => {
   it("knows exactly the three packaging runs and never labels a fourth as static", () => {
     expect(["static", "dynamic", "animation"].every(isLadderKind)).toBe(true);
     expect(isLadderKind("animationTuned")).toBe(false);
-    expect(ladderLabel("animation")).toBe("Animation-tuned");
+    expect(ladderLabel("dynamic")).toBe("Content-adaptive");
+    expect(ladderLabel("animation")).toBe("Animation-optimised");
     expect(ladderLabel("mystery")).toBe("mystery");
   });
 });
