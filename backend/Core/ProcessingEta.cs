@@ -109,6 +109,16 @@ public static class ProcessingEta {
 
     public static string SubLabel(PipelineStep step, int done, int total) => $"{LabelFor(step)} ({done}/{total})";
 
+    public const string InterruptedLabel = "Interrupted by a server restart";
+    private const string InterruptedDuring = InterruptedLabel + " during ";
+
+    /// <summary>
+    /// The label of a session a restart cut short. It names the step it was on, and
+    /// <see cref="ParseLabel"/> still reads that step from it, so the timeline keeps the progress made.
+    /// </summary>
+    public static string Interrupted(string? step) =>
+        string.IsNullOrWhiteSpace(step) || ParseLabel(step) == null ? InterruptedLabel : InterruptedDuring + step;
+
     private static readonly Regex SubProgress = new(@"^(?<label>.*) \((?<done>\d+)/(?<total>\d+)\)$", RegexOptions.Compiled);
 
     /// <summary>
@@ -118,6 +128,10 @@ public static class ProcessingEta {
     public static (PipelineStep Step, int? Done, int? Total)? ParseLabel(string? label) {
         if (string.IsNullOrWhiteSpace(label)) {
             return null;
+        }
+
+        if (label.StartsWith(InterruptedDuring, StringComparison.Ordinal)) {
+            label = label[InterruptedDuring.Length..];
         }
 
         int? done = null, total = null;
