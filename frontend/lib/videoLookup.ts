@@ -1,4 +1,4 @@
-import { loadCatalogue } from "@/lib/serverCache";
+import { loadCatalogue, perRequest } from "@/lib/serverCache";
 import type { VideoListItem } from "@/lib/videoApi";
 
 /**
@@ -11,7 +11,7 @@ export async function findVideo(routeId: string): Promise<VideoListItem | null |
     const { videos } = await loadCatalogue();
     return videos.find((video) => video.routeId === routeId) ?? null;
   } catch {
-    return undefined;
+    return perRequest(undefined);
   }
 }
 

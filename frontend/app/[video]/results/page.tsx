@@ -1,7 +1,7 @@
 import { VideoPlayback } from "@/feature/video/video-playback";
 import { VideoResults } from "@/feature/video/video-results";
 import { isProcessing } from "@/lib/videoLookup";
-import { loadSlimAnalysis, loadVideoReport } from "@/lib/serverCache";
+import { loadSlimAnalysis, loadVideoReport, perRequest } from "@/lib/serverCache";
 
 type VideoResultsPageProps = {
   params: Promise<{ video: string }>;
@@ -12,8 +12,8 @@ export default async function VideoResultsPage({ params }: VideoResultsPageProps
   // Both reduced and cached here: the playback tables need the run traces and the charts the
   // analysis, megabytes each. The browser fetches the analysis only while the video is processing.
   const [report, analysis, poll] = await Promise.all([
-    loadVideoReport(video).catch(() => null),
-    loadSlimAnalysis(video).catch(() => null),
+    loadVideoReport(video).catch(() => perRequest(null)),
+    loadSlimAnalysis(video).catch(() => perRequest(null)),
     isProcessing(video),
   ]);
   return (

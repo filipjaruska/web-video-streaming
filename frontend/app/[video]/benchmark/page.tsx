@@ -1,7 +1,7 @@
 import { ErrorBanner } from "@/components/error-banner";
 import { VideoStreamingClient } from "@/components/video-streaming-client";
 import { SavedRunsSummary } from "@/feature/video/saved-runs-summary";
-import { loadVideoBenchmarks } from "@/lib/serverCache";
+import { loadVideoBenchmarks, perRequest } from "@/lib/serverCache";
 import type { VideoBenchmarksResponse } from "@/lib/videoBenchmarksApi";
 
 type BenchmarkPageProps = {
@@ -16,7 +16,9 @@ export default async function BenchmarkPage({ params }: BenchmarkPageProps) {
   try {
     saved = await loadVideoBenchmarks(video);
   } catch (err) {
-    error = err instanceof Error ? err.message : "Saved runs could not be loaded.";
+    error = await perRequest(
+      err instanceof Error ? err.message : "Saved runs could not be loaded.",
+    );
   }
 
   return (

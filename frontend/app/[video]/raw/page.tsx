@@ -3,7 +3,7 @@ import { Section } from "@/components/section";
 import { SectionIndex } from "@/components/section-index";
 import { SavedBenchmarks } from "@/feature/video/saved-benchmarks";
 import { VideoRaw } from "@/feature/video/video-raw";
-import { loadVideoBenchmarks } from "@/lib/serverCache";
+import { loadVideoBenchmarks, perRequest } from "@/lib/serverCache";
 import type { VideoBenchmarksResponse } from "@/lib/videoBenchmarksApi";
 import { isProcessing } from "@/lib/videoLookup";
 
@@ -25,7 +25,9 @@ export default async function VideoRawPage({ params }: VideoRawPageProps) {
   try {
     saved = await loadVideoBenchmarks(video);
   } catch (err) {
-    error = err instanceof Error ? err.message : "Saved runs could not be loaded.";
+    error = await perRequest(
+      err instanceof Error ? err.message : "Saved runs could not be loaded.",
+    );
   }
 
   return (
