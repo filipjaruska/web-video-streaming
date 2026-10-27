@@ -1,21 +1,106 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { describe, expect, it } from "vite-plus/test";
 
 import { collectVmafEntries, pickPreviewRung, pickStaticTranscode } from "@/lib/analysisTargets";
 import { slimAnalysis } from "@/lib/results/slimAnalysis";
-import type { VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
+import type {
+  AnalysisTarget,
+  AnalysisTreeDocument,
+  VideoAnalysisResponse,
+  VmafSeriesData,
+} from "@/lib/videoAnalysisApi";
 
-/** A recorded analysis document, with all three packaging runs. */
-function golden(): VideoAnalysisResponse {
-  const file = join(import.meta.dirname, "../../__golden__/b6CP8AfNkQI/analysis.json");
-  return JSON.parse(readFileSync(file, "utf8")) as VideoAnalysisResponse;
+/** Frames in a 30 s clip at 25 fps, the length the per-frame series have in practice. */
+const FRAMES = 750;
+const RUNGS = ["1080p", "720p", "540p", "432p", "360p", "234p"];
+
+const series = (offset: number) =>
+  Array.from({ length: FRAMES }, (_, frame) => offset + frame / 10);
+const times = Array.from({ length: FRAMES }, (_, frame) => frame / 25);
+
+function rung(index: number): VmafSeriesData {
+  const summary = { mean: 95 - index, harmonicMean: 94 - index, min: 80 - index, max: 99 };
+  return {
+    scores: series(index),
+    timeSec: times,
+    summary: { ...summary, bitrateBps: 8_000_000 / (index + 1), cambi: index / 2 },
+    summaryByModel: { vmaf: summary, neg: { ...summary, harmonicMean: 93 - index } },
+  };
+}
+
+function tree(id: string): AnalysisTreeDocument {
+  return {
+    id,
+    label: id,
+    children: ["hls", "dash"].map((format) => ({
+      id: format,
+      label: format.toUpperCase(),
+      meta: { kind: "section", status: "completed" },
+      children: RUNGS.map((label) => ({ id: `${format}-${label}`, label, value: "measured" })),
+    })),
+  };
+}
+
+function transcode(ladderKind: "static" | "dynamic" | "animation"): AnalysisTarget {
+  const byFormat = <T>(make: (index: number) => T) =>
+    Object.fromEntries(RUNGS.map((label, index) => [label, make(index)]));
+  return {
+    id: `transcode:${ladderKind}`,
+    label: ladderKind,
+    kind: "transcode",
+    status: "completed",
+    transcodeId: ladderKind,
+    ladderKind,
+    tree: tree(ladderKind),
+    series: {
+      vmafByFormat: { hls: byFormat(rung), dash: byFormat(rung) },
+      sitiByFormat: {
+        hls: byFormat((index) => ({ si: series(index), ti: series(index + 1), timeSec: times })),
+        dash: byFormat((index) => ({ si: series(index), ti: series(index + 1), timeSec: times })),
+      },
+      packagingIntegrity: { rungs: [] } as never,
+      ...(ladderKind === "static"
+        ? {
+            encodeGrid: [{ height: 1080, crf: 23, bitrateBps: 4_000_000, vmafMean: 93 }] as never,
+            encodeGridAnimation: [] as never,
+            derivedLadder: { rungs: [] } as never,
+            animationLadder: { rungs: [] } as never,
+            ladderComparison: { ladders: [] } as never,
+            tuningComparison: { pairs: [] } as never,
+          }
+        : {}),
+    },
+  };
+}
+
+/** An analysis document of the shape the backend returns: the source and three packaging runs. */
+function analysis(): VideoAnalysisResponse {
+  return {
+    routeId: "abc123",
+    schemaVersion: 1,
+    updatedAtUtc: "2026-10-27T00:00:00Z",
+    targets: [
+      {
+        id: "source",
+        label: "Source",
+        kind: "source",
+        status: "completed",
+        tree: tree("source"),
+        series: {
+          siti: { si: series(0), ti: series(1), timeSec: times },
+          duplicateFrameShare: 0.4,
+          stageTimings: { StaticEncode: { totalMs: 1000, count: 1 } } as never,
+        },
+      },
+      transcode("static"),
+      transcode("dynamic"),
+      transcode("animation"),
+    ],
+  };
 }
 
 describe("slimAnalysis", () => {
-  const full = golden();
-  const slim = slimAnalysis(golden());
+  const full = analysis();
+  const slim = slimAnalysis(analysis());
   const transcodes = (response: VideoAnalysisResponse) =>
     response.targets.filter((target) => target.kind === "transcode");
 
@@ -31,12 +116,12 @@ describe("slimAnalysis", () => {
       "encodeGridAnimation",
       "derivedLadder",
       "animationLadder",
-      "animationLadderSensitivity",
       "ladderComparison",
       "tuningComparison",
     ] as const) {
       expect(after[field], field).toEqual(before[field]);
     }
+    expect(after.packagingIntegrity).toBeUndefined();
   });
 
   it("keeps every rung's VMAF summary but drops the per-frame scores", () => {
@@ -44,15 +129,15 @@ describe("slimAnalysis", () => {
     transcodes(full).forEach((target, index) => {
       const before = collectVmafEntries(target.series.vmafByFormat);
       const after = collectVmafEntries(transcodes(slim)[index].series.vmafByFormat);
-      expect(before.length).toBeGreaterThan(0);
+      expect(before).toHaveLength(RUNGS.length * 2);
       expect(after.map(({ format, label }) => `${format}/${label}`)).toEqual(
         before.map(({ format, label }) => `${format}/${label}`),
       );
-      after.forEach((entry, rung) => {
+      after.forEach((entry, rungIndex) => {
         expect(entry.data.scores).toEqual([]);
         expect(entry.data.timeSec).toBeUndefined();
-        expect(entry.data.summary).toEqual(before[rung].data.summary);
-        expect(entry.data.summaryByModel).toEqual(before[rung].data.summaryByModel);
+        expect(entry.data.summary).toEqual(before[rungIndex].data.summary);
+        expect(entry.data.summaryByModel).toEqual(before[rungIndex].data.summaryByModel);
       });
     });
   });
@@ -74,7 +159,7 @@ describe("slimAnalysis", () => {
   });
 
   it("is a small fraction of the document and leaves the input alone", () => {
-    const input = golden();
+    const input = analysis();
     const size = JSON.stringify(input).length;
     expect(JSON.stringify(slimAnalysis(input)).length).toBeLessThan(size * 0.15);
     expect(JSON.stringify(input).length).toBe(size);
