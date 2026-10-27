@@ -7,7 +7,7 @@ import { getApiUrl } from "@/lib/env";
 import type { Chapter5Report } from "@/lib/results/chapter5";
 import { fetchChapter5, fetchVideoReport } from "@/lib/results/loadChapter5";
 import { slimAnalysis } from "@/lib/results/slimAnalysis";
-import { listVideos, type ListVideosResponse } from "@/lib/videoApi";
+import { listVideos, type ListVideosResponse, type VideoListItem } from "@/lib/videoApi";
 import { getVideoAnalysis, type VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 import { getVideoBenchmarks, type VideoBenchmarksResponse } from "@/lib/videoBenchmarksApi";
 
@@ -71,6 +71,25 @@ export async function loadCatalogue(): Promise<ListVideosResponse> {
   return unwrap(await cachedCatalogue());
 }
 
+async function cachedCatalogueEntry(routeId: string): Promise<Loaded<VideoListItem | null>> {
+  "use cache: remote";
+  return untilChanged(
+    ["videos"],
+    async () => (await listVideos()).videos.find((video) => video.routeId === routeId) ?? null,
+  );
+}
+
+/**
+ * One video's catalogue entry, for the video's own pages. Not looked up in `loadCatalogue`: a
+ * video page's generic shell is prerendered at build, and on a cache miss its render resumes with
+ * the cached values that shell read. A whole catalogue read then would be the one from the build,
+ * where a video uploaded since does not exist, and the page would render as not found. An entry
+ * keyed by the video cannot be read without knowing the video, so it is never part of that shell.
+ */
+export async function loadCatalogueEntry(routeId: string): Promise<VideoListItem | null> {
+  return unwrap(await cachedCatalogueEntry(routeId));
+}
+
 async function cachedChapter5(): Promise<Loaded<Chapter5Report>> {
   "use cache: remote";
   return untilChanged(["videos", "analysis", "benchmarks"], () => fetchChapter5(getApiUrl()));
@@ -110,20 +129,23 @@ export interface VmafFrames {
   timeSec?: number[];
 }
 
-async function cachedVmafFrames(
-  routeId: string,
-  targetId: string,
-  format: string,
-  label: string,
-): Promise<Loaded<VmafFrames | null>> {
+const framesKey = (targetId: string, format: string, label: string) =>
+  `${targetId}/${format}/${label}`;
+
+// Every rung of the video in one entry, so a viewer stepping through rungs reads the analysis once,
+// and a request for a rung that does not exist adds nothing to the cache.
+async function cachedVmafFrames(routeId: string): Promise<Loaded<Record<string, VmafFrames>>> {
   "use cache: remote";
   return untilChanged(["analysis"], async () => {
     const analysis = await getVideoAnalysis(getApiUrl(), encodeURIComponent(routeId), NO_STORE);
-    const target = analysis.targets.find((item) => item.id === targetId);
-    const entry = collectVmafEntries(target?.series.vmafByFormat).find(
-      (item) => item.format === format && item.label === label,
+    return Object.fromEntries(
+      analysis.targets.flatMap((target) =>
+        collectVmafEntries(target.series.vmafByFormat).map((entry) => [
+          framesKey(target.id, entry.format, entry.label),
+          { scores: entry.data.scores, timeSec: entry.data.timeSec },
+        ]),
+      ),
     );
-    return entry ? { scores: entry.data.scores, timeSec: entry.data.timeSec } : null;
   });
 }
 
@@ -134,7 +156,8 @@ export async function loadVmafFrames(
   format: string,
   label: string,
 ): Promise<VmafFrames | null> {
-  return unwrap(await cachedVmafFrames(routeId, targetId, format, label));
+  const frames = unwrap(await cachedVmafFrames(routeId));
+  return frames[framesKey(targetId, format, label)] ?? null;
 }
 
 async function cachedVideoBenchmarks(routeId: string): Promise<Loaded<VideoBenchmarksResponse>> {

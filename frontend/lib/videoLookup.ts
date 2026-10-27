@@ -1,15 +1,14 @@
-import { loadCatalogue, perRequest } from "@/lib/serverCache";
+import { loadCatalogueEntry, perRequest } from "@/lib/serverCache";
 import type { VideoListItem } from "@/lib/videoApi";
 
 /**
  * One video from the catalogue: `null` when it does not exist, `undefined` when the catalogue could
- * not be reached (pages still render then). The list is cached, so the layout and the page asking
+ * not be reached (pages still render then). The entry is cached, so the layout and the page asking
  * for the same video cost one request.
  */
 export async function findVideo(routeId: string): Promise<VideoListItem | null | undefined> {
   try {
-    const { videos } = await loadCatalogue();
-    return videos.find((video) => video.routeId === routeId) ?? null;
+    return await loadCatalogueEntry(routeId);
   } catch {
     return perRequest(undefined);
   }
