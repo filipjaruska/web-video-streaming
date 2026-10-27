@@ -361,11 +361,17 @@ export function useBenchmarkRunner({
         profileIndex: 1,
         profileCount: profiles.length,
       });
-      laddersRef.current = await loadLadderQualities(
-        apiUrl,
-        routeId,
-        selection.ladders.map((ladder) => ladder.transcodeId),
-      );
+      const [ladders] = await Promise.all([
+        loadLadderQualities(
+          apiUrl,
+          routeId,
+          selection.ladders.map((ladder) => ladder.transcodeId),
+        ),
+        // The player loads hls.js on demand. Loaded here, before the first run, no measured HLS
+        // startup includes downloading it, the same as when it shipped with the page.
+        import("hls.js"),
+      ]);
+      laddersRef.current = ladders;
 
       for (let profileIndex = 0; profileIndex < profiles.length; profileIndex++) {
         const profile = profiles[profileIndex];

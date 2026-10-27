@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import type {
   AnalysisSectionStatus,
   AnalysisTarget,
@@ -8,10 +9,10 @@ import type {
   SitiSeriesData,
 } from "@/lib/videoAnalysisApi";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
-import { SitiChart } from "@/feature/analysis/siti-chart";
 import { ChevronRight } from "lucide-react";
 
 import { StatusBadge } from "@/components/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { ladderLongLabel } from "@/lib/analysisFormat";
@@ -22,6 +23,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+// The charts sit inside runs that start collapsed, so the chart code (and Recharts with it) loads
+// when a run is first opened rather than with the Raw data tab.
+const SitiChart = dynamic(() => import("@/feature/analysis/siti-chart").then((m) => m.SitiChart), {
+  loading: () => <Skeleton className="h-65 w-full" />,
+});
 
 interface TranscodeAnalysisCardProps {
   target: AnalysisTarget;

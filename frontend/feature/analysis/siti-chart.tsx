@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Hls from "hls.js";
+import type Hls from "hls.js";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts";
 import type { AnalysisTreeNode, SitiSeriesData } from "@/lib/videoAnalysisApi";
 import {
@@ -269,8 +269,20 @@ export function SitiChart({
     video.addEventListener("durationchange", syncDuration);
 
     if (isHlsSrc) {
-      if (Hls.isSupported()) {
-        hls = new Hls({
+      // Loaded here rather than with the page: the chart is useful before the preview is.
+      void import("hls.js").then(({ default: HlsLibrary }) => {
+        if (cancelled) {
+          return;
+        }
+        if (!HlsLibrary.isSupported()) {
+          if (video.canPlayType("application/vnd.apple.mpegurl")) {
+            video.src = videoSrc;
+          } else {
+            setPreviewError("HLS playback is not supported in this browser.");
+          }
+          return;
+        }
+        const instance = new HlsLibrary({
           enableWorker: true,
           maxBufferLength: 30,
           maxMaxBufferLength: 120,
@@ -278,16 +290,17 @@ export function SitiChart({
           nudgeMaxRetry: 5,
           startFragPrefetch: true,
         });
-        hlsRef.current = hls;
-        hls.loadSource(videoSrc);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls = instance;
+        hlsRef.current = instance;
+        instance.loadSource(videoSrc);
+        instance.attachMedia(video);
+        instance.on(HlsLibrary.Events.MANIFEST_PARSED, () => {
           if (!cancelled) {
             syncDuration();
             flushPendingSeek();
           }
         });
-        hls.on(Hls.Events.LEVEL_LOADED, (_event, level) => {
+        instance.on(HlsLibrary.Events.LEVEL_LOADED, (_event, level) => {
           if (cancelled) {
             return;
           }
@@ -299,17 +312,13 @@ export function SitiChart({
           }
           flushPendingSeek();
         });
-        hls.on(Hls.Events.ERROR, (_event, error) => {
+        instance.on(HlsLibrary.Events.ERROR, (_event, error) => {
           if (!error.fatal || cancelled) {
             return;
           }
           setPreviewError("Preview unavailable: this rung could not be loaded.");
         });
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = videoSrc;
-      } else {
-        setPreviewError("HLS playback is not supported in this browser.");
-      }
+      });
     } else {
       video.src = videoSrc;
     }
