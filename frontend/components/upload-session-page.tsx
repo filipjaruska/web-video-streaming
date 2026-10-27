@@ -229,6 +229,41 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
     </section>
   );
 
+  const uploadForm = (
+    <div className="space-y-4">
+      <label
+        htmlFor="video-file"
+        className="flex cursor-pointer flex-col items-center gap-2 rounded-md border border-dashed px-6 py-14 text-center transition-colors hover:border-primary hover:bg-accent/40"
+      >
+        <Upload className="size-6 text-muted-foreground" />
+        <span className="font-medium">{file ? file.name : "Choose a video file"}</span>
+        <span className="text-xs text-muted-foreground">
+          {file
+            ? `${(file.size / 1_000_000).toFixed(1)} MB`
+            : "MP4, MOV, AVI, MKV or WebM, up to 500 MB"}
+        </span>
+        <input
+          ref={fileInputRef}
+          id="video-file"
+          type="file"
+          accept={ACCEPTED}
+          className="sr-only"
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+        />
+      </label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {title.trim()
+            ? "The page can be left and reopened once the upload is done; processing carries on."
+            : "Give the video a title to upload it."}
+        </p>
+        <Button disabled={!file || !title.trim() || uploading} onClick={() => void handleUpload()}>
+          {uploading ? "Uploading…" : "Upload and process"}
+        </Button>
+      </div>
+    </div>
+  );
+
   const thumbnailUrl = session.video.thumbnailUrl
     ? `${getPublicApiUrl()}${session.video.thumbnailUrl}`
     : null;
@@ -256,94 +291,69 @@ export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
         {details}
 
         {awaitingFile ? (
-          <div className="space-y-4">
-            <label
-              htmlFor="video-file"
-              className="flex cursor-pointer flex-col items-center gap-2 rounded-md border border-dashed px-6 py-14 text-center transition-colors hover:border-primary hover:bg-accent/40"
-            >
-              <Upload className="size-6 text-muted-foreground" />
-              <span className="font-medium">{file ? file.name : "Choose a video file"}</span>
-              <span className="text-xs text-muted-foreground">
-                {file
-                  ? `${(file.size / 1_000_000).toFixed(1)} MB`
-                  : "MP4, MOV, AVI, MKV or WebM, up to 500 MB"}
-              </span>
-              <input
-                ref={fileInputRef}
-                id="video-file"
-                type="file"
-                accept={ACCEPTED}
-                className="sr-only"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">
-                {title.trim()
-                  ? "The page can be left and reopened once the upload is done; processing carries on."
-                  : "Give the video a title to upload it."}
-              </p>
-              <Button
-                disabled={!file || !title.trim() || uploading}
-                onClick={() => void handleUpload()}
-              >
-                {uploading ? "Uploading…" : "Upload and process"}
-              </Button>
-            </div>
-          </div>
+          uploadForm
         ) : (
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[18rem_minmax(0,1fr)]">
-            <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
-                  <span>Processing</span>
-                  <span className="font-mono tabular">{state.progressPercent} %</span>
-                </div>
-                <Progress value={state.progressPercent} className="h-1.5" />
-                <div className="flex justify-between gap-3 text-xs text-muted-foreground">
-                  {status === "Queued" && state.queuePosition != null && (
-                    <span>
-                      {state.queuePosition === 0
-                        ? "Next in line"
-                        : `${state.queuePosition} ahead in the queue`}
-                    </span>
-                  )}
-                  {elapsedSeconds != null && (
-                    <span>
-                      Elapsed{" "}
-                      <span className="font-mono tabular">
-                        {formatElapsedClock(elapsedSeconds)}
+          <>
+            {/* The backend takes a new upload for a failed session; the details above are kept. */}
+            {status === "Failed" && (
+              <section className="space-y-3">
+                <h2 className="font-medium">Upload again to retry</h2>
+                {uploadForm}
+              </section>
+            )}
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[18rem_minmax(0,1fr)]">
+              <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+                    <span>Processing</span>
+                    <span className="font-mono tabular">{state.progressPercent} %</span>
+                  </div>
+                  <Progress value={state.progressPercent} className="h-1.5" />
+                  <div className="flex justify-between gap-3 text-xs text-muted-foreground">
+                    {status === "Queued" && state.queuePosition != null && (
+                      <span>
+                        {state.queuePosition === 0
+                          ? "Next in line"
+                          : `${state.queuePosition} ahead in the queue`}
                       </span>
-                    </span>
-                  )}
-                  {isProcessing && (
-                    <span>
-                      {etaSeconds == null
-                        ? "Estimating time left"
-                        : etaSeconds > 0
-                          ? `${formatDurationShort(etaSeconds)} left`
-                          : "Finishing this step"}
-                    </span>
-                  )}
+                    )}
+                    {elapsedSeconds != null && (
+                      <span>
+                        Elapsed{" "}
+                        <span className="font-mono tabular">
+                          {formatElapsedClock(elapsedSeconds)}
+                        </span>
+                      </span>
+                    )}
+                    {isProcessing && (
+                      <span>
+                        {etaSeconds == null
+                          ? "Estimating time left"
+                          : etaSeconds > 0
+                            ? `${formatDurationShort(etaSeconds)} left`
+                            : "Finishing this step"}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {status === "Failed" && (
-                <ErrorBanner
-                  title="Processing failed"
-                  message={state.currentStep ?? "See the backend log."}
-                />
-              )}
+                {status === "Failed" && (
+                  <ErrorBanner
+                    title="Processing failed"
+                    message={state.currentStep ?? "See the backend log."}
+                  />
+                )}
 
-              <PipelineTimeline session={state} />
-            </aside>
+                <PipelineTimeline session={state} />
+              </aside>
 
-            <PreliminaryResults
-              routeId={session.video.routeId}
-              processing={status === "Queued" || isProcessing}
-              thumbnailUrl={thumbnailUrl}
-            />
-          </div>
+              <PreliminaryResults
+                routeId={session.video.routeId}
+                processing={status === "Queued" || isProcessing}
+                thumbnailUrl={thumbnailUrl}
+              />
+            </div>
+          </>
         )}
       </div>
     </PageShell>
