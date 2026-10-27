@@ -163,6 +163,15 @@ export default async function MethodPage() {
                   stays between the crossovers either side of it.
                 </p>
               </Term>
+              <Term name="Top rung and gaps">
+                <p>
+                  Every ladder keeps 1080p. When it never wins on the envelope, it takes the top
+                  rung&apos;s slot at that rung&apos;s bitrate, raised only as far as the top
+                  rung&apos;s floor of 88 and the CAMBI limit need. A gap wider than ×2 between two
+                  rungs gets a resolution the ladder lacks at its geometric mean; that is usually
+                  where the displaced resolution returns.
+                </p>
+              </Term>
               <Term name="Content-adaptive">
                 <p>Derived from the default grid, encoded as 2-pass VBR with maxrate 1.5×.</p>
               </Term>

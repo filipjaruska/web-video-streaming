@@ -70,7 +70,7 @@ function placementFlag(variant: DerivedLadderVariant): RungFlag | null {
     case "top":
       return {
         label: "top",
-        title: `This resolution never wins on the envelope, but every ladder keeps the highest resolution: placed at its λ point, or ×1.5 above the rung below (${formatBitrate(variant.intervalLowBps)}) when that is higher.`,
+        title: `This resolution never wins on the envelope, but every ladder keeps the highest resolution: it takes the top rung's slot at that rung's ${formatBitrate(variant.intervalLowBps)}, raised along its own curve only as far as decision quality 88 and the CAMBI limit need. The resolution it displaced can return lower down to fill a gap.`,
         variant: "secondary",
       };
     case "cambi":
