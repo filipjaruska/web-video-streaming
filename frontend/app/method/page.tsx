@@ -166,10 +166,11 @@ export default async function MethodPage() {
               <Term name="Top rung and gaps">
                 <p>
                   Every ladder keeps 1080p. When it never wins on the envelope, it takes the top
-                  rung&apos;s slot at that rung&apos;s bitrate, raised only as far as the top
-                  rung&apos;s floor of 88 and the CAMBI limit need. A gap wider than ×2 between two
-                  rungs gets a resolution the ladder lacks at its geometric mean; that is usually
-                  where the displaced resolution returns.
+                  rung&apos;s slot at the lowest bitrate where it matches that rung&apos;s quality
+                  (never under the floor of 88), raised further if the CAMBI limit needs it. Forcing
+                  1080p in costs bitrate, not quality. A gap wider than ×2 between two rungs gets a
+                  resolution the ladder lacks at its geometric mean; that is usually where the
+                  displaced resolution returns.
                 </p>
               </Term>
               <Term name="Content-adaptive">

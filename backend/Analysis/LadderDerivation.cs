@@ -189,8 +189,9 @@ public sealed class LadderDerivation {
 
         /// <summary>
         /// The highest resolution, put in the top rung's slot although it never wins on the envelope:
-        /// every ladder includes it. Starts at the rate of the rung it displaces and is raised along
-        /// its own curve only as far as <see cref="TopRungFloor"/> and the CAMBI limit need.
+        /// every ladder includes it. Taken at the lowest rate, from the displaced rung's up, where its
+        /// own curve keeps that rung's decision quality (at least <see cref="TopRungFloor"/>), then
+        /// raised for the CAMBI limit when it applies.
         /// </summary>
         public const string Top = "top";
     }
@@ -481,19 +482,21 @@ public sealed class LadderDerivation {
     /// <summary>
     /// Keeps the highest resolution in the ladder when the envelope left it out: it takes the top
     /// rung's slot (<see cref="Placements.Top"/>). The rung there is taken out, and the highest
-    /// resolution starts from its bitrate, raised along its own curve only as far as it takes for its
-    /// decision quality to reach <see cref="TopRungFloor"/> and, when the limit covers the top rung,
-    /// its predicted CAMBI to stay within <see cref="MaxPredictedCambi"/>. Returns the rung displaced,
-    /// or null when the highest resolution already had a rung.
+    /// resolution goes in at the lowest rate, from that rung's bitrate up, from which its own predicted
+    /// decision quality stays at the displaced rung's, or at <see cref="TopRungFloor"/> when that is
+    /// higher. When the limit covers the top rung it is then raised until its predicted CAMBI stays
+    /// within <see cref="MaxPredictedCambi"/>. Returns the rung displaced, or null when the highest
+    /// resolution already had a rung.
     /// </summary>
     /// <remarks>
     /// Every ladder must offer the source resolution, the static ladder's top rung, so the ladders
     /// stay comparable at the top. On flat content a lower resolution can beat it at every measured
-    /// rate (Tatami: 720p over 1080p), and the envelope alone would then drop it. Stacking it above
-    /// the envelope's top rung instead bought next to no quality for half as many bits again, and
-    /// left the range the top rung covered without a rung; displaced, that resolution is free for
+    /// rate (Tatami: 720p over 1080p), and the envelope alone would then drop it. Forcing it in costs
+    /// bitrate, never quality: taken at the displaced rung's rate, or held only to the floor, it shipped
+    /// below the quality the envelope's top rung had, and right at the floor, which VBR's undershoot at
+    /// low rates then measured under. Displaced, the lower resolution is free for
     /// <see cref="FillGaps"/> to put back below. λ is still judged on the envelope's top resolution.
-    /// The rung is read off its own curve like every other, so its prediction is as measured as theirs.
+    /// The rung is read off its own curves like every other, so its prediction is as measured as theirs.
     /// </remarks>
     private static PlannedRung? KeepHighestResolution(
         List<PlannedRung> rungs,
@@ -514,31 +517,27 @@ public sealed class LadderDerivation {
         double start = displaced.BitrateBps;
         var measuredTop = highest.Points[^1].BitrateBps;
         var high = Math.Max(start, measuredTop);
+        var displacedQuality = displaced.Prediction.DecisionQuality;
+        var targetQuality = Math.Max(displacedQuality, TopRungFloor);
         var target = start;
-        string? raisedFor = null;
+        var reached = true;
 
-        // Past its highest sample the curve reads flat, so a floor not met there is never met.
-        if (Edge(highest, start, high, prediction => prediction.DecisionQuality >= TopRungFloor) is { } floorEdge) {
-            if (Exceeds(floorEdge, target)) {
-                (target, raisedFor) = (floorEdge, $"its decision quality reaches {TopRungFloor:0.#}");
-            }
+        // Past its highest sample the curve reads flat, so a quality not reached there is never reached.
+        if (Edge(highest, start, high, prediction => prediction.DecisionQuality >= targetQuality - 1e-9) is { } qualityEdge) {
+            target = Math.Max(target, qualityEdge);
         } else {
-            if (Exceeds(high, target)) {
-                (target, raisedFor) = (high, "it reaches its best sample");
-            }
-
+            target = high;
+            reached = false;
             warnings.Add(string.Create(
                 CultureInfo.InvariantCulture,
-                $"{highest.Label} never reaches decision quality {TopRungFloor:0.#}; the top rung is taken at its best sample."));
+                $"{highest.Label} never reaches decision quality {targetQuality:0.##}; the top rung is taken at its best sample."));
         }
 
         string? cambiStatus = null;
         if (CambiLimitApplies(cambiLimit, highest, isTopRung: true)) {
             if (CambiEdge(highest, start, high) is { } cambiEdge) {
                 cambiStatus = Exceeds(cambiEdge, target) ? CambiLimitStatus.Binding : CambiLimitStatus.Met;
-                if (Exceeds(cambiEdge, target)) {
-                    (target, raisedFor) = (cambiEdge, $"its predicted CAMBI stays within {MaxPredictedCambi:0.#}");
-                }
+                target = Math.Max(target, cambiEdge);
             } else {
                 cambiStatus = CambiLimitStatus.Unmet;
             }
@@ -549,7 +548,8 @@ public sealed class LadderDerivation {
                 $"{highest.Label} takes the top slot at {Mbps(target)}, above its highest grid sample at {Mbps(measuredTop)}; its prediction is extrapolated.");
         }
 
-        var bitrate = ShipBps(target, start, double.PositiveInfinity);
+        // Rounded up from the edge, never under it: rounding down would ship below the quality kept.
+        var bitrate = ShipBps(target, target, double.PositiveInfinity);
         var prediction = PredictAt(highest, bitrate);
         dropped.Remove(highest.Label);
         rungs.Insert(0, new PlannedRung(
@@ -565,9 +565,15 @@ public sealed class LadderDerivation {
             new EnvelopeWindow(highest.Height, highest.Label, start, double.PositiveInfinity, false),
             HullDeficit(pooledHull, bitrate, prediction.DecisionQuality),
             cambiStatus));
-        warnings.Add(
-            $"{highest.Label} never wins on the envelope; since every ladder includes the highest resolution, it takes the top slot from {displaced.Hull.Label} at {Mbps(start)}" +
-            (raisedFor != null ? $", raised to {Mbps(bitrate)} so that {raisedFor}." : "."));
+        var kept = displacedQuality >= TopRungFloor
+            ? $"{displaced.Hull.Label}'s quality"
+            : string.Create(CultureInfo.InvariantCulture, $"the top rung's floor of {TopRungFloor:0.#}");
+        var landing = cambiStatus == CambiLimitStatus.Binding
+            ? string.Create(CultureInfo.InvariantCulture, $"raised until its predicted CAMBI stays within {MaxPredictedCambi:0.#}")
+            : reached ? $"the lowest rate from which it keeps {kept}" : "its best sample";
+        warnings.Add(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{highest.Label} never wins on the envelope; since every ladder includes the highest resolution, it replaces the top rung, {displaced.Hull.Label} at {Mbps(start)} with decision quality {displacedQuality:0.##}, and lands at {Mbps(bitrate)} with {prediction.DecisionQuality:0.##}, {landing}."));
 
         return displaced;
     }
@@ -1405,7 +1411,7 @@ public sealed class LadderDerivation {
         Placements.Gap => $"inserted at the geometric mean of a gap wider than ×{MaxRungGap:0.#}",
         Placements.Top => string.Create(
             CultureInfo.InvariantCulture,
-            $"the highest resolution in the top rung's slot, raised from that rung's rate only as far as decision quality {TopRungFloor:0.#} and the CAMBI limit need"),
+            $"the highest resolution in the top rung's slot, at the lowest rate that keeps the displaced rung's decision quality (at least {TopRungFloor:0.#}) and meets the CAMBI limit"),
         _ => "at the λ point"
     };
 
