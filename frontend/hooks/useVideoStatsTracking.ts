@@ -253,9 +253,11 @@ function collectDashStats(
     let foundBandwidth = false;
 
     if (dash.getAverageThroughput) {
-      const throughput = dash.getAverageThroughput("video");
-      if (throughput && throughput > 0) {
-        stats.bandwidth = throughput > 100000 ? throughput / 1000000 : throughput / 1000;
+      // Always kbit/s (dash.js 5). Guessing the unit from the size read anything above 100 Mb/s,
+      // which an unshaped local link reaches, as bit/s, and reported a thousandth of it.
+      const throughputKbps = dash.getAverageThroughput("video");
+      if (throughputKbps && throughputKbps > 0) {
+        stats.bandwidth = throughputKbps / 1000;
         foundBandwidth = true;
       }
     }
