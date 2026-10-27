@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 import { useActionAuth } from "@/components/action-auth-provider";
 import { Button } from "@/components/ui/button";
@@ -24,7 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { refreshData } from "@/lib/cacheActions";
+import { refreshData, refreshDataAndOpen } from "@/lib/cacheActions";
 import { getPublicApiUrl } from "@/lib/env";
 import { deleteVideo, updateVideo, videoTitle, type VideoListItem } from "@/lib/videoApi";
 
@@ -32,7 +31,6 @@ type Open = "edit" | "delete" | null;
 
 /** Rename, describe or delete a video. Both go through the same password gate as every mutation. */
 export function VideoManageMenu({ video }: { video: VideoListItem }) {
-  const router = useRouter();
   const { requireAuth } = useActionAuth();
   const [open, setOpen] = useState<Open>(null);
   const [title, setTitle] = useState("");
@@ -52,7 +50,9 @@ export function VideoManageMenu({ video }: { video: VideoListItem }) {
     setOpen(dialog);
   }
 
-  async function run(action: () => Promise<void>) {
+  // `then` expires the server's caches and re-renders from them in one step; refreshing or
+  // navigating first would render the cached copy from before the change.
+  async function run(action: () => Promise<void>, then: () => Promise<void>) {
     if (!(await requireAuth())) {
       return;
     }
@@ -60,8 +60,8 @@ export function VideoManageMenu({ video }: { video: VideoListItem }) {
     setError(null);
     try {
       await action();
-      await refreshData();
       setOpen(null);
+      await then();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -70,19 +70,20 @@ export function VideoManageMenu({ video }: { video: VideoListItem }) {
   }
 
   const save = () =>
-    run(async () => {
-      await updateVideo(getPublicApiUrl(), video.routeId, {
-        title: title.trim() || null,
-        description: description.trim() || null,
-      });
-      router.refresh();
-    });
+    run(
+      () =>
+        updateVideo(getPublicApiUrl(), video.routeId, {
+          title: title.trim() || null,
+          description: description.trim() || null,
+        }).then(() => undefined),
+      refreshData,
+    );
 
   const remove = () =>
-    run(async () => {
-      await deleteVideo(getPublicApiUrl(), video.routeId);
-      router.push("/");
-    });
+    run(
+      () => deleteVideo(getPublicApiUrl(), video.routeId),
+      () => refreshDataAndOpen("/"),
+    );
 
   return (
     <>
