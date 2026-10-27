@@ -84,6 +84,9 @@ async function CardFigures({
   );
 }
 
+/** Cards in the widest grid row. */
+const FIRST_ROW = 4;
+
 /** Holds the figures' place, at their height, so the cards do not move when they arrive. */
 function CardFiguresSkeleton() {
   return (
@@ -128,7 +131,10 @@ export function VideoList({
                   <img
                     src={`${apiUrl}${video.thumbnailUrl}`}
                     alt=""
-                    loading="lazy"
+                    // The first row is on screen at once (up to four across), so it loads with
+                    // the page instead of waiting for layout; the first is the largest paint.
+                    loading={index < FIRST_ROW ? "eager" : "lazy"}
+                    fetchPriority={index === 0 ? "high" : undefined}
                     decoding="async"
                     className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
                   />

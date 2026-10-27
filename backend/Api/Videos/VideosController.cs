@@ -177,6 +177,9 @@ public class VideosController : ControllerBase {
         var contentType = path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
             ? "image/webp"
             : "image/jpeg";
+        // Written once per video, from its source, so it never changes under its URL. A day is kept
+        // without asking; after that Last-Modified makes the check a 304.
+        Response.Headers.CacheControl = "public, max-age=86400";
         return PhysicalFile(path, contentType);
     }
 
