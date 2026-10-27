@@ -8,12 +8,32 @@ import { DownloadRawData } from "@/feature/video/download-raw-data";
 import { VideoManageMenu } from "@/feature/video/video-manage-menu";
 import { VideoTabs } from "@/feature/video/video-tabs";
 import { videoTitle } from "@/lib/videoApi";
+import { loadCatalogue } from "@/lib/serverCache";
 import { findVideo } from "@/lib/videoLookup";
 
 type VideoLayoutProps = {
   params: Promise<{ video: string }>;
   children: ReactNode;
 };
+
+/** Stands in when there is nothing to list; no route id has this form, so it renders the 404. */
+const PLACEHOLDER = "__placeholder__";
+
+/**
+ * Every video's tabs are built ahead of time. A video that is not listed here, one uploaded since
+ * the build, gets the shell on its first visit and is then rendered and kept like the rest. Cache
+ * Components needs at least one entry, so an empty catalogue, or a build that cannot reach the
+ * backend, lists the placeholder.
+ */
+export async function generateStaticParams(): Promise<{ video: string }[]> {
+  const videos = await loadCatalogue().then(
+    (catalogue) => catalogue.videos,
+    () => [],
+  );
+  return videos.length > 0
+    ? videos.map((video) => ({ video: video.routeId }))
+    : [{ video: PLACEHOLDER }];
+}
 
 export async function generateMetadata({
   params,

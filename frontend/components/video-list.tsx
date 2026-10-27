@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { Check, Film, TriangleAlert } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/tooltip";
 import { getPublicApiUrl } from "@/lib/env";
 import { fixed, signed } from "@/lib/results/format";
@@ -56,12 +58,52 @@ function PipelineBadge({ video, issues }: { video: VideoListItem; issues: string
   );
 }
 
+async function CardFigures({
+  video,
+  figures,
+}: {
+  video: VideoListItem;
+  figures: Promise<Record<string, VideoFigures>>;
+}) {
+  const figure = (await figures)[video.routeId];
+  return (
+    <>
+      {figure && (figure.tiMean != null || figure.animationBdRate != null) ? (
+        <div className="flex gap-6">
+          <Figure label="Mean TI" value={fixed(figure.tiMean)} />
+          <Figure
+            label="Animation-optimised BD-rate"
+            value={figure.animationBdRate != null ? `${signed(figure.animationBdRate)} %` : "—"}
+          />
+        </div>
+      ) : (
+        <span />
+      )}
+      {video.status === "ready" && figure && <PipelineBadge video={video} issues={figure.issues} />}
+    </>
+  );
+}
+
+/** Holds the figures' place, at their height, so the cards do not move when they arrive. */
+function CardFiguresSkeleton() {
+  return (
+    <div className="flex gap-6">
+      <Skeleton className="h-9 w-14" />
+      <Skeleton className="h-9 w-40" />
+    </div>
+  );
+}
+
+/**
+ * The catalogue. The cards render at once; their figures come from the report over every video,
+ * which takes a few seconds to build when it is not cached, so they stream in.
+ */
 export function VideoList({
   videos,
   figures,
 }: {
   videos: VideoListItem[];
-  figures: Record<string, VideoFigures>;
+  figures: Promise<Record<string, VideoFigures>>;
 }) {
   if (videos.length === 0) {
     return (
@@ -74,7 +116,6 @@ export function VideoList({
   return (
     <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {videos.map((video, index) => {
-        const figure = figures[video.routeId];
         return (
           <li
             key={video.routeId}
@@ -109,23 +150,10 @@ export function VideoList({
                   <p className="line-clamp-2 text-sm text-muted-foreground">{video.description}</p>
                 )}
               </div>
-              <div className="flex items-end justify-between gap-4 border-t pt-2">
-                {figure && (figure.tiMean != null || figure.animationBdRate != null) ? (
-                  <div className="flex gap-6">
-                    <Figure label="Mean TI" value={fixed(figure.tiMean)} />
-                    <Figure
-                      label="Animation-optimised BD-rate"
-                      value={
-                        figure.animationBdRate != null ? `${signed(figure.animationBdRate)} %` : "—"
-                      }
-                    />
-                  </div>
-                ) : (
-                  <span />
-                )}
-                {video.status === "ready" && figure && (
-                  <PipelineBadge video={video} issues={figure.issues} />
-                )}
+              <div className="flex min-h-11 items-end justify-between gap-4 border-t pt-2">
+                <Suspense fallback={<CardFiguresSkeleton />}>
+                  <CardFigures video={video} figures={figures} />
+                </Suspense>
               </div>
             </Link>
           </li>

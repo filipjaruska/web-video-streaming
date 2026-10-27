@@ -3,18 +3,18 @@ import { connection } from "next/server";
 import { ErrorBanner } from "@/components/error-banner";
 import { PageShell } from "@/components/page-shell";
 import { VideoList, type VideoFigures } from "@/components/video-list";
-import { loadCatalogue, loadChapter5 } from "@/lib/serverCache";
+import { loadCatalogue, loadChapter5, perRequest } from "@/lib/serverCache";
 import { HOME_COPY } from "@/lib/siteCopy";
 import type { VideoListItem } from "@/lib/videoApi";
 
 async function headlineFigures(): Promise<Record<string, VideoFigures>> {
+  // Rendered per request, from the cache, rather than prerendered into the page. In the page, every
+  // analysis or benchmark write would expire the whole of it, and the next visitor would wait for
+  // the report (seconds when cold) before seeing any card. Out of it, the cards stay static and
+  // only the figures wait.
+  await connection();
   // The figures are a bonus on the cards; the catalogue renders without them.
-  const report = await loadChapter5().catch(async () => {
-    // A failure is rendered per request, never into the prerendered page, which nothing would
-    // expire: only the cached data carries tags.
-    await connection();
-    return null;
-  });
+  const report = await loadChapter5().catch(() => null);
   if (!report) {
     return {};
   }
@@ -41,16 +41,17 @@ async function catalogue(): Promise<{ videos: VideoListItem[]; error: string | n
   try {
     return { videos: (await loadCatalogue()).videos, error: null };
   } catch (err) {
-    await connection();
-    return {
+    return perRequest({
       videos: [],
       error: err instanceof Error ? err.message : "The catalogue could not be loaded.",
-    };
+    });
   }
 }
 
 export default async function Home() {
-  const [{ videos, error }, figures] = await Promise.all([catalogue(), headlineFigures()]);
+  // Started together, but only the catalogue is waited for: the figures stream into the cards.
+  const figures = headlineFigures();
+  const { videos, error } = await catalogue();
 
   return (
     <PageShell title={HOME_COPY.title} description={HOME_COPY.description}>
