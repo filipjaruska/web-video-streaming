@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useStillProcessing } from "@/hooks/useStillProcessing";
+import { pickStaticTranscode } from "@/lib/analysisTargets";
 import { getVideoAnalysis, type VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 import { getPublicApiUrl } from "@/lib/env";
+
+const POLL_MS = 5000;
 
 function hasRunningSections(response: VideoAnalysisResponse) {
   return response.targets.some((target) => {
@@ -22,13 +26,29 @@ function hasRunningSections(response: VideoAnalysisResponse) {
   });
 }
 
-export function useVideoAnalysis(routeId: string) {
-  const [data, setData] = useState<VideoAnalysisResponse | null>(null);
+/** The ladder comparison is the pipeline's last write, so once it exists nothing more will come. */
+function finished(response: VideoAnalysisResponse) {
+  return !!pickStaticTranscode(response.targets)?.series.ladderComparison;
+}
+
+/**
+ * The video's analysis document. Refreshes while a section reports itself running, and with
+ * `poll` also between steps, when no section is running yet the pipeline is still going: the
+ * encode grids, for one, write nothing until they finish.
+ *
+ * With `initial` (rendered on the server) nothing is fetched for a finished video. An unfinished
+ * one is fetched once anyway, since the server's copy may be a minute old, and then polled.
+ */
+export function useVideoAnalysis(
+  routeId: string,
+  { poll = false, initial = null }: { poll?: boolean; initial?: VideoAnalysisResponse | null } = {},
+) {
+  const [data, setData] = useState<VideoAnalysisResponse | null>(initial);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initial === null);
+  const settled = initial !== null && finished(initial);
 
   const reload = useCallback(async () => {
-    setLoading(true);
     setError(null);
 
     try {
@@ -42,26 +62,25 @@ export function useVideoAnalysis(routeId: string) {
   }, [routeId]);
 
   useEffect(() => {
+    if (settled) {
+      return;
+    }
+    setLoading(true);
     void reload();
-  }, [reload]);
+  }, [reload, settled]);
+
+  const processing = useStillProcessing(routeId, poll);
+  const running = data != null && hasRunningSections(data);
+  const isPolling = running || (processing && !(data && finished(data)));
 
   useEffect(() => {
-    if (!data || !hasRunningSections(data)) {
+    if (!isPolling) {
       return;
     }
 
-    const interval = window.setInterval(() => {
-      void reload();
-    }, 5000);
-
+    const interval = window.setInterval(() => void reload(), POLL_MS);
     return () => window.clearInterval(interval);
-  }, [data, reload]);
+  }, [isPolling, reload]);
 
-  return {
-    data,
-    error,
-    loading,
-    reload,
-    isPolling: data != null && hasRunningSections(data),
-  };
+  return { data, error, loading, reload, isPolling };
 }

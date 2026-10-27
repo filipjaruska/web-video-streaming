@@ -48,6 +48,8 @@ const ladderKind = z.enum(["static", "dynamic", "animation"]);
 export const videoListItem = z.object({
   routeId: z.string().min(1),
   title: z.string().nullable(),
+  description: z.string().nullable(),
+  status: z.enum(["processing", "ready", "failed"]),
   fileName: z.string(),
   thumbnailUrl: z.string().nullable(),
   size: z.number().int().nonnegative(),
@@ -76,6 +78,9 @@ export const uploadSessionResponse = z.object({
     completedAtUtc: isoDate.nullable(),
     processingStartedAtUtc: isoDate.nullish(),
     estimatedRemainingSeconds: z.number().nullish(),
+    currentStepKey: z.string().nullish(),
+    currentStepDone: z.number().int().nullish(),
+    currentStepTotal: z.number().int().nullish(),
     queuePosition: z.number().int().nullish(),
   }),
   video: z.object({
@@ -117,6 +122,7 @@ export const transcodesResponse = z.object({
 
 export const benchmarkRun = z.object({
   id: z.string(),
+  transcodeId: z.string().nullish(),
   mode: z.string(),
   networkProfile: z.string(),
   ladderKind: z.string(),
@@ -150,6 +156,8 @@ export const benchmarkAggregate = z.object({
   qualitySwitchesMean: finite,
   oscillationsMean: finite,
   timeWeightedBitrateBpsMean: finite,
+  rebufferMsMean: finite,
+  rebufferCountMean: finite,
   recoveryMsMean: z.number().nullish(),
   timeWeightedVmafMean: z.number().nullish(),
   timeWeightedVmafStdDev: z.number().nullish(),
@@ -168,6 +176,49 @@ export const benchmarksResponse = z.object({
   runs: z.array(benchmarkRun),
   aggregates: z.array(benchmarkAggregate),
 }) satisfies z.ZodType<VideoBenchmarksResponse>;
+
+const traceSample = z.object({
+  atMs: finite,
+  playbackSec: finite,
+  bufferSec: finite,
+  bandwidthBps: finite,
+  bitrateBps: finite,
+  rungIndex: z.number().int(),
+  height: z.number().int().nullish().transform(absent),
+  droppedFrames: finite,
+  totalFrames: finite,
+});
+
+const traceEvent = z.object({ kind: z.string(), atMs: finite }).loose();
+
+export const benchmarkTrace = z.object({
+  id: z.string(),
+  transcodeId: z.string().nullish(),
+  networkProfile: z.string(),
+  ladderKind: z.string(),
+  protocol: z.string(),
+  abrAlgorithm: z.string(),
+  repetition: z.number().int(),
+  failed: z.boolean(),
+  trace: z
+    .object({
+      samples: z.array(traceSample),
+      events: z.array(traceEvent),
+      durationMs: finite,
+      summary: z.record(z.string(), z.unknown()).nullish().transform(absent),
+    })
+    .nullable(),
+});
+
+/*
+ * Not bound with `satisfies`: the trace's events are a tagged union (BenchmarkEvent) that the
+ * schema checks only loosely, by kind and time, which the frontend type cannot accept as-is.
+ */
+export const benchmarkTracesResponse = z.object({
+  routeId: z.string(),
+  schemaVersion: z.number().int(),
+  runs: z.array(benchmarkTrace),
+});
 
 export const subtitlesResponse = z.object({
   routeId: z.string(),
@@ -277,7 +328,7 @@ const derivedVariant = z.object({
   onEnvelope: z.boolean().nullish().transform(absent),
   hullDeficit: finite.nullish().transform(absent),
   placement: z
-    .enum(["lambda", "window", "cap", "spacing", "floor", "cambi", "gap"])
+    .enum(["lambda", "window", "cap", "spacing", "floor", "cambi", "gap", "top"])
     .nullish()
     .transform(absent),
   cambiLimit: z.enum(["met", "binding", "cambi-unmet"]).nullish().transform(absent),
@@ -331,6 +382,7 @@ const ladderComparison = z.object({
       bdRateHighBandPercent: z.number().nullish().transform(absent),
       bitrateSavingPercent: z.number().nullish().transform(absent),
       vmafGainAtEqualBitrate: z.number().nullish().transform(absent),
+      bdVmaf: z.number().nullish().transform(absent),
       points: z.array(comparisonPoint),
       error: z.string().nullish().transform(absent),
     }),

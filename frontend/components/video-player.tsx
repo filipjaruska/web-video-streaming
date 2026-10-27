@@ -5,11 +5,12 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import Hls from "hls.js";
+import type Hls from "hls.js";
 import {
   MediaPlayer,
   MediaProvider,
@@ -190,6 +191,25 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     [],
   );
 
+  // Fetched once the page is idle, so pressing play does not wait for the download. A benchmark
+  // sweep loads it before its first run (`useBenchmarkRunner`), whatever has happened by then.
+  useEffect(() => {
+    if (streamingMethod !== "hls") {
+      return;
+    }
+    const warm = () => void import("hls.js");
+    if (typeof window.requestIdleCallback !== "function") {
+      const timer = window.setTimeout(warm, 1500);
+      return () => window.clearTimeout(timer);
+    }
+    const handle = window.requestIdleCallback(warm, { timeout: 3000 });
+    return () => window.cancelIdleCallback(handle);
+  }, [streamingMethod]);
+
+  // A page the viewer leaves is hidden rather than unmounted (Cache Components keeps it for the way
+  // back), and a hidden <video> keeps playing. Pausing on hide keeps the position.
+  useLayoutEffect(() => () => videoElement?.pause(), [videoElement]);
+
   // The decision loop outlives neither the source nor the profile: switching either tears down the
   // player, so a driver left running would keep ticking against a detached instance.
   const driverRef = useRef<AbrDriver | null>(null);
@@ -215,42 +235,55 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         return;
       }
 
+      // No casting: switched off on the element as soon as the provider exists, before loading.
+      if (isVideoProvider(provider) || isHLSProvider(provider) || isDASHProvider(provider)) {
+        provider.video.disableRemotePlayback = true;
+      }
+
       // Fixed for the player's life: it remounts for every run, so this is the run's own profile.
       const targetBufferSec = targetBufferFor(networkProfileRef.current?.());
 
       if (isHLSProvider(provider)) {
-        // Vidstack `load="play"` already defers network; allow hls.js to fetch on attach.
-        provider.config = {
-          ...createHlsConfig(targetBufferSec),
-          autoStartLoad: true,
-          // The adaptive profiles answer hls.js's own per-fragment question with the shared rules,
-          // opening rung included; the fixed-quality control keeps the stock controller and is
-          // pinned once the manifest is in.
-          ...(abrAlgorithm !== "baseline"
-            ? {
-                abrController: createRuleAbrController(
-                  Hls.DefaultConfig.abrController,
-                  abrAlgorithm,
-                  targetBufferSec,
-                  { fastStart },
-                ),
-              }
-            : {}),
-          // Playlists and segments resolve relative to the manifest and lose its query string, so
-          // every request hls.js makes is stamped, with the profile in force at that moment.
-          ...(runToken
-            ? {
-                xhrSetup: (xhr: XMLHttpRequest, url: string) =>
-                  xhr.open("GET", tagRunRequest(url, runTag()), true),
-              }
-            : {}),
+        // hls.js is not in the page's bundle; it is loaded here, with the provider. Vidstack reads
+        // `config` only once this loader has resolved, so the config is built in it: the rule
+        // controller wraps hls.js's own default, which needs the library.
+        let library: typeof Hls | null = null;
+        provider.library = async () => {
+          const loaded = await import("hls.js");
+          library = loaded.default;
+          provider.config = {
+            ...createHlsConfig(targetBufferSec),
+            // Vidstack `load="play"` already defers network; allow hls.js to fetch on attach.
+            autoStartLoad: true,
+            // The adaptive profiles answer hls.js's own per-fragment question with the shared
+            // rules, opening rung included; the fixed-quality control keeps the stock controller
+            // and is pinned once the manifest is in.
+            ...(abrAlgorithm !== "baseline"
+              ? {
+                  abrController: createRuleAbrController(
+                    library.DefaultConfig.abrController,
+                    abrAlgorithm,
+                    targetBufferSec,
+                    { fastStart },
+                  ),
+                }
+              : {}),
+            // Playlists and segments resolve relative to the manifest and lose its query string,
+            // so every request hls.js makes is stamped, with the profile in force at that moment.
+            ...(runToken
+              ? {
+                  xhrSetup: (xhr: XMLHttpRequest, url: string) =>
+                    xhr.open("GET", tagRunRequest(url, runTag()), true),
+                }
+              : {}),
+          };
+          return loaded;
         };
-        provider.library = () => import("hls.js");
 
         provider.onInstance((hls) => {
           setHlsInstance(hls);
-          if (abrAlgorithm === "baseline") {
-            hls.on(Hls.Events.MANIFEST_PARSED, () => pinHighestHls(hls));
+          if (abrAlgorithm === "baseline" && library) {
+            hls.on(library.Events.MANIFEST_PARSED, () => pinHighestHls(hls));
           }
         });
       }
@@ -342,7 +375,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   return (
     <div className="relative space-y-3">
-      {error && <ErrorBanner title="Playback Error" message={error} />}
+      {error && <ErrorBanner title="Playback failed" message={error} />}
       <MediaPlayer
         key={`${streamingMethod}:${transcodeId ?? "source"}:${abrAlgorithm}:${fastStart ? "fast" : "fixed"}:${runNonce}`}
         className="aspect-video w-full overflow-hidden rounded-md bg-black shadow-sm media-player"
@@ -381,7 +414,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             />
           ))}
         </MediaProvider>
-        <DefaultVideoLayout icons={defaultLayoutIcons} />
+        <DefaultVideoLayout icons={defaultLayoutIcons} slots={{ googleCastButton: null }} />
       </MediaPlayer>
     </div>
   );

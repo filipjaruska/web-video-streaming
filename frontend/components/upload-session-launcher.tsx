@@ -142,7 +142,7 @@ export function UploadSessionLauncher() {
 
   return (
     <Button type="button" onClick={handleCreateSession} disabled={isLoading}>
-      {isLoading ? "Loading..." : idleLabel}
+      {isLoading ? "Opening…" : idleLabel}
     </Button>
   );
 }

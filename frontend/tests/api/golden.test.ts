@@ -13,8 +13,8 @@ import { apiUrl, backendUp, fetchOk, listRouteIds } from "./support/env";
  * renamed field, a null that became absent or a number serialised differently, shows up as a diff.
  *
  * Recorded with `vp run frontend#test:api:record`; on a first run the files are written automatically.
- * They live in tests/__golden__/, gitignored: they hold the clips' measurement data and only match the
- * database they were recorded from. Re-record after deliberately reprocessing a clip or adding
+ * They live in tests/__golden__/, gitignored: they hold the videos' measurement data and only match the
+ * database they were recorded from. Re-record after deliberately reprocessing a video or adding
  * benchmark runs. CI never runs this file; it has no goldens and a fresh database.
  */
 
@@ -48,7 +48,7 @@ async function fingerprint(url: string): Promise<string> {
   return `${bytes.byteLength} bytes, sha256 ${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-/** Every manifest of a clip, and a fingerprint of one segment per packaging run and protocol. */
+/** Every manifest of a video, and a fingerprint of one segment per packaging run and protocol. */
 async function delivery(routeId: string, transcodes: VideoTranscodesResponse): Promise<string> {
   const record: Record<string, string> = {};
   const runs: Array<string | null> = [
@@ -101,7 +101,7 @@ describe.skipIf(!backendUp || !!process.env.CI)("golden snapshots", () => {
     await expect(await wireJson("/api/videos")).toMatchFileSnapshot(golden("videos.json"));
   });
 
-  describe.each(routeIds)("clip %s", (routeId) => {
+  describe.each(routeIds)("video %s", (routeId) => {
     it("transcodes", async () => {
       await expect(await wireJson(`/api/videos/${routeId}/transcodes`)).toMatchFileSnapshot(
         golden(routeId, "transcodes.json"),

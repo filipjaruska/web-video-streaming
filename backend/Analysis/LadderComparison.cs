@@ -100,6 +100,7 @@ public sealed class LadderComparison {
         entry.OverlapHighVmaf = result.OverlapHighQuality;
         entry.BitrateSavingPercent = result.BitrateSavingPercent;
         entry.VmafGainAtEqualBitrate = result.QualityGainAtEqualBitrate;
+        entry.BdVmaf = result.BdQuality;
         entry.BdRateInterpolation = result.Interpolation;
         entry.VmafGainInterpolation = result.QualityGainInterpolation;
 

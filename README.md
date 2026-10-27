@@ -1,7 +1,7 @@
 # Web Video Streaming
 
-A platform for measuring video streaming. The Next.js frontend holds the clip catalogue, the player
-with its playback benchmark, per-clip analysis and the cross-clip results. The .NET backend
+A platform for measuring video streaming. The Next.js frontend holds the video catalogue, the player
+with its playback benchmark, per-video analysis and the results across all videos. The .NET backend
 transcodes and analyses uploads with FFmpeg and serves HLS and DASH.
 
 ## Commands
@@ -44,33 +44,40 @@ The defaults work for local development without editing either `.env.example`.
 
 **Frontend:** `frontend/.env.local`
 
-| Variable               | Purpose                                                           |
-| ---------------------- | ----------------------------------------------------------------- |
-| `NEXT_PUBLIC_API_URL`  | Backend URL used by the browser (default `http://localhost:5000`) |
-| `API_URL`              | Optional server-only backend URL for SSR, sitemap and robots      |
-| `NEXT_PUBLIC_SITE_URL` | Public origin for `sitemap.xml` and `robots.txt`                  |
-| `ACTION_PASSWORD`      | Password for uploads and metadata edits. Empty disables it        |
+| Variable               | Purpose                                                                     |
+| ---------------------- | --------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`  | Backend URL used by the browser (default `http://localhost:5000`)           |
+| `API_URL`              | Optional server-only backend URL for SSR, sitemap and robots                |
+| `NEXT_PUBLIC_SITE_URL` | Public origin for `sitemap.xml` and `robots.txt`                            |
+| `ACTION_PASSWORD`      | Password the UI asks for before any action. Empty disables it               |
+| `REVALIDATE_SECRET`    | Secret the backend must send to `/api/revalidate`. Empty accepts any caller |
 
-**Backend:** environment variables override `appsettings.json`, and nested keys use `__`. See `backend/.env.example`.
+**Backend:** environment variables override `appsettings.json`, and nested keys use `__`. See `backend/.env.example`. CORS only limits browsers, so in production set `ACTION_PASSWORD` on both services: it is what stops direct requests from changing data.
 
-| Variable                               | Purpose                                                        |
-| -------------------------------------- | -------------------------------------------------------------- |
-| `PORT`                                 | Listen port (default `5000`)                                   |
-| `VIDEO_STORAGE_ROOT`                   | Uploads, transcodes and thumbnails (default `App_Data/media`)  |
-| `ConnectionStrings__DefaultConnection` | SQLite database (default `App_Data/app.db`)                    |
-| `AllowedOrigins__0`                    | CORS origin for the frontend (default `http://localhost:3000`) |
+The frontend caches what it renders from the backend until the backend reports a change: after every database write, the backend calls the frontend's `/api/revalidate` with the cache tags it touched. In production, set `FRONTEND_URL` (unless it matches `AllowedOrigins__0`) and the same `REVALIDATE_SECRET` on both services.
+
+| Variable                               | Purpose                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `PORT`                                 | Listen port (default `5000`)                                                                      |
+| `VIDEO_STORAGE_ROOT`                   | Uploads, transcodes and thumbnails (default `App_Data/media`)                                     |
+| `ConnectionStrings__DefaultConnection` | SQLite database (default `App_Data/app.db`)                                                       |
+| `AllowedOrigins__0`                    | CORS origin for the frontend (default `http://localhost:3000`)                                    |
+| `ACTION_PASSWORD`                      | Same value as the frontend; required on changes and the database download. Empty leaves them open |
+| `FRONTEND_URL`                         | Frontend whose caches are expired after each write (default `AllowedOrigins__0`)                  |
+| `REVALIDATE_SECRET`                    | Same value as the frontend; sent with that call                                                   |
 
 ## Layout
 
 ```
 frontend/              Next.js app (pnpm workspace member)
-  app/                 routes: catalogue, [video] player and analysis, results, concepts, editor
+  app/                 routes: catalogue, video tabs (watch, results, benchmark, raw), results, method, upload
   components/          player, benchmark panel, shared UI
-  feature/             analysis, results, concepts and editor views
+  feature/             video, results, upload timeline and method views
   hooks/               playback telemetry and the benchmark runner
   lib/abr/             ABR rules and the driver that applies them to hls.js and dash.js
   lib/benchmark/       benchmark matrix, metric definitions and types
-  tests/unit/          pure frontend logic: ABR rules, metrics, matrix, URLs, results rows, CSV
+  lib/results/         chapter 5 tables and graphs, reduced on the server
+  tests/unit/          pure frontend logic: ABR rules, metrics, matrix, URLs, chapter 5 rows, CSV
   tests/api/           the API as the frontend consumes it (contracts, goldens, upload end-to-end)
 backend/               ASP.NET Core API
   Api/                 controllers: videos, upload sessions, streaming, benchmarks, database
@@ -95,10 +102,10 @@ All tests live in `frontend/tests/` and run on Vitest through Vite+.
     - What's recorded: the raw responses (analysis, benchmarks, transcodes, subtitles, the catalogue), every manifest, and a fingerprint of one segment per run.
     - Where they live: `tests/__golden__/`, gitignored, because they hold your measurement data and only match the database they came from.
     - On a later run, any change shows as a value-level diff.
-    - Record them before a backend refactor with `vp run frontend#test:api:record`. Re-record after deliberately reprocessing a clip or adding benchmark runs.
+    - Record them before a backend refactor with `vp run frontend#test:api:record`. Re-record after deliberately reprocessing a video or adding benchmark runs.
   - **Upload end-to-end:**
     - Only runs with `API_TESTS_WRITE=1`.
-    - It generates a 4 s clip with ffmpeg, uploads it, waits for the whole pipeline (about 9 minutes locally), runs every contract on it, submits a benchmark, renames the video and deletes it.
+    - It generates a 4 s video with ffmpeg, uploads it, waits for the whole pipeline (about 9 minutes locally), runs every contract on it, submits a benchmark, renames the video and deletes it.
     - It only touches the video it creates, but it writes to the backend's database and occupies its processing queue. **Don't set it against a backend whose data matters.**
 - **CI:** the `api` job starts a backend on a fresh database with the same FFmpeg build as the Docker image, then runs the API project with writes enabled. That includes the upload end-to-end test, so every push runs the whole processing pipeline once.
 

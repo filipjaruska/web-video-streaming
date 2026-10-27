@@ -10,6 +10,14 @@ export type NetworkProfile = "standard" | "fourG" | "threeG" | "variable";
 /** A profile with one fixed shape; the variable one moves between these over time. */
 export type ShapedProfile = Exclude<NetworkProfile, "variable">;
 
+/** Column and row headings, where the full description would not fit. */
+export const NETWORK_PROFILE_SHORT: Record<NetworkProfile, string> = {
+  standard: "Standard",
+  fourG: "4G",
+  threeG: "3G",
+  variable: "Variable",
+};
+
 /**
  * Shown in the UI, in megabits per second like every other rate in the app. Loss is emulated by its
  * cost — a lost packet crosses the link twice and holds back the data behind it for one round trip,
@@ -17,16 +25,16 @@ export type ShapedProfile = Exclude<NetworkProfile, "variable">;
  */
 export const NETWORK_PROFILE_LABELS: Record<NetworkProfile, string> = {
   standard: "Standard (unshaped)",
-  fourG: "4G — 20 Mb/s, 40 ms, 1 % loss",
-  threeG: "3G — 2 Mb/s, 100 ms, 5 % loss",
-  variable: "Variable — 4G → 3G → 4G",
+  fourG: "4G: 20 Mb/s, 40 ms, 1 % loss",
+  threeG: "3G: 2 Mb/s, 100 ms, 5 % loss",
+  variable: "Variable: 4G → 3G → 4G",
 };
 
 /**
  * The variable-network run's timeline, from the moment playback is requested.
  *
- * Every phase is shaped. Starting unshaped would let the player fetch the whole 30 s clip within a
- * second, leaving the later phases nothing to act on. The drop to 3G lands mid-clip, and recovery is
+ * Every phase is shaped. Starting unshaped would let the player fetch the whole 30 s video within a
+ * second, leaving the later phases nothing to act on. The drop to 3G lands mid-video, and recovery is
  * timed from it until the player regains its rung once 4G returns.
  *
  * The server applies it — its copy in NetworkShaping.cs must match — to every byte as it is sent,
@@ -210,7 +218,7 @@ export interface BenchmarkTrace {
 export interface BenchmarkMetrics {
   /** Play() to first frame, milliseconds. Null when the run never started. */
   startupMs: number | null;
-  /** Play() to the end of the clip, milliseconds: how long it took to play all of it, stalls included. */
+  /** Play() to the end of the video, milliseconds: how long it took to play all of it, stalls included. */
   sessionMs: number;
   rebufferCount: number;
   rebufferMs: number;

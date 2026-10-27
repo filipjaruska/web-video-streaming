@@ -1,3 +1,4 @@
+import { currentDocument } from "@/lib/env";
 import type { LadderKind } from "@/lib/analysisFormat";
 
 export type AnalysisSectionStatus = "pending" | "running" | "completed" | "failed";
@@ -114,7 +115,7 @@ export interface DerivedLadderVariant {
    * The rule that placed the rung: at its λ point, or clamped to the bound of its admissible
    * interval named here.
    */
-  placement?: "lambda" | "window" | "cap" | "spacing" | "floor" | "cambi" | "gap";
+  placement?: "lambda" | "window" | "cap" | "spacing" | "floor" | "cambi" | "gap" | "top";
   /**
    * When the CAMBI limit covers the rung: met by its placement, binding (it raised the rung), or
    * unmet inside its interval — the rung then stays where the other rules put it.
@@ -199,6 +200,8 @@ export interface LadderComparisonEntry {
   bdRateHighBandPercent?: number;
   bitrateSavingPercent?: number;
   vmafGainAtEqualBitrate?: number;
+  /** Harmonic VMAF gained at equal bitrate, averaged over the shared rate range (BD-VMAF). */
+  bdVmaf?: number;
   points: LadderComparisonPoint[];
   error?: string;
 }
@@ -321,7 +324,7 @@ export interface VideoAnalysisResponse {
 export async function getVideoAnalysis(
   apiUrl: string,
   routeId: string,
-  init: RequestInit = { cache: "no-store" },
+  init: RequestInit = currentDocument(),
 ): Promise<VideoAnalysisResponse> {
   const res = await fetch(`${apiUrl}/api/videos/${routeId}/analysis`, init);
 

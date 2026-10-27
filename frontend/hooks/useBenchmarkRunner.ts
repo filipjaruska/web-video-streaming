@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlaybackEvent, StatsSnapshot } from "@/types/streaming";
 import type { VideoPlayerHandle } from "@/components/video-player";
 import { ladderLabel } from "@/lib/analysisFormat";
@@ -11,6 +11,7 @@ import {
   describeCell,
   toSamples,
 } from "@/lib/benchmark/matrix";
+import { actionFetch } from "@/lib/actionPassword";
 import { loadLadderQualities } from "@/lib/benchmark/ladderQuality";
 import { benchmarkRunToken } from "@/lib/streamingConfig";
 import {
@@ -28,7 +29,7 @@ import {
 /** How long to keep retrying `play()` before declaring the cell unplayable. */
 const START_TIMEOUT_MS = 20_000;
 
-/** Multiplier on clip duration before a run is abandoned, covering heavy rebuffering. */
+/** Multiplier on video duration before a run is abandoned, covering heavy rebuffering. */
 const RUN_TIMEOUT_FACTOR = 3;
 const RUN_TIMEOUT_FLOOR_MS = 60_000;
 
@@ -52,6 +53,10 @@ export interface BenchmarkProgress {
   cellCount: number;
   repetition: number;
   repetitions: number;
+  /** The network profile being swept, and where it falls when several are swept in a row. */
+  profile: NetworkProfile | null;
+  profileIndex: number;
+  profileCount: number;
 }
 
 const IDLE: BenchmarkProgress = {
@@ -61,6 +66,9 @@ const IDLE: BenchmarkProgress = {
   cellCount: 0,
   repetition: 0,
   repetitions: BENCHMARK_REPETITIONS,
+  profile: null,
+  profileIndex: 0,
+  profileCount: 0,
 };
 
 /** Progress label with the ladder in it, now that one sweep can cover several. */
@@ -80,6 +88,7 @@ export function useBenchmarkRunner({
 }: UseBenchmarkRunnerProps) {
   const [progress, setProgress] = useState<BenchmarkProgress>(IDLE);
   const [results, setResults] = useState<BenchmarkRunResult[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const eventsRef = useRef<BenchmarkEvent[]>([]);
   const runStartRef = useRef(0);
@@ -131,6 +140,11 @@ export function useBenchmarkRunner({
   const cancel = useCallback(() => {
     cancelRef.current = true;
   }, []);
+
+  // Leaving the page stops the sweep, like Cancel: the run in flight is dropped, not saved. Without
+  // this the loop played on without a player and saved every remaining run as one that never
+  // started, and a page hidden for the way back would keep measuring out of sight.
+  useEffect(() => () => cancel(), [cancel]);
 
   const runOne = useCallback(
     async (
@@ -270,7 +284,7 @@ export function useBenchmarkRunner({
   const submit = useCallback(
     async (result: BenchmarkRunResult) => {
       try {
-        await fetch(`${apiUrl}/api/benchmarks`, {
+        const res = await actionFetch(`${apiUrl}/api/benchmarks`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -300,6 +314,14 @@ export function useBenchmarkRunner({
             },
           }),
         });
+        // A rejected password fails every run after it the same way, so the sweep stops rather than
+        // play on without saving anything.
+        if (res.status === 401) {
+          cancelRef.current = true;
+          setSaveError(
+            "The password was not accepted, so the run was not saved. The sweep stopped.",
+          );
+        }
       } catch {
         // A failed upload must not abort the sweep — the result is still held in local state and
         // can be exported to CSV.
@@ -308,65 +330,86 @@ export function useBenchmarkRunner({
     [apiUrl, routeId],
   );
 
+  /**
+   * Sweeps the selection under each profile in turn, all repetitions of a cell back to back, the
+   * same order as a single-profile sweep. Session results accumulate across the profiles; Cancel
+   * stops the whole sweep.
+   */
   const start = useCallback(
-    async (selection: BenchmarkSelection, profile: NetworkProfile) => {
+    async (selection: BenchmarkSelection, profiles: NetworkProfile[]) => {
       cancelRef.current = false;
       setResults([]);
+      setSaveError(null);
 
       const matrix = buildMatrix(selection);
       const collected: BenchmarkRunResult[] = [];
-      if (matrix.length === 0) {
+      if (matrix.length === 0 || profiles.length === 0) {
         return collected;
       }
 
-      sweepProfileRef.current = profile;
       const endSweep = () => {
         sweepProfileRef.current = null;
         setProgress(IDLE);
       };
 
       setProgress({
+        ...IDLE,
         running: true,
         cellLabel: "loading ladder scores…",
-        cellIndex: 0,
         cellCount: matrix.length,
-        repetition: 0,
-        repetitions: BENCHMARK_REPETITIONS,
+        profile: profiles[0],
+        profileIndex: 1,
+        profileCount: profiles.length,
       });
-      laddersRef.current = await loadLadderQualities(
-        apiUrl,
-        routeId,
-        selection.ladders.map((ladder) => ladder.transcodeId),
-      );
+      const [ladders] = await Promise.all([
+        loadLadderQualities(
+          apiUrl,
+          routeId,
+          selection.ladders.map((ladder) => ladder.transcodeId),
+        ),
+        // The player loads hls.js on demand. Loaded here, before the first run, no measured HLS
+        // startup includes downloading it, the same as when it shipped with the page.
+        import("hls.js"),
+      ]);
+      laddersRef.current = ladders;
 
-      for (let index = 0; index < matrix.length; index++) {
-        for (let repetition = 1; repetition <= BENCHMARK_REPETITIONS; repetition++) {
-          if (cancelRef.current) {
-            endSweep();
-            return collected;
+      for (let profileIndex = 0; profileIndex < profiles.length; profileIndex++) {
+        const profile = profiles[profileIndex];
+        sweepProfileRef.current = profile;
+
+        for (let index = 0; index < matrix.length; index++) {
+          for (let repetition = 1; repetition <= BENCHMARK_REPETITIONS; repetition++) {
+            if (cancelRef.current) {
+              endSweep();
+              return collected;
+            }
+
+            setProgress({
+              running: true,
+              cellLabel: describeProgress(matrix[index]),
+              cellIndex: index + 1,
+              cellCount: matrix.length,
+              repetition,
+              repetitions: BENCHMARK_REPETITIONS,
+              profile,
+              profileIndex: profileIndex + 1,
+              profileCount: profiles.length,
+            });
+
+            const result = await runOne(matrix[index], profile, repetition);
+
+            // A run cut short by Cancel is neither a result nor a failure: it stopped partway
+            // through the video, so recording it would average a truncated run in with complete
+            // ones.
+            if (cancelRef.current) {
+              endSweep();
+              return collected;
+            }
+
+            collected.push(result);
+            setResults([...collected]);
+            await submit(result);
           }
-
-          setProgress({
-            running: true,
-            cellLabel: describeProgress(matrix[index]),
-            cellIndex: index + 1,
-            cellCount: matrix.length,
-            repetition,
-            repetitions: BENCHMARK_REPETITIONS,
-          });
-
-          const result = await runOne(matrix[index], profile, repetition);
-
-          // A run cut short by Cancel is neither a result nor a failure: it stopped partway through
-          // the clip, so recording it would average a truncated run in with complete ones.
-          if (cancelRef.current) {
-            endSweep();
-            return collected;
-          }
-
-          collected.push(result);
-          setResults([...collected]);
-          await submit(result);
         }
       }
 
@@ -375,8 +418,15 @@ export function useBenchmarkRunner({
     },
     [apiUrl, routeId, runOne, submit],
   );
-
-  return { progress, results, start, cancel, handlePlaybackEvent, networkProfileNow };
+  return {
+    progress,
+    results,
+    saveError,
+    start,
+    cancel,
+    handlePlaybackEvent,
+    networkProfileNow,
+  };
 }
 
 function delay(ms: number) {

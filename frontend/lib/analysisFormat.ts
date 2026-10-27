@@ -18,15 +18,15 @@ export function isLadderKind(value: string | null | undefined): value is LadderK
   return typeof value === "string" && (LADDER_KINDS as readonly string[]).includes(value);
 }
 
-/** Short form for badges and table cells. */
+/** Short form for badges and table cells, in the thesis's terms. */
 export function ladderLabel(kind: string | null | undefined): string {
   switch (kind) {
     case "static":
       return "Static";
     case "dynamic":
-      return "Dynamic";
+      return "Content-adaptive";
     case "animation":
-      return "Animation-tuned";
+      return "Animation-optimised";
     case "source":
       return "Source";
     default:
@@ -34,19 +34,33 @@ export function ladderLabel(kind: string | null | undefined): string {
   }
 }
 
-/** Long form, matching `AnalysisTargetBuilder.LadderLabel` on the backend. */
+/** Long form for headings. */
 export function ladderLongLabel(kind: string | null | undefined): string {
   switch (kind) {
     case "static":
       return "Static ladder";
     case "dynamic":
-      return "Dynamic ladder (VMAF crossover)";
+      return "Content-adaptive ladder";
     case "animation":
-      return "Animation ladder (pooled)";
+      return "Animation-optimised ladder";
     case "source":
-      return "Source (original)";
+      return "Source file";
     default:
       return kind ?? "Unknown ladder";
+  }
+}
+
+/** The CSS colour of a ladder, the same in every chart, table and badge. */
+export function ladderColor(kind: string | null | undefined): string {
+  switch (kind) {
+    case "static":
+      return "var(--ladder-static)";
+    case "dynamic":
+      return "var(--ladder-dynamic)";
+    case "animation":
+      return "var(--ladder-animation)";
+    default:
+      return "var(--protocol-source)";
   }
 }
 
@@ -62,15 +76,13 @@ export function formatSigned(value: number | null | undefined, digits = 2): stri
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
-/** Bitrate in the unit that keeps it readable: Mb/s above 1 Mb/s, kb/s below. */
+/** Bitrate in Mb/s, the one unit every rate in the app and the thesis is given in. */
 export function formatBitrate(bps: number | null | undefined): string {
   if (bps == null || !Number.isFinite(bps) || bps <= 0) {
     return "—";
   }
 
-  return bps >= 1_000_000
-    ? `${(bps / 1_000_000).toFixed(2)} Mb/s`
-    : `${Math.round(bps / 1000)} kb/s`;
+  return `${(bps / 1_000_000).toFixed(2)} Mb/s`;
 }
 
 /** Percentage with a fixed precision, or an em dash when the value was never measured. */

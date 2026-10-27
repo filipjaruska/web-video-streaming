@@ -8,6 +8,8 @@
  * - `API_TESTS_WRITE=1` enables the upload end-to-end test. It creates, processes and deletes its own
  *   video, but it does write to the backend's database and occupies its processing queue — never set
  *   it against a backend whose data matters.
+ * - `ACTION_PASSWORD`, when the backend has one, is sent with every request, and the password
+ *   contract checks that protected endpoints refuse requests without it.
  */
 export const apiUrl = (process.env.API_URL ?? "http://localhost:5000").replace(/\/$/, "");
 process.env.API_URL = apiUrl;
@@ -33,7 +35,7 @@ if (!backendUp && backendRequired) {
 
 export const skipReason = backendUp ? null : `no backend at ${apiUrl}`;
 
-/** Route ids of the clips the backend currently has, read once per test file. */
+/** Route ids of the videos the backend currently has, read once per test file. */
 export async function listRouteIds(): Promise<string[]> {
   if (!backendUp) {
     return [];
@@ -43,8 +45,21 @@ export async function listRouteIds(): Promise<string[]> {
   return body.videos.map((video) => video.routeId);
 }
 
+/**
+ * The backend's password, when it has one: `ACTION_PASSWORD` here as on the backend. Sent on
+ * every request; the backend only checks it where it protects an endpoint.
+ */
+export const actionPassword = process.env.ACTION_PASSWORD?.trim() || null;
+
 export async function fetchOk(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(path.startsWith("http") ? path : `${apiUrl}${path}`, init);
+  const headers = new Headers(init?.headers);
+  if (actionPassword) {
+    headers.set("X-Action-Password", actionPassword);
+  }
+  const res = await fetch(path.startsWith("http") ? path : `${apiUrl}${path}`, {
+    ...init,
+    headers,
+  });
   if (!res.ok) {
     throw new Error(`${init?.method ?? "GET"} ${path} answered ${res.status}`);
   }

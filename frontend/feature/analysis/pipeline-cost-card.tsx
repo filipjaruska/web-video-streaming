@@ -1,211 +1,128 @@
 "use client";
 
 import * as React from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DataCell, DataRow, DataTable } from "@/components/ui/data-table";
-import { MetricTile, MetricTileGrid } from "@/components/metric-tiles";
+
+import { EmptyState } from "@/components/empty-state";
 import { ExportCsvButton } from "@/components/export-csv-button";
+import { Figure } from "@/components/figure";
+import { MetricTile, MetricTileGrid } from "@/components/metric-tiles";
+import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-table";
 import { slugFilename } from "@/lib/csvExport";
-import type { VideoTranscodeListItem } from "@/lib/videoTranscodesApi";
+import { PIPELINE_PHASES } from "@/lib/pipelineSteps";
+import type { OverheadRow } from "@/lib/results/chapter5";
+import { multiple } from "@/lib/results/format";
+import type { StageTiming } from "@/lib/videoAnalysisApi";
 
-export interface PipelineStage {
-  name: string;
-  seconds: number | null;
-  detail?: string;
-}
-
-function seconds(from?: string | null, to?: string | null): number | null {
-  if (!from || !to) {
-    return null;
+function formatDuration(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds < 90) {
+    return `${seconds.toFixed(1)} s`;
   }
-
-  const start = new Date(from).getTime();
-  const end = new Date(to).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
-    return null;
-  }
-
-  return (end - start) / 1000;
-}
-
-function formatSeconds(value: number | null): string {
-  if (value == null) {
-    return "—";
-  }
-
-  if (value < 90) {
-    return `${value.toFixed(1)} s`;
-  }
-
-  const minutes = Math.floor(value / 60);
-  const rest = Math.round(value % 60);
-  return `${minutes}m ${rest.toString().padStart(2, "0")}s`;
+  // Rounded before splitting, so 119.6 s reads "2 min 00 s" rather than "1 min 60 s".
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)} min ${(whole % 60).toString().padStart(2, "0")} s`;
 }
 
 /**
- * Derives per-stage durations from the packaging runs.
- *
- * The pipeline is strictly sequential: it packages the static ladder, then for each derived ladder
- * runs an encode grid, derives, and packages. So the gap between one run finishing and the next
- * being created is exactly the grid and derivation that produced the next one — no separate
- * instrumentation needed. If the derived passes were ever parallelised this attribution would stop
- * holding, which is why it is stated here rather than assumed.
- */
-export function buildStages(
-  transcodes: VideoTranscodeListItem[],
-  gridSizes: { generic: number; animation: number },
-): PipelineStage[] {
-  const ordered = transcodes.toSorted(
-    (a, b) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime(),
-  );
-
-  const byKind = (kind: string) => ordered.find((item) => item.ladderKind === kind);
-  const staticRun = byKind("static");
-  const dynamicRun = byKind("dynamic");
-  const animationRun = byKind("animation");
-
-  const stages: PipelineStage[] = [];
-
-  stages.push({
-    name: "Static packaging + analysis",
-    seconds: seconds(staticRun?.startedAtUtc, staticRun?.completedAtUtc),
-    detail: "Baseline ladder, encoded straight from the fixed table.",
-  });
-
-  stages.push({
-    name: "Generic encode grid + derivation",
-    seconds: seconds(staticRun?.completedAtUtc, dynamicRun?.createdAtUtc),
-    detail:
-      gridSizes.generic > 0
-        ? `${gridSizes.generic} trial encodes, each scored against the source.`
-        : "Trial encodes across resolution × CRF, each scored against the source.",
-  });
-
-  stages.push({
-    name: "Dynamic packaging + analysis",
-    seconds: seconds(dynamicRun?.startedAtUtc, dynamicRun?.completedAtUtc),
-  });
-
-  stages.push({
-    name: "Animation encode grid + derivation",
-    seconds: seconds(dynamicRun?.completedAtUtc, animationRun?.createdAtUtc),
-    detail:
-      gridSizes.animation > 0
-        ? `${gridSizes.animation} trial encodes under the animation tune.`
-        : "Second sweep under the animation encoder settings.",
-  });
-
-  stages.push({
-    name: "Animation packaging + analysis",
-    seconds: seconds(animationRun?.startedAtUtc, animationRun?.completedAtUtc),
-  });
-
-  return stages;
-}
-
-/**
- * What content adaptation costs, against what it saved.
- *
- * A static ladder is a lookup table; both derived ladders require a per-clip sweep of trial
- * encodes, each with a full-reference VMAF score. Whether that is worth paying is a question the
- * ladder comparison cannot answer on its own.
+ * Where the processing time went: the video's row of Table 8, then every step. Multiples are of
+ * encoding and packaging the static ladder, the cost of a fixed ladder.
  */
 export function PipelineCostCard({
-  transcodes,
-  gridSizes,
+  timings,
+  overhead,
   sourceDurationSec,
 }: {
-  transcodes: VideoTranscodeListItem[];
-  gridSizes: { generic: number; animation: number };
+  timings?: Record<string, StageTiming>;
+  overhead?: OverheadRow;
   sourceDurationSec?: number | null;
 }) {
-  const stages = React.useMemo(() => buildStages(transcodes, gridSizes), [transcodes, gridSizes]);
+  const base = (timings?.StaticEncode?.durationMs ?? 0) + (timings?.StaticPackage?.durationMs ?? 0);
 
-  const measured = stages.filter((stage) => stage.seconds != null);
-  const total = measured.reduce((sum, stage) => sum + (stage.seconds ?? 0), 0);
-
-  const adaptiveOnly = stages.slice(1).reduce((sum, stage) => sum + (stage.seconds ?? 0), 0);
-
-  const staticOnly = stages[0]?.seconds ?? null;
-
-  const realtimeFactor =
-    sourceDurationSec && sourceDurationSec > 0 && total > 0 ? total / sourceDurationSec : null;
-
-  const overheadFactor =
-    staticOnly && staticOnly > 0 && adaptiveOnly > 0
-      ? (staticOnly + adaptiveOnly) / staticOnly
-      : null;
-
-  const exportRows = React.useMemo(
-    () => stages.map((stage) => [stage.name, stage.seconds ?? ""]),
-    [stages],
+  const rows = React.useMemo(
+    () =>
+      PIPELINE_PHASES.flatMap((phase) =>
+        phase.steps.flatMap((step) => {
+          const timing = timings?.[step.key];
+          return timing ? [{ phase: phase.label, step: step.label, key: step.key, timing }] : [];
+        }),
+      ),
+    [timings],
   );
 
-  if (measured.length === 0) {
+  if (!timings || rows.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Pipeline cost</CardTitle>
-          <CardDescription>
-            Derived from packaging-run timestamps. Runs processed before these were recorded do not
-            carry them, so re-processing this video will populate this view.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <EmptyState title="No step timings">
+        Videos processed before timings were recorded do not have them.
+      </EmptyState>
     );
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
-            <CardTitle className="text-base">Pipeline cost</CardTitle>
-            <CardDescription>
-              Derived from packaging-run timestamps. The pipeline runs strictly in sequence, so the
-              gap between one run finishing and the next beginning is the encode grid and derivation
-              that produced it.
-            </CardDescription>
-          </div>
-          <ExportCsvButton
-            filename={slugFilename(["pipeline-cost"])}
-            headers={["stage", "seconds"]}
-            rows={exportRows}
-          />
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <MetricTileGrid columns={4}>
-          <MetricTile value={formatSeconds(total)} label="Total measured" />
-          <MetricTile
-            value={formatSeconds(staticOnly)}
-            label="Static ladder alone"
-            title="What a fixed-table ladder costs — the baseline the adaptive work is charged against."
-          />
-          <MetricTile
-            value={overheadFactor != null ? `${overheadFactor.toFixed(1)}×` : "—"}
-            label="Cost vs static only"
-            title="Total processing divided by what the static ladder alone would have cost."
-          />
-          <MetricTile
-            value={realtimeFactor != null ? `${realtimeFactor.toFixed(1)}×` : "—"}
-            label="Of clip duration"
-            title="Total processing time relative to the length of the source clip."
-          />
-        </MetricTileGrid>
+  const totalMs = rows.reduce((sum, row) => sum + row.timing.durationMs, 0);
 
-        <DataTable headers={["Stage", "Duration", "Notes"]}>
-          {stages.map((stage) => (
-            <DataRow key={stage.name}>
-              <DataCell mono={false}>{stage.name}</DataCell>
-              <DataCell>{formatSeconds(stage.seconds)}</DataCell>
-              <DataCell mono={false} last className="text-muted-foreground">
-                {stage.detail ?? ""}
+  return (
+    <>
+      <MetricTileGrid columns={5}>
+        <MetricTile value={multiple(overhead?.defaultGrid)} label="Default grid" />
+        <MetricTile value={multiple(overhead?.tunedGrid)} label="Tuned grid" />
+        <MetricTile
+          value={multiple(overhead?.ladderEncode)}
+          label="Ladder encode and package"
+          title="Encoding and packaging the animation-optimised ladder."
+        />
+        <MetricTile
+          value={multiple(overhead?.productionPath)}
+          label="Production path"
+          title="Both grids, the derivation, and encoding and packaging the animation-optimised ladder. Analysing the packaged rungs serves only the measurement and is left out."
+        />
+        <MetricTile
+          value={sourceDurationSec ? `${(totalMs / 1000 / sourceDurationSec).toFixed(0)}×` : "—"}
+          label="All steps, of video length"
+        />
+      </MetricTileGrid>
+
+      <Figure
+        title="Every processing step"
+        note={`Multiples of encoding and packaging the static ladder (${formatDuration(base)}). Count is grid samples for a grid, rungs for an encode.`}
+        actions={
+          <ExportCsvButton
+            filename={slugFilename(["pipeline-steps"])}
+            headers={["phase", "step", "duration_ms", "count", "frames"]}
+            rows={rows.map((row) => [
+              row.phase,
+              row.key,
+              row.timing.durationMs,
+              row.timing.count ?? "",
+              row.timing.frames ?? "",
+            ])}
+          />
+        }
+      >
+        <DataTable
+          head={
+            <tr className="border-b border-foreground/20">
+              <DataHead>Phase</DataHead>
+              <DataHead>Step</DataHead>
+              <DataHead numeric>Duration</DataHead>
+              <DataHead numeric>× static</DataHead>
+              <DataHead numeric>Count</DataHead>
+            </tr>
+          }
+        >
+          {rows.map((row, index) => (
+            <DataRow key={row.key}>
+              <DataCell mono={false} className="font-medium whitespace-nowrap">
+                {index === 0 || rows[index - 1].phase !== row.phase ? row.phase : ""}
+              </DataCell>
+              <DataCell mono={false}>{row.step}</DataCell>
+              <DataCell numeric>{formatDuration(row.timing.durationMs)}</DataCell>
+              <DataCell numeric>{base > 0 ? multiple(row.timing.durationMs / base) : "—"}</DataCell>
+              <DataCell numeric last>
+                {row.timing.count ?? ""}
               </DataCell>
             </DataRow>
           ))}
         </DataTable>
-      </CardContent>
-    </Card>
+      </Figure>
+    </>
   );
 }

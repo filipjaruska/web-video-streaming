@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using WebWVideoStreamingAPI.Analysis;
@@ -35,7 +36,14 @@ if (string.IsNullOrWhiteSpace(connectionString)) {
 }
 
 EnsureSqliteDirectory(connectionString);
-builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
+// Every save reports what it changed, so the frontend's caches expire exactly when the data does.
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<FrontendCacheNotifier>();
+builder.Services.AddHostedService(services => services.GetRequiredService<FrontendCacheNotifier>());
+builder.Services.AddSingleton<FrontendCacheInterceptor>();
+builder.Services.AddDbContext<AppDbContext>((services, options) => options
+    .UseSqlite(connectionString)
+    .AddInterceptors(services.GetRequiredService<FrontendCacheInterceptor>()));
 
 // —— Services ——————————————————————————————————————————————————————————————
 
@@ -76,7 +84,15 @@ builder.Services.AddCors(options => {
         .WithOrigins(allowedOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()
-        .WithExposedHeaders(HttpRangeController.VideoCodecHeader));
+        .WithExposedHeaders(HttpRangeController.VideoCodecHeader, "Content-Disposition"));
+});
+
+// JSON compresses well (the analysis document is over a megabyte). Media is not compressed: see
+// the pipeline below.
+builder.Services.AddResponseCompression(options => {
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
 });
 
 // Railway's deploy healthcheck: traffic moves to a new instance only once it can reach its database.
@@ -98,6 +114,11 @@ app.UseSwaggerUI(options => {
 });
 
 app.UseCors("AllowReactApp");
+// Never on the streaming routes: their bytes are what the playback benchmark measures, through the
+// network shaping below, and must stay exactly as packaged.
+app.UseWhen(
+    context => !IsStreamingPath(context.Request.Path),
+    branch => branch.UseResponseCompression());
 // After CORS, so a shaped response still carries its CORS headers; before the controllers it shapes.
 app.UseMiddleware<NetworkShapingMiddleware>();
 app.UseStaticFiles();
@@ -119,6 +140,11 @@ using (var scope = app.Services.CreateScope()) {
 app.Logger.LogInformation("Video storage root: {StorageRoot}", storageRoot);
 
 app.Run();
+
+static bool IsStreamingPath(PathString path) =>
+    path.StartsWithSegments("/api/hls") ||
+    path.StartsWithSegments("/api/dash") ||
+    path.StartsWithSegments("/api/httprange");
 
 static void EnsureSqliteDirectory(string connectionString) {
     const string prefix = "Data Source=";

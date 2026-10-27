@@ -1,17 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { StreamingMethod, AbrAlgorithm, PlaybackEvent, VideoQuality } from "@/types/streaming";
+import type { StreamingMethod, AbrAlgorithm, PlaybackEvent } from "@/types/streaming";
 import { SOURCE_RUN_ID, isSourceRun } from "@/types/streaming";
 import { StreamingControls } from "@/components/streaming-controls";
 import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
-import { BenchmarkPanel } from "@/components/benchmark-panel";
+import { BenchmarkPanel, BenchmarkSessionResults } from "@/components/benchmark-panel";
 import { useBenchmarkRunner } from "@/hooks/useBenchmarkRunner";
 import { usePlaybackCapabilities } from "@/hooks/usePlaybackCapabilities";
 import type { BenchmarkLadder } from "@/lib/benchmark/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PlaybackStats } from "@/components/playback-stats";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useVideoStats } from "@/hooks/useVideoStats";
 import { useVideoSubtitles } from "@/hooks/useVideoSubtitles";
 import { useVideoTranscodes } from "@/hooks/useVideoTranscodes";
@@ -20,37 +20,10 @@ import { getPublicApiUrl } from "@/lib/env";
 
 interface VideoStreamingClientProps {
   routeId: string;
-}
-
-function StatTile({
-  label,
-  value,
-  detail,
-  emphasize,
-  progress,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  emphasize?: boolean;
-  progress?: number;
-}) {
-  return (
-    <div
-      className={
-        emphasize
-          ? "rounded-md border border-primary/15 bg-secondary/50 p-3"
-          : "rounded-md border bg-muted/60 p-3"
-      }
-    >
-      <div className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-        {label}
-      </div>
-      <div className="font-mono text-lg font-semibold tracking-tight">{value}</div>
-      {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
-      {typeof progress === "number" && <Progress value={progress} className="mt-2 h-1.5" />}
-    </div>
-  );
+  /** Watch: player and stream settings. Benchmark: the runner above the player. */
+  mode: "watch" | "benchmark";
+  /** Keep the ladder list fresh: the video is still being processed. */
+  poll?: boolean;
 }
 
 function deliveryForLadder(
@@ -65,9 +38,13 @@ function deliveryForLadder(
   return null;
 }
 
-export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
+export function VideoStreamingClient({ routeId, mode, poll = false }: VideoStreamingClientProps) {
   const apiUrl = getPublicApiUrl();
-  const { transcodes, activeTranscodeId, loading: transcodesLoading } = useVideoTranscodes(routeId);
+  const {
+    transcodes,
+    activeTranscodeId,
+    loading: transcodesLoading,
+  } = useVideoTranscodes(routeId, { poll });
   const { tracks: subtitleTracks } = useVideoSubtitles(routeId);
 
   const [bestMode, setBestMode] = useState(true);
@@ -81,6 +58,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
   const {
     progress: benchmarkProgress,
     results: benchmarkResults,
+    saveError: benchmarkSaveError,
     start: startBenchmark,
     cancel: cancelBenchmark,
     handlePlaybackEvent,
@@ -268,7 +246,7 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
   useEffect(() => {
     attemptedFallbackRef.current.clear();
     setFallbackNotice(null);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new clip or packaging run is the trigger: fallbacks tried for the old one no longer apply
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new video or packaging run is the trigger: fallbacks tried for the old one no longer apply
   }, [routeId, effectivePackagingRunId]);
 
   const handleFatalError = useCallback(
@@ -293,55 +271,24 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
       setAbrAlgorithm(effectiveAbr);
       setRunNonce((nonce) => nonce + 1);
       setFallbackNotice(
-        `${method.toUpperCase()} failed to play in this browser — retrying over ${other.toUpperCase()}.`,
+        `${method.toUpperCase()} failed to play in this browser, so playback switched to ${other.toUpperCase()}.`,
       );
     },
     [benchmarkProgress.running, bestMode, effectivePackagingRunId, effectiveAbr, transcodes],
   );
-
-  const bufferProgress = Math.min(100, Math.max(0, (stats.current.bufferLevel / 30) * 100));
 
   const playerTranscodeId =
     effectiveMethod === "source" || isSourceRun(effectivePackagingRunId)
       ? null
       : effectivePackagingRunId;
 
-  return (
-    <div className="space-y-4">
-      <StreamingControls
-        bestMode={bestMode}
-        onBestModeChange={handleBestModeChange}
-        streamingMethod={effectiveMethod}
-        abrAlgorithm={effectiveAbr}
-        packagingRunId={effectivePackagingRunId ?? SOURCE_RUN_ID}
-        transcodes={transcodes}
-        transcodesLoading={transcodesLoading}
-        onStreamingMethodChange={setStreamingMethod}
-        onAbrAlgorithmChange={setAbrAlgorithm}
-        onPackagingRunChange={handlePackagingRunChange}
-        bestReason={bestSettings?.reason}
-      />
-
-      <BenchmarkPanel
-        progress={benchmarkProgress}
-        results={benchmarkResults}
-        ladders={benchmarkLadders}
-        onStart={(profile, selection) => {
-          // A sweep sets configurations directly, so Best mode has to be off or its sync effect
-          // would put its own choice back on the next render.
-          setBestMode(false);
-          void startBenchmark(selection, profile);
-        }}
-        onCancel={cancelBenchmark}
-        disabled={transcodesLoading}
-      />
-
+  const player = (
+    <>
       {fallbackNotice && (
         <Alert>
           <AlertDescription>{fallbackNotice}</AlertDescription>
         </Alert>
       )}
-
       {playerReady ? (
         <VideoPlayer
           ref={playerRef}
@@ -360,104 +307,62 @@ export function VideoStreamingClient({ routeId }: VideoStreamingClientProps) {
           onFatalError={handleFatalError}
         />
       ) : (
-        <div className="aspect-video w-full animate-pulse rounded-md bg-muted" />
+        <Skeleton className="aspect-video w-full" />
       )}
+    </>
+  );
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Playback statistics</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div>
-            <h3 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Current
-            </h3>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <StatTile
-                emphasize
-                label="Quality"
-                value={stats.current.quality?.label || "—"}
-                detail={describeRendition(stats.current.quality)}
-              />
-              <StatTile
-                emphasize
-                label="Buffer"
-                value={`${stats.current.bufferLevel.toFixed(1)}s`}
-                progress={bufferProgress}
-              />
-              <StatTile
-                emphasize
-                label="Throughput"
-                value={stats.current.bandwidth.toFixed(2)}
-                detail="Mb/s"
-              />
-              <StatTile
-                emphasize
-                label="Dropped"
-                value={String(stats.current.droppedFrames)}
-                detail={`of ${stats.current.totalFrames}`}
-              />
-            </div>
+  if (mode === "benchmark") {
+    return (
+      <div className="space-y-10">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="min-w-0 space-y-8">
+            <div className="space-y-4">{player}</div>
+            <PlaybackStats stats={stats} />
           </div>
+          <aside className="xl:sticky xl:top-20 xl:self-start">
+            <BenchmarkPanel
+              progress={benchmarkProgress}
+              results={benchmarkResults}
+              saveError={benchmarkSaveError}
+              ladders={benchmarkLadders}
+              onStart={(profiles, selection) => {
+                // A sweep sets configurations directly, so Best mode has to be off or its sync
+                // effect would put its own choice back on the next render.
+                setBestMode(false);
+                void startBenchmark(selection, profiles);
+              }}
+              onCancel={cancelBenchmark}
+              disabled={transcodesLoading}
+            />
+          </aside>
+        </div>
+        <BenchmarkSessionResults results={benchmarkResults} />
+      </div>
+    );
+  }
 
-          <div>
-            <h3 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Session averages
-            </h3>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-              <StatTile label="Most played" value={stats.average.avgQuality?.label || "—"} />
-              <StatTile label="Buffer" value={`${stats.average.avgBufferLevel.toFixed(1)}s`} />
-              <StatTile
-                label="Throughput"
-                value={stats.average.avgBandwidth.toFixed(2)}
-                detail="Mb/s"
-              />
-              <StatTile
-                label="Dropped"
-                value={`${stats.average.avgDroppedFramesRate.toFixed(2)}%`}
-              />
-              <StatTile
-                label="Rebuffers"
-                value={String(stats.average.totalRebufferingEvents)}
-                detail={`${stats.average.totalRebufferingDuration.toFixed(1)}s`}
-              />
-              <StatTile label="Played" value={formatTime(stats.average.totalPlaybackTime)} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="min-w-0 space-y-8">
+        <div className="space-y-4">{player}</div>
+        <PlaybackStats stats={stats} />
+      </div>
+      <aside className="xl:sticky xl:top-20 xl:self-start">
+        <StreamingControls
+          bestMode={bestMode}
+          onBestModeChange={handleBestModeChange}
+          streamingMethod={effectiveMethod}
+          abrAlgorithm={effectiveAbr}
+          packagingRunId={effectivePackagingRunId ?? SOURCE_RUN_ID}
+          transcodes={transcodes}
+          transcodesLoading={transcodesLoading}
+          onStreamingMethodChange={setStreamingMethod}
+          onAbrAlgorithmChange={setAbrAlgorithm}
+          onPackagingRunChange={handlePackagingRunChange}
+          bestReason={bestSettings?.reason}
+        />
+      </aside>
     </div>
   );
-}
-
-function formatCodec(codec?: string): string | null {
-  if (!codec) return null;
-  const lower = codec.toLowerCase();
-  if (lower.includes("avc") || lower.includes("h264")) return "H.264";
-  if (lower.includes("hev") || lower.includes("hvc") || lower.includes("h265")) return "H.265";
-  if (lower.includes("vp09") || lower.includes("vp9")) return "VP9";
-  if (lower.includes("av01") || lower.includes("av1")) return "AV1";
-  return codec;
-}
-
-/**
- * "1920×1080 · H.264 · 7.80 Mb/s" — the rendition on screen, in one line. Parts not known yet are
- * left out rather than guessed. The bitrate is the one the stream declares (HLS/DASH: the rung's
- * peak including audio; source: the file's average).
- */
-function describeRendition(quality: VideoQuality | null): string | undefined {
-  if (!quality) return undefined;
-  return [
-    `${quality.width}×${quality.height}`,
-    formatCodec(quality.codec),
-    quality.bitrate > 0 ? `${(quality.bitrate / 1_000_000).toFixed(2)} Mb/s` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }

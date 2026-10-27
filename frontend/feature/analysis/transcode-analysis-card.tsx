@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import type {
   AnalysisSectionStatus,
   AnalysisTarget,
@@ -8,10 +9,13 @@ import type {
   SitiSeriesData,
 } from "@/lib/videoAnalysisApi";
 import { AnalysisTree } from "@/feature/analysis/analysis-tree";
-import { SitiChart } from "@/feature/analysis/siti-chart";
-import { formatTargetStatus } from "@/lib/analysisLabels";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChevronRight } from "lucide-react";
+
+import { StatusBadge } from "@/components/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
+import { ladderLongLabel } from "@/lib/analysisFormat";
 import {
   Select,
   SelectContent,
@@ -20,26 +24,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// The charts sit inside runs that start collapsed, so the chart code (and Recharts with it) loads
+// when a run is first opened rather than with the Raw data tab.
+const SitiChart = dynamic(() => import("@/feature/analysis/siti-chart").then((m) => m.SitiChart), {
+  loading: () => <Skeleton className="h-65 w-full" />,
+});
+
 interface TranscodeAnalysisCardProps {
   target: AnalysisTarget;
   transcodeNumber: number;
   /** Progressive source MP4 — used as a scene-time reference for SI/TI scrubbing. */
   videoSrc?: string;
+  /** The rung `videoSrc` plays, for its label. */
+  previewRung?: string;
 }
 
 function sectionStatusBadge(status?: AnalysisSectionStatus) {
-  switch (status) {
-    case "running":
-      return <Badge variant="secondary">Running</Badge>;
-    case "failed":
-      return <Badge variant="destructive">Failed</Badge>;
-    case "pending":
-      return <Badge variant="outline">Pending</Badge>;
-    case "completed":
-      return <Badge variant="outline">Completed</Badge>;
-    default:
-      return null;
-  }
+  return status ? <StatusBadge status={status} /> : null;
 }
 
 function labelHeight(label: string) {
@@ -55,10 +56,13 @@ function FormatSitiCharts({
   formatLabel,
   sitiByRendition,
   videoSrc,
+  previewRung = "360p",
 }: {
   formatLabel: string;
   sitiByRendition: Record<string, SitiSeriesData>;
   videoSrc?: string;
+  /** The rung `videoSrc` plays, for its label. */
+  previewRung?: string;
 }) {
   const labels = useMemo(
     () => sortRenditionLabels(Object.keys(sitiByRendition)),
@@ -95,10 +99,10 @@ function FormatSitiCharts({
       {activeSeries && (
         <SitiChart
           data={activeSeries}
-          title={`${formatLabel} · ${active} SI/TI`}
-          description={`Spatial and temporal information (ITU-T P.910) for the ${active} ${formatLabel} rendition.`}
+          title={`${formatLabel} ${active}: SI and TI over time`}
+          note={`ITU-T P.910, per frame of the ${active} rendition.`}
           videoSrc={videoSrc}
-          videoLabel="Scene reference (HLS 360p)"
+          videoLabel={`Scene reference (HLS ${previewRung})`}
         />
       )}
     </div>
@@ -109,16 +113,19 @@ function FormatBox({
   section,
   sitiByRendition,
   videoSrc,
+  previewRung = "360p",
 }: {
   section: AnalysisTreeNode;
   sitiByRendition?: Record<string, SitiSeriesData>;
   videoSrc?: string;
+  /** The rung `videoSrc` plays, for its label. */
+  previewRung?: string;
 }) {
   const hasTree = (section.children?.length ?? 0) > 0;
   const hasSiti = !!sitiByRendition && Object.keys(sitiByRendition).length > 0;
 
   return (
-    <div className="rounded-md border">
+    <div className="rounded-sm border">
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <h4 className="text-sm font-medium">{section.label}</h4>
         {sectionStatusBadge(section.meta?.status)}
@@ -128,17 +135,16 @@ function FormatBox({
           <p className="mb-2 text-sm text-muted-foreground">{section.meta.error}</p>
         )}
         {hasTree ? (
-          <AnalysisTree nodes={section.children!} defaultOpen />
+          <AnalysisTree nodes={section.children!} />
         ) : (
-          !section.meta?.error && (
-            <p className="text-sm text-muted-foreground">No analysis data for this format yet.</p>
-          )
+          !section.meta?.error && <p className="text-sm text-muted-foreground">Not probed yet.</p>
         )}
         {hasSiti && (
           <FormatSitiCharts
             formatLabel={section.label}
             sitiByRendition={sitiByRendition}
             videoSrc={videoSrc}
+            previewRung={previewRung}
           />
         )}
       </div>
@@ -150,7 +156,9 @@ export function TranscodeAnalysisCard({
   target,
   transcodeNumber,
   videoSrc,
+  previewRung = "360p",
 }: TranscodeAnalysisCardProps) {
+  const [open, setOpen] = useState(false);
   const isActive = target.label.includes("(active)");
   const hls = target.tree.children.find((child) => child.id === "hls");
   const dash = target.tree.children.find((child) => child.id === "dash");
@@ -169,23 +177,22 @@ export function TranscodeAnalysisCard({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">
-              Transcode {transcodeNumber}
-              {isActive ? " · active" : ""}
-            </CardTitle>
-            <CardDescription>
-              {createdLabel}. Probe metadata and per-format SI/TI from the packaged HLS and DASH
-              outputs.
-            </CardDescription>
-          </div>
-          <Badge variant="outline">{formatTargetStatus(target.status)}</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <Collapsible open={open} onOpenChange={setOpen} className="rounded-sm border">
+      <CollapsibleTrigger className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40">
+        <span className="flex items-center gap-2 font-medium">
+          <ChevronRight
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-90",
+            )}
+          />
+          {target.ladderKind ? ladderLongLabel(target.ladderKind) : `Run ${transcodeNumber}`}
+          {isActive ? " (active)" : ""}
+          <span className="text-sm font-normal text-muted-foreground">{createdLabel}</span>
+        </span>
+        <StatusBadge status={target.status} />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-3 border-t px-4 py-4">
         {boxes.length > 0 ? (
           boxes.map(({ section, siti }) => (
             <FormatBox
@@ -193,14 +200,13 @@ export function TranscodeAnalysisCard({
               section={section}
               sitiByRendition={siti}
               videoSrc={videoSrc}
+              previewRung={previewRung}
             />
           ))
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No HLS/DASH analysis for this packaging run.
-          </p>
+          <p className="text-sm text-muted-foreground">No HLS or DASH probe for this run.</p>
         )}
-      </CardContent>
-    </Card>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

@@ -108,8 +108,8 @@ export function useVideoStatsTracking({
         return;
       }
 
-      // Waiting on the last frames is the end of the clip, not a stall. In roughly one DASH run in
-      // ten dash.js never signalled end of stream although the whole clip was buffered, so the
+      // Waiting on the last frames is the end of the video, not a stall. In roughly one DASH run in
+      // ten dash.js never signalled end of stream although the whole video was buffered, so the
       // element fired "waiting" at the end instead of "ended" — and the run was recorded as a
       // minute-long stall until the runner's timeout. The cause inside dash.js was not found.
       if (
@@ -253,9 +253,11 @@ function collectDashStats(
     let foundBandwidth = false;
 
     if (dash.getAverageThroughput) {
-      const throughput = dash.getAverageThroughput("video");
-      if (throughput && throughput > 0) {
-        stats.bandwidth = throughput > 100000 ? throughput / 1000000 : throughput / 1000;
+      // Always kbit/s (dash.js 5). Guessing the unit from the size read anything above 100 Mb/s,
+      // which an unshaped local link reaches, as bit/s, and reported a thousandth of it.
+      const throughputKbps = dash.getAverageThroughput("video");
+      if (throughputKbps && throughputKbps > 0) {
+        stats.bandwidth = throughputKbps / 1000;
         foundBandwidth = true;
       }
     }

@@ -25,6 +25,7 @@ public class DatabaseController : ControllerBase {
     /// through a read-only connection into a temporary file — readers never block writers in WAL
     /// mode, so a running pipeline keeps writing — and that copy is streamed and deleted on close.
     /// </remarks>
+    [RequireActionPassword]
     [HttpGet("export")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> Export(CancellationToken cancellationToken) {

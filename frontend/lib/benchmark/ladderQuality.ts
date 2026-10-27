@@ -56,9 +56,21 @@ function ladderQualityOf(target: AnalysisTarget): LadderQuality | null {
     : null;
 }
 
+/** The played ladder's qualities for one packaging run, from an analysis already in hand. */
+export function ladderQualityForTranscode(
+  targets: AnalysisTarget[],
+  transcodeId: string | null | undefined,
+): LadderQuality | null {
+  if (!transcodeId) {
+    return null;
+  }
+  const target = targets.find((item) => normaliseId(item.transcodeId) === normaliseId(transcodeId));
+  return target ? ladderQualityOf(target) : null;
+}
+
 /**
  * The top rung and each rung's measured harmonic VMAF for every packaging run a sweep plays, read
- * from the clip's analysis. This is what turns "which rung was on screen" into "what quality the
+ * from the video's analysis. This is what turns "which rung was on screen" into "what quality the
  * viewer received".
  *
  * Loaded once per sweep, whatever the number of ladders: the analysis document is large — it carries
@@ -79,10 +91,7 @@ export async function loadLadderQualities(
   try {
     const analysis = await getVideoAnalysis(apiUrl, routeId);
     for (const transcodeId of transcodeIds) {
-      const target = analysis.targets.find(
-        (item) => normaliseId(item.transcodeId) === normaliseId(transcodeId),
-      );
-      const quality = target ? ladderQualityOf(target) : null;
+      const quality = ladderQualityForTranscode(analysis.targets, transcodeId);
       if (quality) {
         qualities.set(transcodeId, quality);
       }

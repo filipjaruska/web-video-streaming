@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useStillProcessing } from "@/hooks/useStillProcessing";
 import { getPublicApiUrl } from "@/lib/env";
 import {
   getVideoTranscodes,
@@ -8,19 +9,31 @@ import {
   type VideoTranscodesResponse,
 } from "@/lib/videoTranscodesApi";
 
-export function useVideoTranscodes(routeId: string) {
+const POLL_MS = 5000;
+
+/** Every ladder has finished one way or the other, so nothing more will appear. */
+function settled(transcodes: VideoTranscodeListItem[]): boolean {
+  return (
+    transcodes.some((item) => item.ladderKind === "animation") &&
+    transcodes.every((item) => item.status === "succeeded" || item.status === "failed")
+  );
+}
+
+/**
+ * The video's packaging runs. With `poll`, refreshes until all three ladders have settled, so a
+ * ladder packaged while the page is open shows up without a reload.
+ */
+export function useVideoTranscodes(routeId: string, { poll = false }: { poll?: boolean } = {}) {
   const [data, setData] = useState<VideoTranscodesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       const response = await getVideoTranscodes(getPublicApiUrl(), routeId);
       setData(response);
     } catch (err) {
-      setData(null);
       setError(err instanceof Error ? err.message : "Failed to load transcodes");
     } finally {
       setLoading(false);
@@ -28,15 +41,25 @@ export function useVideoTranscodes(routeId: string) {
   }, [routeId]);
 
   useEffect(() => {
+    setLoading(true);
     void reload();
   }, [reload]);
 
+  const processing = useStillProcessing(routeId, poll);
   const transcodes: VideoTranscodeListItem[] = data?.transcodes ?? [];
-  const activeTranscodeId = data?.activeTranscodeId ?? null;
+  const keepPolling = processing && !settled(transcodes);
+
+  useEffect(() => {
+    if (!keepPolling) {
+      return;
+    }
+    const timer = window.setInterval(() => void reload(), POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [keepPolling, reload]);
 
   return {
     transcodes,
-    activeTranscodeId,
+    activeTranscodeId: data?.activeTranscodeId ?? null,
     loading,
     error,
     reload,

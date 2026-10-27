@@ -20,7 +20,8 @@ export function useEtaCountdown(
   active: boolean,
 ): number | null {
   const [anchor, setAnchor] = useState<{ seconds: number; atMs: number } | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Null until the first tick: a clock read while rendering would be frozen into the prerendered page.
+  const [nowMs, setNowMs] = useState<number | null>(null);
 
   useEffect(() => {
     if (!active || estimateSeconds == null) {
@@ -55,5 +56,5 @@ export function useEtaCountdown(
     return null;
   }
 
-  return Math.max(0, Math.round(anchor.seconds - (nowMs - anchor.atMs) / 1000));
+  return Math.max(0, Math.round(anchor.seconds - ((nowMs ?? anchor.atMs) - anchor.atMs) / 1000));
 }

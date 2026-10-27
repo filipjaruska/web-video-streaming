@@ -1,0 +1,177 @@
+"use client";
+
+import { useState } from "react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+
+import { useActionAuth } from "@/components/action-auth-provider";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { refreshData, refreshDataAndOpen } from "@/lib/cacheActions";
+import { getPublicApiUrl } from "@/lib/env";
+import { deleteVideo, updateVideo, videoTitle, type VideoListItem } from "@/lib/videoApi";
+
+type Open = "edit" | "delete" | null;
+
+/** Rename, describe or delete a video. Both go through the same password gate as every mutation. */
+export function VideoManageMenu({ video }: { video: VideoListItem }) {
+  const { requireAuth } = useActionAuth();
+  const [open, setOpen] = useState<Open>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const label = videoTitle(video);
+
+  async function show(dialog: Open) {
+    if (!(await requireAuth())) {
+      return;
+    }
+    setTitle(video.title ?? "");
+    setDescription(video.description ?? "");
+    setError(null);
+    setOpen(dialog);
+  }
+
+  // `then` expires the server's caches and re-renders from them in one step; refreshing or
+  // navigating first would render the cached copy from before the change.
+  async function run(action: () => Promise<void>, then: () => Promise<void>) {
+    if (!(await requireAuth())) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      setOpen(null);
+      await then();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const save = () =>
+    run(
+      () =>
+        updateVideo(getPublicApiUrl(), video.routeId, {
+          title: title.trim() || null,
+          description: description.trim() || null,
+        }).then(() => undefined),
+      refreshData,
+    );
+
+  const remove = () =>
+    run(
+      () => deleteVideo(getPublicApiUrl(), video.routeId),
+      () => refreshDataAndOpen("/"),
+    );
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm">
+            <MoreHorizontal />
+            Manage
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => void show("edit")}>
+            <Pencil />
+            Edit title and description
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onSelect={() => void show("delete")}>
+            <Trash2 />
+            Delete video
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={open === "edit"} onOpenChange={(next) => !next && setOpen(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit video</DialogTitle>
+            <DialogDescription>Shown wherever the video is listed.</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="video-title">Title</Label>
+              <Input
+                id="video-title"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                maxLength={200}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="video-description">Description</Label>
+              <Textarea
+                id="video-description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={4000}
+                rows={4}
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={open === "delete"} onOpenChange={(next) => !next && setOpen(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {label}?</DialogTitle>
+            <DialogDescription>
+              Removes the source, all three ladders, the analysis and the saved benchmark runs. This
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={busy} onClick={() => void remove()}>
+              {busy ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

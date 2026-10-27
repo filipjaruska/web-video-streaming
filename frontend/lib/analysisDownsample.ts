@@ -7,7 +7,7 @@ export interface SeriesPoint {
 
 export interface VmafPoint {
   frame: number;
-  timeSec: number;
+  timeSec: number | null;
   vmaf: number;
 }
 
@@ -55,7 +55,7 @@ export function buildSeriesPoints(data: {
     times.length === count &&
     times.every((value) => Number.isFinite(value));
 
-  // ffprobe sometimes omits pts; falling back to the frame index would make a 10 s clip look
+  // ffprobe sometimes omits pts; falling back to the frame index would make a 10 s video look
   // like minutes on the axis and break scrubbing.
   const looksLikeFrameIndex =
     hasAlignedTimes &&
@@ -99,10 +99,24 @@ export function scaleSeriesToDuration(points: SeriesPoint[], durationSec: number
   }));
 }
 
-export function buildVmafPoints(data: { scores: number[]; timeSec?: number[] }): VmafPoint[] {
+/**
+ * Per-frame VMAF on a time axis. libvmaf reports frames, not timestamps, so without stored times
+ * the frames are spread evenly over the video's duration; with neither, `timeSec` is null and the
+ * axis falls back to frame numbers.
+ */
+export function buildVmafPoints(
+  data: { scores: number[]; timeSec?: number[] },
+  durationSec?: number | null,
+): VmafPoint[] {
+  const count = data.scores.length;
+  const hasTimes = data.timeSec?.length === count;
   return data.scores.map((vmaf, index) => ({
     frame: index,
-    timeSec: data.timeSec?.[index] ?? index,
+    timeSec: hasTimes
+      ? data.timeSec![index]
+      : durationSec && count > 1
+        ? (index / (count - 1)) * durationSec
+        : null,
     vmaf,
   }));
 }

@@ -1,3 +1,4 @@
+import { currentDocument } from "@/lib/env";
 import type { AbrAlgorithm, StreamingMethod } from "@/types/streaming";
 import { SOURCE_RUN_ID } from "@/types/streaming";
 import type { LadderKind } from "@/lib/analysisFormat";
@@ -33,9 +34,7 @@ export async function getVideoTranscodes(
   apiUrl: string,
   routeId: string,
 ): Promise<VideoTranscodesResponse> {
-  const res = await fetch(`${apiUrl}/api/videos/${routeId}/transcodes`, {
-    cache: "no-store",
-  });
+  const res = await fetch(`${apiUrl}/api/videos/${routeId}/transcodes`, currentDocument());
 
   if (!res.ok) {
     throw new Error(`Failed to load transcodes: ${res.status}`);
@@ -77,26 +76,29 @@ function pickDeliveryForLadder(
         method: "hls",
         reason:
           capabilities.managedMediaSource && !capabilities.mediaSource
-            ? "HLS via hls.js — ManagedMediaSource"
-            : "HLS via hls.js — MSE available",
+            ? "HLS through hls.js, using ManagedMediaSource."
+            : "HLS through hls.js; this browser has Media Source Extensions.",
       };
     }
 
     if (item.hasHls && capabilities.nativeHls) {
-      return { method: "hls", reason: "HLS — native playback, no MSE available" };
+      return {
+        method: "hls",
+        reason: "HLS played natively; this browser has no Media Source Extensions.",
+      };
     }
 
     if (item.hasDash && capabilities.dash) {
-      return { method: "dash", reason: "DASH — MSE available, no native HLS" };
+      return { method: "dash", reason: "DASH through dash.js; this browser cannot play HLS." };
     }
   }
 
   if (item.hasHls) {
-    return { method: "hls", reason: "HLS — default, capabilities not probed" };
+    return { method: "hls", reason: "HLS by default; the browser has not been probed yet." };
   }
 
   if (item.hasDash) {
-    return { method: "dash", reason: "DASH — only packaging available" };
+    return { method: "dash", reason: "DASH, the only packaging of this ladder." };
   }
 
   return null;
@@ -107,9 +109,9 @@ function pickDeliveryForLadder(
  * throughput rule behind a fast start. Falls back to the original source over HTTP Range when no
  * ladder is playable.
  *
- * Throughput rather than hybrid: hybrid takes the more cautious of the throughput and buffer rules,
+ * Throughput rather than hybrid: hybrid hands over to the buffer rule once the buffer is half full,
  * and the buffer rule only climbs as the buffer fills — the right conservatism for a measured
- * profile, but a viewer on a fast link would watch the first segments at the bottom of the ladder.
+ * profile, but a viewer on a fast link would see it hold back on the way up.
  * Best mode is never part of the measurement matrix, so it is free to optimise for first impression.
  */
 export function pickBestPlaybackSettings(
@@ -140,6 +142,6 @@ export function pickBestPlaybackSettings(
     packagingRunId: SOURCE_RUN_ID,
     streamingMethod: "source",
     abrAlgorithm: "throughput",
-    reason: "Progressive HTTP Range — no packaged ladder available",
+    reason: "No ladder is packaged yet, so the source file plays over HTTP range requests.",
   };
 }

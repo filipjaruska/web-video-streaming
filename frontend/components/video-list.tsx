@@ -1,73 +1,170 @@
+import { Suspense } from "react";
 import Link from "next/link";
-import { Play } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Check, Film, TriangleAlert } from "lucide-react";
+
+import { EmptyState } from "@/components/empty-state";
+import { StatusBadge } from "@/components/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Hint } from "@/components/ui/tooltip";
 import { getPublicApiUrl } from "@/lib/env";
-import type { VideoListItem } from "@/lib/videoApi";
+import { fixed, signed } from "@/lib/results/format";
+import { videoTitle, type VideoListItem } from "@/lib/videoApi";
 
-function formatSize(bytes: number) {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+/** Headline figures for a card, from the cached chapter 5 report. */
+export interface VideoFigures {
+  tiMean: number | null;
+  animationBdRate: number | null;
+  /** What kept the video from going through the pipeline cleanly; empty when nothing did. */
+  issues: string[];
 }
 
-interface VideoListProps {
+function Figure({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="font-mono text-sm tabular">{value}</div>
+    </div>
+  );
+}
+
+/**
+ * Whether a processed video went through the whole pipeline: packaged for HLS and DASH, all of
+ * its data loadable, and both derived ladders compared. Processing and failed videos carry their
+ * status badge on the thumbnail instead.
+ */
+function PipelineBadge({ video, issues }: { video: VideoListItem; issues: string[] }) {
+  const problems = [
+    ...(video.hasHls ? [] : ["Not packaged for HLS."]),
+    ...(video.hasDash ? [] : ["Not packaged for DASH."]),
+    ...issues,
+  ];
+  if (problems.length === 0) {
+    return (
+      <Hint content="Analysed, packaged for HLS and DASH, and compared without errors.">
+        <span className="inline-flex items-center gap-1 rounded-sm border border-success/40 bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
+          <Check className="size-3" strokeWidth={3} />
+          OK
+        </span>
+      </Hint>
+    );
+  }
+  return (
+    <Hint content={problems.join(" ")}>
+      <span className="inline-flex items-center gap-1 rounded-sm border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning">
+        <TriangleAlert className="size-3" />
+        Check
+      </span>
+    </Hint>
+  );
+}
+
+async function CardFigures({
+  video,
+  figures,
+}: {
+  video: VideoListItem;
+  figures: Promise<Record<string, VideoFigures>>;
+}) {
+  const figure = (await figures)[video.routeId];
+  return (
+    <>
+      {figure && (figure.tiMean != null || figure.animationBdRate != null) ? (
+        <div className="flex gap-6">
+          <Figure label="Mean TI" value={fixed(figure.tiMean)} />
+          <Figure
+            label="Animation-optimised BD-rate"
+            value={figure.animationBdRate != null ? `${signed(figure.animationBdRate)} %` : "—"}
+          />
+        </div>
+      ) : (
+        <span />
+      )}
+      {video.status === "ready" && figure && <PipelineBadge video={video} issues={figure.issues} />}
+    </>
+  );
+}
+
+/** Cards in the widest grid row. */
+const FIRST_ROW = 4;
+
+/** Holds the figures' place, at their height, so the cards do not move when they arrive. */
+function CardFiguresSkeleton() {
+  return (
+    <div className="flex gap-6">
+      <Skeleton className="h-9 w-14" />
+      <Skeleton className="h-9 w-40" />
+    </div>
+  );
+}
+
+/**
+ * The catalogue. The cards render at once; their figures come from the report over every video,
+ * which takes a few seconds to build when it is not cached, so they stream in.
+ */
+export function VideoList({
+  videos,
+  figures,
+}: {
   videos: VideoListItem[];
-}
-
-export function VideoList({ videos }: VideoListProps) {
+  figures: Promise<Record<string, VideoFigures>>;
+}) {
   if (videos.length === 0) {
-    return <p className="text-muted-foreground">No videos uploaded yet.</p>;
+    return (
+      <EmptyState title="No videos yet">Upload one with the button at the top right.</EmptyState>
+    );
   }
 
   const apiUrl = getPublicApiUrl();
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 @min-[1400px]/page:grid-cols-4 gap-6">
-      {videos.map((video) => (
-        <Link key={video.routeId} href={`/${video.routeId}`} className="group">
-          <Card className="h-full gap-0 py-0 overflow-hidden transition-all hover:border-primary/40 hover:shadow-md">
-            <div className="relative aspect-video bg-muted overflow-hidden">
-              {video.thumbnailUrl ? (
-                <img
-                  src={`${apiUrl}${video.thumbnailUrl}`}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  className="absolute inset-0 size-full object-cover"
-                />
-              ) : null}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span
-                  className={
-                    video.thumbnailUrl
-                      ? "flex size-12 items-center justify-center rounded-full bg-black/45 text-white shadow-sm transition-colors group-hover:bg-black/60"
-                      : undefined
-                  }
-                >
-                  <Play
-                    className={
-                      video.thumbnailUrl
-                        ? "size-6 fill-current"
-                        : "size-10 text-muted-foreground/50 transition-colors group-hover:text-primary/70"
-                    }
+    <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      {videos.map((video, index) => {
+        return (
+          <li
+            key={video.routeId}
+            className="animate-rise"
+            style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+          >
+            <Link href={`/${video.routeId}`} className="group block space-y-3">
+              <div className="relative aspect-video overflow-hidden rounded-sm border bg-muted">
+                {video.thumbnailUrl ? (
+                  <img
+                    src={`${apiUrl}${video.thumbnailUrl}`}
+                    alt=""
+                    // The first row is on screen at once (up to four across), so it loads with
+                    // the page instead of waiting for layout; the first is the largest paint.
+                    loading={index < FIRST_ROW ? "eager" : "lazy"}
+                    fetchPriority={index === 0 ? "high" : undefined}
+                    decoding="async"
+                    className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
                   />
-                </span>
+                ) : (
+                  <Film className="absolute inset-0 m-auto size-8 text-muted-foreground/40" />
+                )}
+                {video.status !== "ready" && (
+                  <StatusBadge
+                    status={video.status}
+                    className="absolute top-2 left-2 bg-background/90 backdrop-blur"
+                  />
+                )}
               </div>
-            </div>
-            <CardHeader className="p-4 pb-2">
-              <CardTitle className="text-base truncate">{video.title || video.fileName}</CardTitle>
-              <CardDescription className="flex items-center gap-2 flex-wrap">
-                <span>{formatSize(video.size)}</span>
-                {video.hasHls && <Badge variant="secondary">HLS</Badge>}
-                {video.hasDash && <Badge variant="secondary">DASH</Badge>}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4 pt-0">
-              <p className="text-xs text-muted-foreground truncate font-mono">{video.routeId}</p>
-            </CardContent>
-          </Card>
-        </Link>
-      ))}
-    </div>
+              <div className="space-y-1">
+                <h2 className="truncate font-medium transition-colors group-hover:text-primary-ink">
+                  {videoTitle(video)}
+                </h2>
+                {video.description && (
+                  <p className="line-clamp-2 text-sm text-muted-foreground">{video.description}</p>
+                )}
+              </div>
+              <div className="flex min-h-11 items-end justify-between gap-4 border-t pt-2">
+                <Suspense fallback={<CardFiguresSkeleton />}>
+                  <CardFigures video={video} figures={figures} />
+                </Suspense>
+              </div>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

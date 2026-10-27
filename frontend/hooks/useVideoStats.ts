@@ -53,7 +53,7 @@ export function useVideoStats() {
         bandwidth: updatedCurrent.bandwidth,
         droppedFrames: updatedCurrent.droppedFrames,
         totalFrames: updatedCurrent.totalFrames,
-        // Media time, so a series can be read against the clip rather than against wall clock —
+        // Media time, so a series can be read against the video rather than against wall clock —
         // the two diverge by exactly the stalled time, which is the interesting part.
         playbackTime: updatedCurrent.playbackTime,
       };

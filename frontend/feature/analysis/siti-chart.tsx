@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Hls from "hls.js";
+import type Hls from "hls.js";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts";
 import type { AnalysisTreeNode, SitiSeriesData } from "@/lib/videoAnalysisApi";
 import {
@@ -11,9 +11,9 @@ import {
 } from "@/lib/analysisDownsample";
 import { formatSeconds } from "@/lib/analysisLabels";
 import { slugFilename } from "@/lib/csvExport";
-import { Badge } from "@/components/ui/badge";
 import { ExportCsvButton } from "@/components/export-csv-button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Figure } from "@/components/figure";
+import { StatusBadge } from "@/components/status-badge";
 import {
   ChartContainer,
   ChartLegend,
@@ -24,21 +24,15 @@ import {
 } from "@/components/ui/chart";
 
 const chartConfig = {
-  si: {
-    label: "SI",
-    color: "var(--chart-1)",
-  },
-  ti: {
-    label: "TI",
-    color: "var(--chart-2)",
-  },
+  si: { label: "SI", color: "var(--chart-1)" },
+  ti: { label: "TI", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
 /**
  * Population standard deviation (÷n), deliberately not the sample form (n−1) used by
  * `summarize` in `lib/benchmark/metrics.ts`.
  *
- * SI/TI is computed over every frame of the clip, so the frames are the whole population — there
+ * SI/TI is computed over every frame of the video, so the frames are the whole population — there
  * is nothing being sampled. Benchmark repetitions, by contrast, are a sample drawn from the runs
  * that could have happened, hence n−1 there. Both halves match their backend counterparts
  * (`SitiAnalyzer.ComputeStats` and `PlaybackBenchmarkStore`), so unifying them would silently
@@ -96,7 +90,10 @@ interface SitiChartProps {
   data?: SitiSeriesData | null;
   stats?: AnalysisTreeNode | null;
   title?: string;
-  description?: string;
+  /** Line under the chart: what was measured and how. */
+  note?: string;
+  /** The min/max/SD list; off where the same figures are already shown as tiles. */
+  showStats?: boolean;
   /** Progressive source MP4 URL for click-to-seek scrubbing. */
   videoSrc?: string;
   /** Label above the scrubber video (e.g. "Source preview"). */
@@ -110,9 +107,9 @@ function SitiStatsList({ node }: { node: AnalysisTreeNode }) {
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-sm font-medium">
         <span>{node.label}</span>
-        {node.meta?.status === "failed" && <Badge variant="destructive">Failed</Badge>}
-        {node.meta?.status === "running" && <Badge variant="secondary">Running</Badge>}
-        {node.meta?.status === "pending" && <Badge variant="outline">Pending</Badge>}
+        {node.meta?.status && node.meta.status !== "completed" && (
+          <StatusBadge status={node.meta.status} />
+        )}
       </div>
       {node.meta?.error && <p className="text-sm text-destructive">{node.meta.error}</p>}
       {rows && (
@@ -135,10 +132,11 @@ function SitiStatsList({ node }: { node: AnalysisTreeNode }) {
 export function SitiChart({
   data,
   stats,
-  title = "Spatial Information (SI) and Temporal Information (TI) analysis results",
-  description = "Spatial and temporal information (ITU-T P.910) for the source video.",
+  title = "SI and TI over time",
+  note = "ITU-T P.910, per frame of the source.",
+  showStats = true,
   videoSrc,
-  videoLabel = "Source preview",
+  videoLabel = "Preview",
 }: SitiChartProps) {
   const hasSeries = !!data && data.si.length > 0;
   const [mediaDuration, setMediaDuration] = React.useState<number | null>(null);
@@ -271,8 +269,20 @@ export function SitiChart({
     video.addEventListener("durationchange", syncDuration);
 
     if (isHlsSrc) {
-      if (Hls.isSupported()) {
-        hls = new Hls({
+      // Loaded here rather than with the page: the chart is useful before the preview is.
+      void import("hls.js").then(({ default: HlsLibrary }) => {
+        if (cancelled) {
+          return;
+        }
+        if (!HlsLibrary.isSupported()) {
+          if (video.canPlayType("application/vnd.apple.mpegurl")) {
+            video.src = videoSrc;
+          } else {
+            setPreviewError("HLS playback is not supported in this browser.");
+          }
+          return;
+        }
+        const instance = new HlsLibrary({
           enableWorker: true,
           maxBufferLength: 30,
           maxMaxBufferLength: 120,
@@ -280,16 +290,17 @@ export function SitiChart({
           nudgeMaxRetry: 5,
           startFragPrefetch: true,
         });
-        hlsRef.current = hls;
-        hls.loadSource(videoSrc);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls = instance;
+        hlsRef.current = instance;
+        instance.loadSource(videoSrc);
+        instance.attachMedia(video);
+        instance.on(HlsLibrary.Events.MANIFEST_PARSED, () => {
           if (!cancelled) {
             syncDuration();
             flushPendingSeek();
           }
         });
-        hls.on(Hls.Events.LEVEL_LOADED, (_event, level) => {
+        instance.on(HlsLibrary.Events.LEVEL_LOADED, (_event, level) => {
           if (cancelled) {
             return;
           }
@@ -301,19 +312,13 @@ export function SitiChart({
           }
           flushPendingSeek();
         });
-        hls.on(Hls.Events.ERROR, (_event, error) => {
+        instance.on(HlsLibrary.Events.ERROR, (_event, error) => {
           if (!error.fatal || cancelled) {
             return;
           }
-          setPreviewError(
-            "HLS 360p preview unavailable. Re-upload or wait for packaging to finish.",
-          );
+          setPreviewError("Preview unavailable: this rung could not be loaded.");
         });
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = videoSrc;
-      } else {
-        setPreviewError("HLS playback is not supported in this browser.");
-      }
+      });
     } else {
       video.src = videoSrc;
     }
@@ -424,37 +429,113 @@ export function SitiChart({
     [points],
   );
 
-  return (
-    <Card className="pt-0">
-      <CardHeader className="border-b py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          {hasSeries && (
-            <ExportCsvButton
-              filename={slugFilename(["siti", title])}
-              headers={["frame", "time_sec", "si", "ti"]}
-              rows={exportRows}
+  const chart = hasSeries ? (
+    <ChartContainer
+      config={chartConfig}
+      className={`aspect-auto h-[260px] w-full ${canScrub ? "cursor-crosshair select-none" : ""}`}
+      onPointerDown={canScrub ? handlePointerDown : undefined}
+      onPointerUp={canScrub ? handlePointerUp : undefined}
+    >
+      <AreaChart
+        data={chartData}
+        onMouseMove={canScrub ? handleMouseMove : undefined}
+        onClick={canScrub ? handleClick : undefined}
+      >
+        <defs>
+          <linearGradient id={`fillSi-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="var(--color-si)" stopOpacity={0.3} />
+            <stop offset="95%" stopColor="var(--color-si)" stopOpacity={0.02} />
+          </linearGradient>
+          <linearGradient id={`fillTi-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="var(--color-ti)" stopOpacity={0.25} />
+            <stop offset="95%" stopColor="var(--color-ti)" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="timeSec"
+          type="number"
+          domain={["dataMin", "dataMax"]}
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          minTickGap={32}
+          fontSize={12}
+          tickFormatter={(value) => formatSeconds(Number(value))}
+        />
+        <YAxis tickLine={false} axisLine={false} width={36} fontSize={12} />
+        <ChartTooltip
+          cursor={canScrub}
+          content={
+            <ChartTooltipContent
+              labelFormatter={(_, payload) => {
+                const first = payload?.[0] as
+                  | { payload?: { frame?: number; timeSec?: number } }
+                  | undefined;
+                const point = first?.payload;
+                if (!point) {
+                  return null;
+                }
+                return `Frame ${point.frame ?? "—"} · ${formatSeconds(point.timeSec ?? 0)}`;
+              }}
+              indicator="dot"
             />
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4 px-2 pt-4 sm:px-6 sm:pt-6">
-        {statsNode && <SitiStatsList node={statsNode} />}
+          }
+        />
+        {scrubTime != null && (
+          <ReferenceLine
+            x={scrubTime}
+            stroke="var(--foreground)"
+            strokeDasharray="4 4"
+            strokeOpacity={0.7}
+          />
+        )}
+        <Area
+          dataKey="si"
+          type="monotone"
+          fill={`url(#fillSi-${gradientId})`}
+          stroke="var(--color-si)"
+          strokeWidth={1.5}
+          isAnimationActive={false}
+        />
+        <Area
+          dataKey="ti"
+          type="monotone"
+          fill={`url(#fillTi-${gradientId})`}
+          stroke="var(--color-ti)"
+          strokeWidth={1.5}
+          isAnimationActive={false}
+        />
+        <ChartLegend content={<ChartLegendContent />} />
+      </AreaChart>
+    </ChartContainer>
+  ) : (
+    <p className="text-sm text-muted-foreground">No SI/TI series yet.</p>
+  );
 
+  return (
+    <Figure
+      title={title}
+      note={note}
+      actions={
+        hasSeries && (
+          <ExportCsvButton
+            filename={slugFilename(["siti", title])}
+            headers={["frame", "time_sec", "si", "ti"]}
+            rows={exportRows}
+          />
+        )
+      }
+    >
+      <div
+        className={
+          videoSrc ? "grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]" : undefined
+        }
+      >
+        {chart}
         {videoSrc && (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="text-sm font-medium">{videoLabel}</h3>
-              {scrubTime != null && (
-                <p className="font-mono text-xs text-muted-foreground">
-                  {formatSeconds(scrubTime)}
-                </p>
-              )}
-            </div>
-            <div className="overflow-hidden rounded-md border bg-muted/30">
+          <div className="space-y-1.5">
+            <div className="overflow-hidden rounded-sm border bg-black">
               <video
                 ref={videoRef}
                 muted
@@ -462,7 +543,7 @@ export function SitiChart({
                 preload="auto"
                 disablePictureInPicture
                 controlsList="nodownload nofullscreen noremoteplayback"
-                className="pointer-events-none mx-auto max-h-60 w-full object-contain"
+                className="pointer-events-none aspect-video w-full object-contain"
                 onLoadedMetadata={flushPendingSeek}
                 onDurationChange={flushPendingSeek}
                 onCanPlay={flushPendingSeek}
@@ -486,107 +567,18 @@ export function SitiChart({
                 }}
               />
             </div>
-            {previewError ? (
-              <p className="text-xs text-destructive">{previewError}</p>
-            ) : (
-              canScrub && (
-                <p className="text-xs text-muted-foreground">
-                  Hover and click/drag the graph to scrub the preview
-                  {isHlsSrc ? " (HLS 360p)" : ""}.
-                </p>
-              )
-            )}
+            <p className={`text-xs ${previewError ? "text-destructive" : "text-muted-foreground"}`}>
+              {previewError ??
+                (scrubTime != null
+                  ? `${videoLabel} at ${formatSeconds(scrubTime)}`
+                  : canScrub
+                    ? "Click or drag on the graph to find a frame."
+                    : videoLabel)}
+            </p>
           </div>
         )}
-
-        {hasSeries ? (
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium">SI/TI over time</h3>
-            <ChartContainer
-              config={chartConfig}
-              className={`aspect-auto h-[280px] w-full ${canScrub ? "cursor-crosshair select-none" : ""}`}
-              onPointerDown={canScrub ? handlePointerDown : undefined}
-              onPointerUp={canScrub ? handlePointerUp : undefined}
-            >
-              <AreaChart
-                data={chartData}
-                onMouseMove={canScrub ? handleMouseMove : undefined}
-                onClick={canScrub ? handleClick : undefined}
-              >
-                <defs>
-                  <linearGradient id={`fillSi-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--color-si)" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="var(--color-si)" stopOpacity={0.02} />
-                  </linearGradient>
-                  <linearGradient id={`fillTi-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--color-ti)" stopOpacity={0.28} />
-                    <stop offset="95%" stopColor="var(--color-ti)" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="timeSec"
-                  type="number"
-                  domain={["dataMin", "dataMax"]}
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={32}
-                  tickFormatter={(value) => formatSeconds(Number(value))}
-                />
-                <YAxis tickLine={false} axisLine={false} width={40} />
-                <ChartTooltip
-                  cursor={canScrub}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(_, payload) => {
-                        const first = payload?.[0] as
-                          | { payload?: { frame?: number; timeSec?: number } }
-                          | undefined;
-                        const point = first?.payload;
-                        if (!point) {
-                          return null;
-                        }
-                        return `Frame ${point.frame ?? "—"} · ${formatSeconds(point.timeSec ?? 0)}`;
-                      }}
-                      indicator="dot"
-                    />
-                  }
-                />
-                {scrubTime != null && (
-                  <ReferenceLine
-                    x={scrubTime}
-                    stroke="var(--foreground)"
-                    strokeDasharray="4 4"
-                    strokeOpacity={0.7}
-                  />
-                )}
-                <Area
-                  dataKey="si"
-                  type="monotone"
-                  fill={`url(#fillSi-${gradientId})`}
-                  stroke="var(--color-si)"
-                  strokeWidth={2}
-                  isAnimationActive={false}
-                />
-                <Area
-                  dataKey="ti"
-                  type="monotone"
-                  fill={`url(#fillTi-${gradientId})`}
-                  stroke="var(--color-ti)"
-                  strokeWidth={2}
-                  isAnimationActive={false}
-                />
-                <ChartLegend content={<ChartLegendContent />} />
-              </AreaChart>
-            </ChartContainer>
-          </div>
-        ) : (
-          !statsNode && (
-            <p className="text-sm text-muted-foreground">No SI/TI data available yet.</p>
-          )
-        )}
-      </CardContent>
-    </Card>
+      </div>
+      {showStats && statsNode && <SitiStatsList node={statsNode} />}
+    </Figure>
   );
 }

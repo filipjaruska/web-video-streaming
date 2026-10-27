@@ -182,10 +182,17 @@ public sealed class LadderDerivation {
         public const string Cambi = "cambi";
 
         /// <summary>
-        /// Not a resolution's λ point: inserted at the geometric mean of a gap wider than
+        /// A resolution the ladder did not have, inserted at the geometric mean of a gap wider than
         /// ×<see cref="MaxRungGap"/> between the rungs either side.
         /// </summary>
         public const string Gap = "gap";
+
+        /// <summary>
+        /// The highest resolution, kept as the top rung although it never wins on the envelope: every
+        /// ladder includes it. Taken at its λ point, raised to ×<see cref="MinRungSpacing"/> above the
+        /// rung below when that is higher.
+        /// </summary>
+        public const string Top = "top";
     }
 
     /// <summary>What the CAMBI limit did to a rung it applies to.</summary>
@@ -459,6 +466,7 @@ public sealed class LadderDerivation {
             return LadderPlan.Failed("No operating point survived selection");
         }
 
+        KeepHighestResolution(rungs, hulls, lambda, pooledHull, dropped, warnings, cambiLimit);
         FillGaps(rungs, hulls, envelope, pooledHull, warnings);
         warnings.AddRange(GapWarnings(rungs));
 
@@ -466,16 +474,81 @@ public sealed class LadderDerivation {
     }
 
     /// <summary>
-    /// Closes every gap wider than ×<see cref="MaxRungGap"/> between adjacent rungs: a rung goes in
-    /// at the geometric-mean bitrate, at the resolution best on the hull there and the setting whose
-    /// own curve does better for it, until no adjacent pair is further apart.
+    /// Keeps the highest resolution in the ladder when the envelope left it out: it becomes the top
+    /// rung, at its own λ point or ×<see cref="MinRungSpacing"/> above the rung below, whichever is
+    /// higher (<see cref="Placements.Top"/>).
     /// </summary>
     /// <remarks>
-    /// One rung per resolution leaves holes wherever a resolution's window is narrow or lies under
-    /// the floor — Tatami's animation ladder went from 1.57 to 0.16 Mb/s in one step, so on 3G every
-    /// ABR rule sat on the bottom rung. An inserted rung may repeat a resolution the ladder already
-    /// has, at a different bitrate; that is how a real ladder covers a wide window. The insert is read
-    /// off the same per-setting curves as every other rung, so its prediction is as measured as theirs.
+    /// Every ladder must offer the source resolution, the static ladder's top rung, so the ladders
+    /// stay comparable at the top. On flat content a lower resolution can beat it at every measured
+    /// rate (Tatami: 720p over 1080p), and the envelope alone would then drop it. The rung is read
+    /// off its own curve like every other, so its prediction is as measured as theirs.
+    /// </remarks>
+    private static void KeepHighestResolution(
+        List<PlannedRung> rungs,
+        List<ResolutionHull> hulls,
+        double lambda,
+        List<EncodeGridPoint> pooledHull,
+        Dictionary<string, string> dropped,
+        List<string> warnings,
+        CambiLimitMode cambiLimit) {
+        var highest = hulls[0];
+        if (rungs.Any(rung => rung.Hull.Height == highest.Height)) {
+            return;
+        }
+
+        var below = rungs.MaxBy(rung => rung.BitrateBps)!;
+        var low = below.BitrateBps * MinRungSpacing;
+        var measuredTop = highest.Points[^1].BitrateBps;
+        var lambdaPoint = Optimal(highest, lambda);
+        var target = Math.Max(lambdaPoint.BitrateBps, low);
+
+        string? cambiStatus = null;
+        if (CambiLimitApplies(cambiLimit, highest, isTopRung: true)) {
+            if (CambiEdge(highest, low, Math.Max(low, measuredTop)) is { } edge) {
+                cambiStatus = Exceeds(edge, target) ? CambiLimitStatus.Binding : CambiLimitStatus.Met;
+                target = Math.Max(target, edge);
+            } else {
+                cambiStatus = CambiLimitStatus.Unmet;
+            }
+        }
+
+        if (Exceeds(target, measuredTop)) {
+            warnings.Add(
+                $"{highest.Label} is kept as the top rung at {Mbps(target)}, above its highest grid sample at {Mbps(measuredTop)}; its prediction is extrapolated.");
+        }
+
+        var bitrate = ShipBps(target, low, double.PositiveInfinity);
+        var prediction = PredictAt(highest, bitrate);
+        dropped.Remove(highest.Label);
+        rungs.Insert(0, new PlannedRung(
+            highest,
+            bitrate,
+            Placements.Top,
+            prediction,
+            lambdaPoint,
+            prediction.OnVertex ? LocalSlope(prediction.Curve, prediction.Vertex) : prediction.SegmentSlope,
+            false,
+            low,
+            null,
+            new EnvelopeWindow(highest.Height, highest.Label, low, double.PositiveInfinity, false),
+            HullDeficit(pooledHull, bitrate, prediction.DecisionQuality),
+            cambiStatus));
+        warnings.Add(
+            $"{highest.Label} never wins on the envelope; it is kept as the top rung, since every ladder includes the highest resolution.");
+    }
+
+    /// <summary>
+    /// Closes gaps wider than ×<see cref="MaxRungGap"/> between adjacent rungs with resolutions the
+    /// ladder does not have yet: a rung goes in at the geometric-mean bitrate, at the resolution best
+    /// on the hull there among those between the two rungs' resolutions, and the setting whose own
+    /// curve does better for it.
+    /// </summary>
+    /// <remarks>
+    /// One rung per resolution, in resolution order, is the rule: a resolution is never repeated, and
+    /// an insert always sits between the resolutions of the rungs around it. A gap with no such
+    /// resolution free stays open and is reported (<see cref="GapWarnings"/>). The insert is read off
+    /// the same per-setting curves as every other rung, so its prediction is as measured as theirs.
     /// </remarks>
     private static void FillGaps(
         List<PlannedRung> rungs,
@@ -483,12 +556,15 @@ public sealed class LadderDerivation {
         Envelope envelope,
         List<EncodeGridPoint> pooledHull,
         List<string> warnings) {
+        var unfillable = new HashSet<(int Upper, int Lower)>();
+
         for (var guard = 0; guard < 32; guard++) {
             rungs.Sort((a, b) => b.BitrateBps.CompareTo(a.BitrateBps));
 
             var gapAt = -1;
             for (var i = 0; i + 1 < rungs.Count; i++) {
-                if (rungs[i].BitrateBps > rungs[i + 1].BitrateBps * MaxRungGap * (1 + RateTolerance)) {
+                if (rungs[i].BitrateBps > rungs[i + 1].BitrateBps * MaxRungGap * (1 + RateTolerance) &&
+                    !unfillable.Contains((rungs[i].Hull.Height, rungs[i + 1].Hull.Height))) {
                     gapAt = i;
                     break;
                 }
@@ -502,21 +578,25 @@ public sealed class LadderDerivation {
             var target = Math.Sqrt((double)upper.BitrateBps * lower.BitrateBps);
             var bitrate = ShipBps(target, lower.BitrateBps * 1.0001, upper.BitrateBps * 0.9999);
 
-            // The resolution is the one best on the hull there — the envelope's choice, on the same
-            // pooled hulls the windows come from; only a resolution sampled across this rate can be
-            // read there. The setting is then whichever of its own curves does better at the rate.
-            // Choosing resolution and setting together off the per-setting curves would disagree with
-            // the windows: a pooled hull segment that bridges two settings lies above both curves.
+            // Among the resolutions the ladder lacks that lie between the two rungs' resolutions and
+            // were sampled across this rate, the one best on the hull there — the envelope's choice,
+            // on the same pooled hulls the windows come from. The setting is then whichever of its
+            // own curves does better at the rate. Choosing resolution and setting together off the
+            // per-setting curves would disagree with the windows: a pooled hull segment that bridges
+            // two settings lies above both curves.
+            var used = rungs.Select(rung => rung.Hull.Height).ToHashSet();
             var hull = hulls
                 .Where(candidate =>
+                    !used.Contains(candidate.Height) &&
+                    candidate.Height < upper.Hull.Height &&
+                    candidate.Height > lower.Hull.Height &&
                     !FallsShort(bitrate, candidate.Points[0].BitrateBps) &&
                     !Exceeds(bitrate, candidate.Points[^1].BitrateBps))
                 .MaxBy(candidate => QualityAt(candidate.Points, Math.Log2(bitrate)));
 
             if (hull == null) {
-                warnings.Add(
-                    $"Gap between {upper.Hull.Label} and {lower.Hull.Label} left open: no resolution was sampled at {Mbps(bitrate)}.");
-                return;
+                unfillable.Add((upper.Hull.Height, lower.Hull.Height));
+                continue;
             }
 
             var prediction = PredictAt(hull, bitrate);

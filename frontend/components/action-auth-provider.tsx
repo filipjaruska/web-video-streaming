@@ -22,8 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { isActionAuthRequired, verifyActionPassword } from "@/lib/actionAuth";
-
-const STORAGE_KEY = "action-auth-unlocked";
+import { getActionPassword, setActionPassword } from "@/lib/actionPassword";
 
 type ActionAuthContextValue = {
   /** Prompt for password if needed. Resolves true when allowed to proceed. */
@@ -49,7 +48,6 @@ export function ActionAuthProvider({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [unlocked, setUnlocked] = useState(false);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const pendingRef = useRef<PendingRequest | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -59,22 +57,9 @@ export function ActionAuthProvider({ children }: { children: ReactNode }) {
 
     async function init() {
       try {
-        if (sessionStorage.getItem(STORAGE_KEY) === "1") {
-          if (!cancelled) {
-            setUnlocked(true);
-            setAuthRequired(true);
-          }
-          return;
-        }
-
         const required = await isActionAuthRequired();
-        if (cancelled) {
-          return;
-        }
-
-        setAuthRequired(required);
-        if (!required) {
-          setUnlocked(true);
+        if (!cancelled) {
+          setAuthRequired(required);
         }
       } catch {
         if (!cancelled) {
@@ -98,22 +83,15 @@ export function ActionAuthProvider({ children }: { children: ReactNode }) {
     setIsSubmitting(false);
   }, []);
 
+  // Unlocked means a verified password is stored for this tab. It is read on every call rather than
+  // kept in state, because a request the backend rejects clears it (see `actionFetch`).
   const requireAuth = useCallback(async () => {
-    if (unlocked || authRequired === false) {
-      return true;
-    }
-
-    if (authRequired === null) {
-      const required = await isActionAuthRequired();
+    let required = authRequired;
+    if (required === null) {
+      required = await isActionAuthRequired();
       setAuthRequired(required);
-      if (!required) {
-        setUnlocked(true);
-        return true;
-      }
     }
-
-    if (sessionStorage.getItem(STORAGE_KEY) === "1") {
-      setUnlocked(true);
+    if (!required || getActionPassword()) {
       return true;
     }
 
@@ -124,7 +102,7 @@ export function ActionAuthProvider({ children }: { children: ReactNode }) {
       setOpen(true);
       queueMicrotask(() => inputRef.current?.focus());
     });
-  }, [authRequired, unlocked]);
+  }, [authRequired]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -142,8 +120,8 @@ export function ActionAuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      sessionStorage.setItem(STORAGE_KEY, "1");
-      setUnlocked(true);
+      // Kept for the tab: the backend checks the same password on every change.
+      setActionPassword(password);
       settle(true);
     } catch {
       setError("Could not verify password. Try again.");
@@ -197,7 +175,7 @@ export function ActionAuthProvider({ children }: { children: ReactNode }) {
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting || !password}>
-                {isSubmitting ? "Checking..." : "Continue"}
+                {isSubmitting ? "Checking…" : "Continue"}
               </Button>
             </DialogFooter>
           </form>

@@ -1,24 +1,30 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Upload } from "lucide-react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
+
+import { useActionAuth } from "@/components/action-auth-provider";
+import { ErrorBanner } from "@/components/error-banner";
+import { PageShell } from "@/components/page-shell";
+import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
-import { useActionAuth } from "@/components/action-auth-provider";
-import { ErrorBanner } from "@/components/error-banner";
-import { getPublicApiUrl } from "@/lib/env";
+import { PipelineTimeline } from "@/feature/upload/pipeline-timeline";
+import { PreliminaryResults } from "@/feature/upload/preliminary-results";
 import { useEtaCountdown } from "@/hooks/useEtaCountdown";
+import { refreshData } from "@/lib/cacheActions";
+import { getPublicApiUrl } from "@/lib/env";
+import { formatDurationShort, formatElapsedClock } from "@/lib/formatDuration";
+import { cn } from "@/lib/utils";
 import {
   clearStoredUploadSessionId,
   isResumableUploadSession,
   setStoredUploadSessionId,
 } from "@/lib/uploadSessionStorage";
-import { formatDurationShort, formatElapsedClock } from "@/lib/formatDuration";
 import {
   type UploadSessionResponse,
   getUploadSession,
@@ -30,345 +36,326 @@ type UploadSessionPageProps = {
   initialSession: UploadSessionResponse;
 };
 
-const TERMINAL_STATUSES = new Set(["Completed", "Failed", "Expired"]);
+const POLLED_STATUSES = new Set(["Uploading", "Queued", "Processing"]);
 
+const ACCEPTED = "video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm";
+
+/** How long the "Saved" confirmation stays next to the button. */
+const SAVED_NOTICE_MS = 2500;
+
+/**
+ * The upload page: the video's details, editable at every stage, then either the file picker or
+ * the processing timeline next to the results produced so far. The page header shows the name and
+ * description as they are typed.
+ */
 export function UploadSessionPage({ initialSession }: UploadSessionPageProps) {
   const { requireAuth } = useActionAuth();
   const [session, setSession] = useState(initialSession);
   const [title, setTitle] = useState(initialSession.video.title ?? "");
   const [description, setDescription] = useState(initialSession.video.description ?? "");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Null until mounted: a clock read during server rendering never matches the client's.
+  const [nowMs, setNowMs] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const statusTone = useMemo(() => {
-    switch (session.session.status) {
-      case "Completed":
-        return "default" as const;
-      case "Failed":
-      case "Expired":
-        return "destructive" as const;
-      default:
-        return "secondary" as const;
-    }
-  }, [session.session.status]);
-
-  const isProcessing = session.session.status === "Processing";
-  const isQueued = session.session.status === "Queued";
-  const queuePosition = session.session.queuePosition;
-
-  const processingStartedAt = session.session.processingStartedAtUtc;
+  const state = session.session;
+  const status = state.status;
+  const isProcessing = status === "Processing";
+  const awaitingFile = status === "AwaitingUpload" || (status === "Failed" && !state.uploadedAtUtc);
+  const dirty =
+    title.trim() !== (session.video.title ?? "") ||
+    description.trim() !== (session.video.description ?? "");
 
   const elapsedSeconds = useMemo(() => {
-    if (!isProcessing || !processingStartedAt) {
+    if (!isProcessing || !state.processingStartedAtUtc || nowMs === null) {
       return null;
     }
-    const started = new Date(processingStartedAt).getTime();
-    if (Number.isNaN(started)) {
-      return null;
-    }
-    return Math.max(0, Math.floor((nowMs - started) / 1000));
-  }, [isProcessing, processingStartedAt, nowMs]);
+    const started = new Date(state.processingStartedAtUtc).getTime();
+    return Number.isNaN(started) ? null : Math.max(0, Math.floor((nowMs - started) / 1000));
+  }, [isProcessing, state.processingStartedAtUtc, nowMs]);
 
-  const etaSeconds = useEtaCountdown(
-    session.session.estimatedRemainingSeconds ?? null,
-    isProcessing,
-  );
-
-  const canUpload =
-    !isUploading &&
-    (session.session.status === "AwaitingUpload" || session.session.status === "Failed");
+  const etaSeconds = useEtaCountdown(state.estimatedRemainingSeconds ?? null, isProcessing);
 
   useEffect(() => {
     if (!isProcessing) {
       return;
     }
+    setNowMs(Date.now());
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [isProcessing]);
 
   useEffect(() => {
     setStoredUploadSessionId(session.sessionId);
-
-    if (!isResumableUploadSession(session.session.status)) {
+    if (!isResumableUploadSession(status)) {
       clearStoredUploadSessionId();
     }
-  }, [session.sessionId, session.session.status]);
+  }, [session.sessionId, status]);
 
   useEffect(() => {
-    if (TERMINAL_STATUSES.has(session.session.status)) {
+    if (!POLLED_STATUSES.has(status)) {
       return;
     }
-
-    if (
-      session.session.status !== "Processing" &&
-      session.session.status !== "Uploading" &&
-      session.session.status !== "Queued"
-    ) {
-      return;
-    }
-
     const apiUrl = getPublicApiUrl();
     const timer = window.setInterval(async () => {
       try {
-        const next = await getUploadSession(apiUrl, session.sessionId);
-        setSession(next);
+        setSession(await getUploadSession(apiUrl, session.sessionId));
       } catch {
-        // Keep last known state if poll fails.
+        // Keep the last known state if a poll fails.
       }
     }, 2500);
-
     return () => window.clearInterval(timer);
-  }, [session.session.status, session.sessionId]);
+  }, [status, session.sessionId]);
 
-  async function handleSaveMetadata() {
+  // The results and the catalogue are cached on the server; a pipeline that finishes while this
+  // page watches expires them, so "Open the results" shows the finished video.
+  const previousStatus = useRef(status);
+  useEffect(() => {
+    if (status === "Completed" && previousStatus.current !== "Completed") {
+      void refreshData();
+    }
+    previousStatus.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    if (savedAt === null) {
+      return;
+    }
+    const timer = window.setTimeout(() => setSavedAt(null), SAVED_NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [savedAt]);
+
+  async function saveDetails() {
+    const next = await updateUploadSessionVideo(getPublicApiUrl(), session.sessionId, {
+      title: title.trim(),
+      description: description.trim(),
+    });
+    setSession(next);
+    // The catalogue and the results are cached; a new name should show everywhere at once.
+    await refreshData();
+  }
+
+  async function handleSave() {
+    if (!dirty || !title.trim() || saving || !(await requireAuth())) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
     try {
-      const allowed = await requireAuth();
-      if (!allowed) {
-        return;
-      }
-
-      setIsSaving(true);
-      setSaveError(null);
-
-      const nextSession = await updateUploadSessionVideo(getPublicApiUrl(), session.sessionId, {
-        title,
-        description,
-      });
-
-      setSession(nextSession);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Failed to save video details");
+      await saveDetails();
+      setSavedAt(Date.now());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The details could not be saved.");
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   }
 
+  // Details are saved first, then the file goes up; one action instead of two buttons to order.
   async function handleUpload() {
-    if (!selectedFile || !canUpload) {
+    if (!file || !title.trim() || uploading || !(await requireAuth())) {
       return;
     }
-
+    setUploading(true);
+    setError(null);
     try {
-      const allowed = await requireAuth();
-      if (!allowed) {
-        return;
-      }
-
-      setIsUploading(true);
-      setUploadError(null);
-
-      const nextSession = await uploadSessionFile(
-        getPublicApiUrl(),
-        session.sessionId,
-        selectedFile,
-      );
-
-      setSession(nextSession);
-      setSelectedFile(null);
+      await saveDetails();
+      setSession(await uploadSessionFile(getPublicApiUrl(), session.sessionId, file));
+      setFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : "Failed to upload video");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The upload failed.");
     } finally {
-      setIsUploading(false);
+      setUploading(false);
     }
   }
 
-  return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-      <div className="space-y-6">
-        {saveError && <ErrorBanner title="Failed to save upload details" message={saveError} />}
-        {uploadError && <ErrorBanner title="Upload failed" message={uploadError} />}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Upload details</CardTitle>
-            <CardDescription>
-              Save metadata, then upload a source file. Transcoding starts automatically after
-              upload.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Give this upload a title"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Add a short description for the future video page"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="video-file">Upload file</Label>
-              <Input
-                ref={fileInputRef}
-                id="video-file"
-                type="file"
-                accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm"
-                disabled={!canUpload}
-                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-              />
-              <p className="text-sm text-muted-foreground">
-                {selectedFile
-                  ? `Selected: ${selectedFile.name}`
-                  : session.video.originalFileName
-                    ? `Uploaded: ${session.video.originalFileName}`
-                    : "Choose an MP4, MOV, AVI, MKV, or WebM file (max 500 MB)."}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" onClick={handleSaveMetadata} disabled={isSaving}>
-                {isSaving ? "Saving..." : "Save details"}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleUpload}
-                disabled={!selectedFile || !canUpload}
-              >
-                {isUploading ? "Uploading..." : "Upload video"}
-              </Button>
-              {session.session.status === "Completed" && (
-                <Button type="button" variant="outline" asChild>
-                  <Link href={`/${session.video.routeId}`}>Open video</Link>
-                </Button>
-              )}
-              <span className="text-sm text-muted-foreground">
-                Session ID: <code>{session.sessionId}</code>
+  const details = (
+    <section className="rounded-md border p-4 sm:p-5">
+      <form
+        className={cn(
+          "grid gap-4 lg:items-end",
+          awaitingFile
+            ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+            : "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto]",
+        )}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void (awaitingFile ? handleUpload() : handleSave());
+        }}
+      >
+        <div className="space-y-1.5 lg:self-start">
+          <Label htmlFor="title">Title</Label>
+          <Input
+            id="title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={200}
+            placeholder="Name shown for this video"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="description">Description</Label>
+          <Textarea
+            id="description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            maxLength={4000}
+            rows={2}
+            className="min-h-9"
+            placeholder="Optional"
+          />
+        </div>
+        {!awaitingFile && (
+          <div className="flex items-center gap-3">
+            {savedAt !== null && !dirty && (
+              <span className="inline-flex items-center gap-1 text-sm text-success animate-rise">
+                <Check className="size-4" />
+                Saved
               </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Session status</CardTitle>
-            <CardDescription>Upload and transcode progress for this session.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <Badge variant={statusTone}>{session.session.status}</Badge>
-              <span className="text-sm text-muted-foreground">
-                {session.session.progressPercent}% complete
-              </span>
-            </div>
-
-            {session.session.currentStep && (
-              <p className="text-sm">
-                <span className="text-muted-foreground">Current step: </span>
-                {session.session.currentStep}
-              </p>
             )}
+            <Button type="submit" variant="outline" disabled={!dirty || !title.trim() || saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        )}
+      </form>
+    </section>
+  );
 
-            <Progress value={session.session.progressPercent} />
-
-            {isQueued && queuePosition != null && (
-              <p className="text-sm text-muted-foreground">
-                {queuePosition === 0
-                  ? "Next in line — processing starts in a moment."
-                  : `${queuePosition} ${queuePosition === 1 ? "video" : "videos"} ahead in the queue. Videos are processed one at a time.`}
-              </p>
-            )}
-
-            {isProcessing && (
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                {elapsedSeconds != null && (
-                  <span>
-                    Elapsed:{" "}
-                    <span className="font-mono text-foreground">
-                      {formatElapsedClock(elapsedSeconds)}
-                    </span>
-                  </span>
-                )}
-                {etaSeconds == null ? (
-                  <span>Est. remaining: Calculating…</span>
-                ) : etaSeconds > 0 ? (
-                  <span>
-                    Est. remaining:{" "}
-                    <span className="font-mono text-foreground">
-                      {formatDurationShort(etaSeconds)}
-                    </span>
-                  </span>
-                ) : (
-                  <span>Est. remaining: finishing current step…</span>
-                )}
-              </div>
-            )}
-
-            <dl className="grid gap-3 text-sm">
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-muted-foreground">Video route ID</dt>
-                <dd className="text-right font-mono text-xs">{session.video.routeId}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-muted-foreground">Created</dt>
-                <dd>{formatDate(session.session.createdAtUtc)}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-muted-foreground">Last updated</dt>
-                <dd>{formatDate(session.session.updatedAtUtc)}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-muted-foreground">Expires</dt>
-                <dd>{formatDate(session.session.expiresAtUtc)}</dd>
-              </div>
-            </dl>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Thumbnail preview</CardTitle>
-            <CardDescription>Generated after transcoding finishes.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {session.video.thumbnailUrl ? (
-              <img
-                src={`${getPublicApiUrl()}${session.video.thumbnailUrl}`}
-                alt="Upload thumbnail preview"
-                loading="lazy"
-                decoding="async"
-                className="aspect-video w-full rounded-md border object-cover"
-              />
-            ) : (
-              <div className="bg-muted text-muted-foreground flex aspect-video items-center justify-center rounded-md border text-sm">
-                Thumbnail preview will appear here.
-              </div>
-            )}
-          </CardContent>
-        </Card>
+  const uploadForm = (
+    <div className="space-y-4">
+      <label
+        htmlFor="video-file"
+        className="flex cursor-pointer flex-col items-center gap-2 rounded-md border border-dashed px-6 py-14 text-center transition-colors hover:border-primary hover:bg-accent/40"
+      >
+        <Upload className="size-6 text-muted-foreground" />
+        <span className="font-medium">{file ? file.name : "Choose a video file"}</span>
+        <span className="text-xs text-muted-foreground">
+          {file
+            ? `${(file.size / 1_000_000).toFixed(1)} MB`
+            : "MP4, MOV, AVI, MKV or WebM, up to 500 MB"}
+        </span>
+        <input
+          ref={fileInputRef}
+          id="video-file"
+          type="file"
+          accept={ACCEPTED}
+          className="sr-only"
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+        />
+      </label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {title.trim()
+            ? "The page can be left and reopened once the upload is done; processing carries on."
+            : "Give the video a title to upload it."}
+        </p>
+        <Button disabled={!file || !title.trim() || uploading} onClick={() => void handleUpload()}>
+          {uploading ? "Uploading…" : "Upload and process"}
+        </Button>
       </div>
     </div>
   );
-}
 
-function formatDate(value: string | null) {
-  if (!value) {
-    return "Not available";
-  }
+  const thumbnailUrl = session.video.thumbnailUrl
+    ? `${getPublicApiUrl()}${session.video.thumbnailUrl}`
+    : null;
 
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return (
+    <PageShell
+      eyebrow="Upload"
+      title={title.trim() || "New video"}
+      description={description.trim() || undefined}
+      actions={
+        !awaitingFile && (
+          <span className="flex items-center gap-3">
+            <StatusBadge status={status} />
+            {status === "Completed" && (
+              <Button asChild size="sm">
+                <Link href={`/${session.video.routeId}/results`}>Open the results</Link>
+              </Button>
+            )}
+          </span>
+        )
+      }
+    >
+      <div className="space-y-8">
+        {error && <ErrorBanner title="Something went wrong" message={error} />}
+        {details}
+
+        {awaitingFile ? (
+          uploadForm
+        ) : (
+          <>
+            {/* The backend takes a new upload for a failed session; the details above are kept. */}
+            {status === "Failed" && (
+              <section className="space-y-3">
+                <h2 className="font-medium">Upload again to retry</h2>
+                {uploadForm}
+              </section>
+            )}
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[18rem_minmax(0,1fr)]">
+              <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+                    <span>Processing</span>
+                    <span className="font-mono tabular">{state.progressPercent} %</span>
+                  </div>
+                  <Progress value={state.progressPercent} className="h-1.5" />
+                  <div className="flex justify-between gap-3 text-xs text-muted-foreground">
+                    {status === "Queued" && state.queuePosition != null && (
+                      <span>
+                        {state.queuePosition === 0
+                          ? "Next in line"
+                          : `${state.queuePosition} ahead in the queue`}
+                      </span>
+                    )}
+                    {elapsedSeconds != null && (
+                      <span>
+                        Elapsed{" "}
+                        <span className="font-mono tabular">
+                          {formatElapsedClock(elapsedSeconds)}
+                        </span>
+                      </span>
+                    )}
+                    {isProcessing && (
+                      <span>
+                        {etaSeconds == null
+                          ? "Estimating time left"
+                          : etaSeconds > 0
+                            ? `${formatDurationShort(etaSeconds)} left`
+                            : "Finishing this step"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {status === "Failed" && (
+                  <ErrorBanner
+                    title="Processing failed"
+                    message={state.currentStep ?? "See the backend log."}
+                  />
+                )}
+
+                <PipelineTimeline session={state} />
+              </aside>
+
+              <PreliminaryResults
+                routeId={session.video.routeId}
+                processing={status === "Queued" || isProcessing}
+                thumbnailUrl={thumbnailUrl}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </PageShell>
+  );
 }

@@ -13,6 +13,13 @@ public sealed class UploadSessionStateDto {
 
     public int ProgressPercent { get; init; }
     public string? CurrentStep { get; init; }
+
+    /// <summary>The pipeline step behind <see cref="CurrentStep"/> (a <see cref="PipelineStep"/> name), or null outside processing.</summary>
+    public string? CurrentStepKey { get; init; }
+
+    /// <summary>Progress inside the current step (grid samples, encoded rungs), when it reports any.</summary>
+    public int? CurrentStepDone { get; init; }
+    public int? CurrentStepTotal { get; init; }
     public DateTime CreatedAtUtc { get; init; }
     public DateTime UpdatedAtUtc { get; init; }
     public DateTime ExpiresAtUtc { get; init; }
@@ -55,6 +62,7 @@ public class UploadSessionsController : ControllerBase {
         _queue = queue;
     }
 
+    [RequireActionPassword]
     [HttpPost]
     [ProducesResponseType<UploadSessionResponse>(StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateSession(CancellationToken cancellationToken) {
@@ -72,6 +80,7 @@ public class UploadSessionsController : ControllerBase {
             : Ok(await RespondAsync(session, cancellationToken));
     }
 
+    [RequireActionPassword]
     [HttpPatch("{sessionId:guid}/video")]
     [ProducesResponseType<UploadSessionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -90,6 +99,7 @@ public class UploadSessionsController : ControllerBase {
             : Ok(await RespondAsync(session, cancellationToken));
     }
 
+    [RequireActionPassword]
     [HttpPost("{sessionId:guid}/upload")]
     [ProducesResponseType<UploadSessionResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -130,6 +140,7 @@ public class UploadSessionsController : ControllerBase {
         ToResponse(session, await _sessions.QueuePositionAsync(session, cancellationToken));
 
     private static UploadSessionResponse ToResponse(UploadSession session, int? queuePosition) {
+        var step = ProcessingEta.ParseLabel(session.CurrentStep);
         return new UploadSessionResponse {
             SessionId = session.Id,
             RedirectUrl = $"/upload/{session.Id}",
@@ -137,6 +148,9 @@ public class UploadSessionsController : ControllerBase {
                 Status = session.Status.ToString(),
                 ProgressPercent = session.ProgressPercent,
                 CurrentStep = session.CurrentStep,
+                CurrentStepKey = step?.Step.ToString(),
+                CurrentStepDone = step?.Done,
+                CurrentStepTotal = step?.Total,
                 CreatedAtUtc = session.CreatedAtUtc,
                 UpdatedAtUtc = session.UpdatedAtUtc,
                 ExpiresAtUtc = session.ExpiresAtUtc,

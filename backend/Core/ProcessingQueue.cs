@@ -86,7 +86,6 @@ public sealed class ProcessingWorker : BackgroundService {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = DateTime.UtcNow;
-        const string interrupted = "Interrupted by a server restart";
 
         var sessions = await db.UploadSessions
             .Where(session => session.Status == UploadSessionStatus.Queued || session.Status == UploadSessionStatus.Processing)
@@ -100,7 +99,7 @@ public sealed class ProcessingWorker : BackgroundService {
             }
 
             session.Status = UploadSessionStatus.Failed;
-            session.CurrentStep = interrupted;
+            session.CurrentStep = ProcessingEta.Interrupted(session.CurrentStep);
             session.EstimatedRemainingSeconds = null;
             session.CompletedAtUtc = now;
             session.UpdatedAtUtc = now;
@@ -112,7 +111,7 @@ public sealed class ProcessingWorker : BackgroundService {
 
         foreach (var transcode in transcodes) {
             transcode.Status = TranscodeStatus.Failed;
-            transcode.ErrorMessage = interrupted;
+            transcode.ErrorMessage = ProcessingEta.InterruptedLabel;
             transcode.CompletedAtUtc = now;
         }
 

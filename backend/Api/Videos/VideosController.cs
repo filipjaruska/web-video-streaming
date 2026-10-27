@@ -61,11 +61,13 @@ public class VideosController : ControllerBase {
 
     [HttpGet]
     [ProducesResponseType<ListVideosResponse>(StatusCodes.Status200OK)]
+    [ConditionalJson]
     public async Task<IActionResult> ListVideos(CancellationToken cancellationToken) {
         return Ok(await _catalog.ListPublishedAsync(cancellationToken));
     }
 
     [HttpGet("{routeId}/transcodes")]
+    [ConditionalJson]
     [ProducesResponseType<VideoTranscodesResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ListTranscodes(string routeId, CancellationToken cancellationToken) {
@@ -74,6 +76,7 @@ public class VideosController : ControllerBase {
     }
 
     [HttpGet("{routeId}/analysis")]
+    [ConditionalJson]
     [ProducesResponseType<VideoAnalysisResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAnalysis(string routeId, CancellationToken cancellationToken) {
@@ -82,10 +85,20 @@ public class VideosController : ControllerBase {
     }
 
     [HttpGet("{routeId}/benchmarks")]
+    [ConditionalJson]
     [ProducesResponseType<VideoBenchmarksResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ListBenchmarks(string routeId, CancellationToken cancellationToken) {
         var response = await _benchmarks.ListAsync(routeId, cancellationToken);
+        return response == null ? NotFound(new { message = "Video not found" }) : Ok(response);
+    }
+
+    [HttpGet("{routeId}/benchmarks/traces")]
+    [ConditionalJson]
+    [ProducesResponseType<VideoBenchmarkTracesResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListBenchmarkTraces(string routeId, CancellationToken cancellationToken) {
+        var response = await _benchmarks.ListTracesAsync(routeId, cancellationToken);
         return response == null ? NotFound(new { message = "Video not found" }) : Ok(response);
     }
 
@@ -165,6 +178,9 @@ public class VideosController : ControllerBase {
         var contentType = path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase)
             ? "image/webp"
             : "image/jpeg";
+        // Written once per video, from its source, so it never changes under its URL. A day is kept
+        // without asking; after that Last-Modified makes the check a 304.
+        Response.Headers.CacheControl = "public, max-age=86400";
         return PhysicalFile(path, contentType);
     }
 
@@ -176,6 +192,7 @@ public class VideosController : ControllerBase {
     /// is not exposed once the video is published — so this is the only way to rename a clip after
     /// the fact.
     /// </remarks>
+    [RequireActionPassword]
     [HttpPatch("{routeId}")]
     [ProducesResponseType<UpdateVideoResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -205,6 +222,7 @@ public class VideosController : ControllerBase {
     /// stored, replacing the previous one — for a change to the derivation, without re-running the
     /// grids. Synchronous: the response comes once the new ladder is packaged and verified.
     /// </summary>
+    [RequireActionPassword]
     [HttpPost("{routeId}/ladders/{ladder}/rederive")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -227,6 +245,7 @@ public class VideosController : ControllerBase {
     /// Re-runs the refinement of a derived ladder's grid from its stored coarse samples under the
     /// current derivation and settings. Re-derive afterwards to package a ladder from it.
     /// </summary>
+    [RequireActionPassword]
     [HttpPost("{routeId}/ladders/{ladder}/refine-grid")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -249,6 +268,7 @@ public class VideosController : ControllerBase {
     /// Recomputes the ladder and tuning comparisons (BD-rates) from the stored measurements, without
     /// encoding or packaging anything — for a change to how they are computed.
     /// </summary>
+    [RequireActionPassword]
     [HttpPost("{routeId}/comparisons/recompute")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -268,6 +288,7 @@ public class VideosController : ControllerBase {
         _ => null
     };
 
+    [RequireActionPassword]
     [HttpDelete("{routeId}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
