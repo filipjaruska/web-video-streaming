@@ -1,6 +1,6 @@
 "use server";
 
-import { loadVmafFrames, type VmafFrames } from "./loadVideoAnalysis";
+import { loadVmafFrames, type VmafFrames } from "@/lib/serverCache";
 
 /** The per-frame VMAF of one packaged rung, for the chart on the Results tab. */
 export async function getVmafFrames(

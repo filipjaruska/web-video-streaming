@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlaybackEvent, StatsSnapshot } from "@/types/streaming";
 import type { VideoPlayerHandle } from "@/components/video-player";
 import { ladderLabel } from "@/lib/analysisFormat";
@@ -140,6 +140,11 @@ export function useBenchmarkRunner({
   const cancel = useCallback(() => {
     cancelRef.current = true;
   }, []);
+
+  // Leaving the page stops the sweep, like Cancel: the run in flight is dropped, not saved. Without
+  // this the loop played on without a player and saved every remaining run as one that never
+  // started, and a page hidden for the way back would keep measuring out of sight.
+  useEffect(() => () => cancel(), [cancel]);
 
   const runOne = useCallback(
     async (

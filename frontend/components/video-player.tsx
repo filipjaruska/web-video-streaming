@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -189,6 +190,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     }),
     [],
   );
+
+  // A page the viewer leaves is hidden rather than unmounted (Cache Components keeps it for the way
+  // back), and a hidden <video> keeps playing. Pausing on hide keeps the position.
+  useLayoutEffect(() => () => videoElement?.pause(), [videoElement]);
 
   // The decision loop outlives neither the source nor the profile: switching either tears down the
   // player, so a driver left running would keep ticking against a detached instance.

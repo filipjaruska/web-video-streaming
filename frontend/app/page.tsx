@@ -1,13 +1,20 @@
+import { connection } from "next/server";
+
 import { ErrorBanner } from "@/components/error-banner";
 import { PageShell } from "@/components/page-shell";
 import { VideoList, type VideoFigures } from "@/components/video-list";
-import { loadChapter5 } from "@/lib/results/loadChapter5";
+import { loadCatalogue, loadChapter5 } from "@/lib/serverCache";
 import { HOME_COPY } from "@/lib/siteCopy";
-import { listVideos, type VideoListItem } from "@/lib/videoApi";
+import type { VideoListItem } from "@/lib/videoApi";
 
 async function headlineFigures(): Promise<Record<string, VideoFigures>> {
   // The figures are a bonus on the cards; the catalogue renders without them.
-  const report = await loadChapter5().catch(() => null);
+  const report = await loadChapter5().catch(async () => {
+    // A failure is rendered per request, never into the prerendered page, which nothing would
+    // expire: only the cached data carries tags.
+    await connection();
+    return null;
+  });
   if (!report) {
     return {};
   }
@@ -32,8 +39,9 @@ async function headlineFigures(): Promise<Record<string, VideoFigures>> {
 
 async function catalogue(): Promise<{ videos: VideoListItem[]; error: string | null }> {
   try {
-    return { videos: (await listVideos()).videos, error: null };
+    return { videos: (await loadCatalogue()).videos, error: null };
   } catch (err) {
+    await connection();
     return {
       videos: [],
       error: err instanceof Error ? err.message : "The catalogue could not be loaded.",

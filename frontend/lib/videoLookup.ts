@@ -1,4 +1,5 @@
-import { listVideos, type VideoListItem } from "@/lib/videoApi";
+import { loadCatalogue } from "@/lib/serverCache";
+import type { VideoListItem } from "@/lib/videoApi";
 
 /**
  * One video from the catalogue: `null` when it does not exist, `undefined` when the catalogue could
@@ -7,7 +8,7 @@ import { listVideos, type VideoListItem } from "@/lib/videoApi";
  */
 export async function findVideo(routeId: string): Promise<VideoListItem | null | undefined> {
   try {
-    const { videos } = await listVideos();
+    const { videos } = await loadCatalogue();
     return videos.find((video) => video.routeId === routeId) ?? null;
   } catch {
     return undefined;

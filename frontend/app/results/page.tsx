@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 
 import { ErrorBanner } from "@/components/error-banner";
 import { PageShell } from "@/components/page-shell";
 import { SectionIndex } from "@/components/section-index";
 import { Chapter5View, RESULT_SECTIONS } from "@/feature/results/chapter5-view";
 import { ResultsToolbar } from "@/feature/results/results-toolbar";
-import { loadChapter5 } from "@/lib/results/loadChapter5";
+import { loadChapter5 } from "@/lib/serverCache";
 import type { Chapter5Report } from "@/lib/results/chapter5";
 import { RESULTS_COPY } from "@/lib/siteCopy";
 
@@ -21,6 +22,8 @@ export default async function ResultsPage() {
   try {
     report = await loadChapter5();
   } catch (err) {
+    // Rendered per request, so a failure during the build is not prerendered into the page.
+    await connection();
     error = err instanceof Error ? err.message : "The results could not be loaded.";
   }
 

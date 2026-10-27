@@ -44,14 +44,17 @@ The defaults work for local development without editing either `.env.example`.
 
 **Frontend:** `frontend/.env.local`
 
-| Variable               | Purpose                                                           |
-| ---------------------- | ----------------------------------------------------------------- |
-| `NEXT_PUBLIC_API_URL`  | Backend URL used by the browser (default `http://localhost:5000`) |
-| `API_URL`              | Optional server-only backend URL for SSR, sitemap and robots      |
-| `NEXT_PUBLIC_SITE_URL` | Public origin for `sitemap.xml` and `robots.txt`                  |
-| `ACTION_PASSWORD`      | Password the UI asks for before any action. Empty disables it     |
+| Variable               | Purpose                                                                     |
+| ---------------------- | --------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`  | Backend URL used by the browser (default `http://localhost:5000`)           |
+| `API_URL`              | Optional server-only backend URL for SSR, sitemap and robots                |
+| `NEXT_PUBLIC_SITE_URL` | Public origin for `sitemap.xml` and `robots.txt`                            |
+| `ACTION_PASSWORD`      | Password the UI asks for before any action. Empty disables it               |
+| `REVALIDATE_SECRET`    | Secret the backend must send to `/api/revalidate`. Empty accepts any caller |
 
 **Backend:** environment variables override `appsettings.json`, and nested keys use `__`. See `backend/.env.example`. CORS only limits browsers, so in production set `ACTION_PASSWORD` on both services: it is what stops direct requests from changing data.
+
+The frontend caches what it renders from the backend until the backend reports a change: after every database write, the backend calls the frontend's `/api/revalidate` with the cache tags it touched. In production, set `FRONTEND_URL` (unless it matches `AllowedOrigins__0`) and the same `REVALIDATE_SECRET` on both services.
 
 | Variable                               | Purpose                                                                                           |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -60,6 +63,8 @@ The defaults work for local development without editing either `.env.example`.
 | `ConnectionStrings__DefaultConnection` | SQLite database (default `App_Data/app.db`)                                                       |
 | `AllowedOrigins__0`                    | CORS origin for the frontend (default `http://localhost:3000`)                                    |
 | `ACTION_PASSWORD`                      | Same value as the frontend; required on changes and the database download. Empty leaves them open |
+| `FRONTEND_URL`                         | Frontend whose caches are expired after each write (default `AllowedOrigins__0`)                  |
+| `REVALIDATE_SECRET`                    | Same value as the frontend; sent with that call                                                   |
 
 ## Layout
 

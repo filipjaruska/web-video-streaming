@@ -5,6 +5,8 @@ const ANALYSIS_TAB_SECTIONS = ["content", "ladder", "tuning", "cost"] as const;
 
 const nextConfig: NextConfig = {
   compress: true,
+  cacheComponents: true,
+  partialPrefetching: true,
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 
 import { PageShell } from "@/components/page-shell";
 import { Section } from "@/components/section";
@@ -8,8 +9,8 @@ import { DataCell, DataHead, DataRow, DataTable } from "@/components/ui/data-tab
 import { BrowserCapabilities } from "@/feature/method/browser-capabilities";
 import { HullDiagram } from "@/feature/method/hull-diagram";
 import { NETWORK_PROFILE_SHORT, VARIABLE_NETWORK_SCHEDULE } from "@/lib/benchmark/types";
+import { loadCatalogue } from "@/lib/serverCache";
 import { METHOD_COPY } from "@/lib/siteCopy";
-import { listVideos } from "@/lib/videoApi";
 
 export const metadata: Metadata = {
   title: METHOD_COPY.title,
@@ -75,9 +76,13 @@ function Term({ name, children }: { name: string; children: React.ReactNode }) {
 
 export default async function MethodPage() {
   // Links point at a real video, so "see it on a video" lands on measured data.
-  const sample = await listVideos()
+  const sample = await loadCatalogue()
     .then(({ videos }) => (videos.find((video) => video.status === "ready") ?? videos[0])?.routeId)
-    .catch(() => undefined);
+    .catch(async () => {
+      // Per request, so the build does not prerender the page without its links.
+      await connection();
+      return undefined;
+    });
   const onVideo = (section: string) =>
     sample ? (
       <Link href={`/${sample}/results#${section}`} className="text-sm underline underline-offset-4">

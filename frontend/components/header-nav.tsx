@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -16,15 +16,17 @@ const NAV_ITEMS = [
 ] as const;
 
 /** Video pages live at the root ("/abc123/results"), so everything that isn't another section is Videos. */
-function isActive(href: string, pathname: string): boolean {
+function isActive(href: string, pathname: string | null): boolean {
+  if (pathname === null) {
+    return false;
+  }
   if (href !== "/") {
     return pathname === href || pathname.startsWith(`${href}/`);
   }
   return !["/results", "/method", "/upload"].some((section) => pathname.startsWith(section));
 }
 
-export function HeaderNav() {
-  const pathname = usePathname();
+function DesktopLinks({ pathname }: { pathname: string | null }) {
   return (
     <nav aria-label="Main" className="hidden items-center gap-1 text-sm sm:flex">
       {NAV_ITEMS.map((item) => {
@@ -50,8 +52,7 @@ export function HeaderNav() {
   );
 }
 
-export function MobileNav() {
-  const pathname = usePathname();
+function MobileMenu({ pathname }: { pathname: string | null }) {
   const [open, setOpen] = useState(false);
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -85,5 +86,31 @@ export function MobileNav() {
         </nav>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function CurrentDesktopLinks() {
+  return <DesktopLinks pathname={usePathname()} />;
+}
+
+function CurrentMobileMenu() {
+  return <MobileMenu pathname={usePathname()} />;
+}
+
+// A video page's path is not known while its shell is prerendered, so the links render without the
+// highlight until it is.
+export function HeaderNav() {
+  return (
+    <Suspense fallback={<DesktopLinks pathname={null} />}>
+      <CurrentDesktopLinks />
+    </Suspense>
+  );
+}
+
+export function MobileNav() {
+  return (
+    <Suspense fallback={<MobileMenu pathname={null} />}>
+      <CurrentMobileMenu />
+    </Suspense>
   );
 }

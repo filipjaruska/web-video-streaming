@@ -1,8 +1,7 @@
 import { VideoPlayback } from "@/feature/video/video-playback";
 import { VideoResults } from "@/feature/video/video-results";
 import { isProcessing } from "@/lib/videoLookup";
-import { loadVideoReport } from "@/lib/results/loadChapter5";
-import { loadSlimAnalysis } from "@/lib/results/loadVideoAnalysis";
+import { loadSlimAnalysis, loadVideoReport } from "@/lib/serverCache";
 
 type VideoResultsPageProps = {
   params: Promise<{ video: string }>;

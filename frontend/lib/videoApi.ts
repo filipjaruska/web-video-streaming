@@ -1,4 +1,3 @@
-import { cache } from "react";
 import { actionFetch } from "@/lib/actionPassword";
 import { getApiUrl } from "@/lib/env";
 
@@ -184,15 +183,13 @@ export async function deleteVideo(apiUrl: string, routeId: string): Promise<void
   }
 }
 
-export const listVideos = cache(async (): Promise<ListVideosResponse> => {
-  const apiUrl = getApiUrl();
-  const res = await fetch(`${apiUrl}/api/videos`, {
-    next: { revalidate: 60, tags: ["videos"] },
-  });
+/** Uncached; pages read the catalogue through `loadCatalogue` in `lib/serverCache.ts`. */
+export async function listVideos(): Promise<ListVideosResponse> {
+  const res = await fetch(`${getApiUrl()}/api/videos`, { cache: "no-store" });
 
   if (!res.ok) {
     throw new Error(`Failed to list videos: ${res.status}`);
   }
 
   return res.json() as Promise<ListVideosResponse>;
-});
+}

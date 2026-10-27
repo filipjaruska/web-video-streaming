@@ -3,8 +3,8 @@ import { Section } from "@/components/section";
 import { SectionIndex } from "@/components/section-index";
 import { SavedBenchmarks } from "@/feature/video/saved-benchmarks";
 import { VideoRaw } from "@/feature/video/video-raw";
-import { getApiUrl } from "@/lib/env";
-import { getVideoBenchmarks, type VideoBenchmarksResponse } from "@/lib/videoBenchmarksApi";
+import { loadVideoBenchmarks } from "@/lib/serverCache";
+import type { VideoBenchmarksResponse } from "@/lib/videoBenchmarksApi";
 import { isProcessing } from "@/lib/videoLookup";
 
 const RAW_SECTIONS = [
@@ -23,9 +23,7 @@ export default async function VideoRawPage({ params }: VideoRawPageProps) {
   let saved: VideoBenchmarksResponse | null = null;
   let error: string | null = null;
   try {
-    saved = await getVideoBenchmarks(getApiUrl(), video, {
-      next: { revalidate: 60, tags: ["benchmarks"] },
-    });
+    saved = await loadVideoBenchmarks(video);
   } catch (err) {
     error = err instanceof Error ? err.message : "Saved runs could not be loaded.";
   }

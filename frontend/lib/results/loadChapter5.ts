@@ -1,6 +1,3 @@
-import { unstable_cache } from "next/cache";
-
-import { getApiUrl } from "@/lib/env";
 import { listVideos, videoTitle, type VideoListItem } from "@/lib/videoApi";
 import { getVideoAnalysis } from "@/lib/videoAnalysisApi";
 import { getVideoBenchmarkTraces, getVideoBenchmarks } from "@/lib/videoBenchmarksApi";
@@ -8,10 +5,8 @@ import { getVideoBenchmarkTraces, getVideoBenchmarks } from "@/lib/videoBenchmar
 import { buildChapter5, type Chapter5Report, type VideoData } from "./chapter5";
 
 // The raw responses are megabytes per video (traces alone pass Next's 2 MB fetch-cache limit), so
-// they are fetched fresh and only the reduced report is cached.
+// they are fetched fresh and only the reduced report is cached, by `lib/serverCache.ts`.
 const NO_STORE: RequestInit = { cache: "no-store" };
-
-const CACHE = { revalidate: 60, tags: ["videos", "analysis", "benchmarks"] };
 
 async function loadVideo(apiUrl: string, video: VideoListItem): Promise<VideoData> {
   const [analysis, benchmarks, traces] = await Promise.allSettled([
@@ -56,16 +51,4 @@ export async function fetchVideoReport(
   const { videos } = await listVideos();
   const video = videos.find((item) => item.routeId === routeId);
   return video ? buildChapter5([await loadVideo(apiUrl, video)]) : null;
-}
-
-const cachedChapter5 = unstable_cache(fetchChapter5, ["chapter5"], CACHE);
-const cachedVideoReport = unstable_cache(fetchVideoReport, ["chapter5-video"], CACHE);
-
-/** The cached report for the results page; the Refresh button expires it through the tags. */
-export function loadChapter5(): Promise<Chapter5Report> {
-  return cachedChapter5(getApiUrl());
-}
-
-export function loadVideoReport(routeId: string): Promise<Chapter5Report | null> {
-  return cachedVideoReport(getApiUrl(), routeId);
 }
