@@ -34,6 +34,28 @@ export const VIDEO_RESULT_SECTIONS = [
   { id: "cost", title: "Pipeline cost" },
 ] as const;
 
+/** The tab's layout while its data loads: the section index, then the first section's shape. */
+export function VideoResultsSkeleton() {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-10 xl:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className="hidden space-y-3 xl:block">
+        {VIDEO_RESULT_SECTIONS.map((section) => (
+          <Skeleton key={section.id} className="h-5 w-32" />
+        ))}
+      </div>
+      <div className="space-y-6">
+        <Skeleton className="h-7 w-40" />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }, (_, index) => (
+            <Skeleton key={index} className="h-14" />
+          ))}
+        </div>
+        <Skeleton className="h-72 w-full" />
+      </div>
+    </div>
+  );
+}
+
 /** One video's results, in the order of its appendix in the thesis. */
 export function VideoResults({
   routeId,
@@ -78,12 +100,7 @@ export function VideoResults({
   );
 
   if (loading && !data) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-6 w-56" />
-        <Skeleton className="h-72 w-full" />
-      </div>
-    );
+    return <VideoResultsSkeleton />;
   }
   if (error) {
     return <ErrorBanner title="Results unavailable" message={error} />;
