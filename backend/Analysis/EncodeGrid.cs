@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using static WebWVideoStreamingAPI.Analysis.AnalysisNodes;
 using static WebWVideoStreamingAPI.Analysis.MediaFormatting;
 
@@ -38,6 +39,8 @@ public sealed class EncodeGrid {
     /// <summary>Quality gap next to a selected rung wide enough to justify another encode.</summary>
     private const double MaxQualityGap = 2.5;
 
+    /// <summary>Relative slack when matching a rung's shipped, rounded rate to the grid sample it was placed on.</summary>
+    private const double VertexRateTolerance = 0.01;
 
     private readonly Transcoder _transcoder;
     private readonly VmafAnalyzer _vmaf;
@@ -207,7 +210,10 @@ public sealed class EncodeGrid {
     /// Priority 1 — a rung at the grid's lowest CRF with the hull still steeper than λ: extend below.
     /// Priority 2 — a rung clamped to a bound of its admissible interval: sample at the rung's own
     /// rate, so its predicted quality rests on a nearby sample. Also a resolution whose interval
-    /// lies past its highest sample: sample inside that interval.
+    /// lies past its highest sample: sample inside that interval. And on a pooled grid, a rung on
+    /// a hull segment that jumps more than ×<see cref="LadderDerivation.MaxRungGap"/> from one
+    /// setting's lowest-CRF sample to the other setting: extend the lower setting's curve into the
+    /// jump, which otherwise no rule samples.
     /// Priority 3 — each crossover: sample the resolution taking over, and extend the lower one
     /// when the crossover lies past its last sample.
     /// Priority 4 — a quality gap next to a selected rung.
@@ -241,6 +247,34 @@ public sealed class EncodeGrid {
             plan.Hulls.FirstOrDefault(hull => hull.Height == height) is { } hull
                 ? LadderDerivation.PredictAt(hull, bitrateBps).Setting
                 : null;
+
+        // The pooled hull segment a rung's rate falls on, coming from below, when it joins two
+        // settings more than ×MaxRungGap apart and the lower vertex is its setting's lowest CRF: the
+        // hull bridges a range neither curve was sampled in, and λ reads the rung off that bridge.
+        (EncodeGridPoint Lower, EncodeGridPoint Upper)? SettingJump(LadderDerivation.PlannedRung rung) {
+            var vertices = rung.Hull.Points;
+            if (rung.Hull.Curves.Count < 2) {
+                return null;
+            }
+
+            for (var i = 1; i < vertices.Count; i++) {
+                var (lower, upper) = (vertices[i - 1], vertices[i]);
+                // A rung on the upper vertex ships at its rate rounded, a little either side of it.
+                if (lower.BitrateBps >= rung.BitrateBps || upper.BitrateBps * (1 + VertexRateTolerance) < rung.BitrateBps) {
+                    continue;
+                }
+
+                var lowerSamples = SamplesAt(rung.Hull.Height, lower.Setting);
+                return lower.Setting != upper.Setting &&
+                       upper.BitrateBps > lower.BitrateBps * LadderDerivation.MaxRungGap &&
+                       lowerSamples.Count > 0 &&
+                       lowerSamples[0].Crf == lower.Crf
+                    ? (lower, upper)
+                    : null;
+            }
+
+            return null;
+        }
 
         void Add(int height, string? setting, int? crf, int priority, string reason) {
             if (crf == null || !variantByHeight.TryGetValue(height, out var variant)) {
@@ -283,6 +317,20 @@ public sealed class EncodeGrid {
                     CrfForRate(rungSamples, rung.BitrateBps),
                     2,
                     $"at the {rung.Placement} bound this rung is clamped to");
+            }
+
+            if (SettingJump(rung) is var (lower, upper)) {
+                var lowerSamples = SamplesAt(height, lower.Setting);
+                var lowestCrf = lowerSamples[0].Crf;
+                var crf = CrfForRate(lowerSamples, Math.Sqrt((double)lower.BitrateBps * upper.BitrateBps));
+                Add(
+                    height,
+                    lower.Setting,
+                    crf is { } value ? Math.Clamp(value, lowestCrf - 4, lowestCrf - 1) : null,
+                    2,
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"the pooled hull jumps ×{(double)upper.BitrateBps / lower.BitrateBps:0.0} from {lower.Setting} CRF {lower.Crf}, where that curve stops, to {upper.Setting} CRF {upper.Crf}"));
             }
 
             var anchor = rung.Anchor;

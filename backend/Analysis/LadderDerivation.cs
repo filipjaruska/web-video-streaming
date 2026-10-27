@@ -118,7 +118,7 @@ public sealed class LadderDerivation {
     /// mean (<see cref="Placements.Gap"/>). Just above ×2 the halves come out at about ×1.41, a little
     /// under <see cref="MinRungSpacing"/>, which governs only where λ places a rung.
     /// </summary>
-    private const double MaxRungGap = 2.0;
+    internal const double MaxRungGap = 2.0;
 
     /// <summary>Adjacent rungs further apart than this are reported: one rung per resolution cannot fill the gap.</summary>
     private const double GapRatioWarning = 2.5;
