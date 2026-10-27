@@ -36,7 +36,14 @@ if (string.IsNullOrWhiteSpace(connectionString)) {
 }
 
 EnsureSqliteDirectory(connectionString);
-builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
+// Every save reports what it changed, so the frontend's caches expire exactly when the data does.
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<FrontendCacheNotifier>();
+builder.Services.AddHostedService(services => services.GetRequiredService<FrontendCacheNotifier>());
+builder.Services.AddSingleton<FrontendCacheInterceptor>();
+builder.Services.AddDbContext<AppDbContext>((services, options) => options
+    .UseSqlite(connectionString)
+    .AddInterceptors(services.GetRequiredService<FrontendCacheInterceptor>()));
 
 // —— Services ——————————————————————————————————————————————————————————————
 
