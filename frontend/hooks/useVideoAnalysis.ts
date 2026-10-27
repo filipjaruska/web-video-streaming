@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useStillProcessing } from "@/hooks/useStillProcessing";
 import { pickStaticTranscode } from "@/lib/analysisTargets";
 import { getVideoAnalysis, type VideoAnalysisResponse } from "@/lib/videoAnalysisApi";
 import { getPublicApiUrl } from "@/lib/env";
@@ -68,8 +69,9 @@ export function useVideoAnalysis(
     void reload();
   }, [reload, settled]);
 
+  const processing = useStillProcessing(routeId, poll);
   const running = data != null && hasRunningSections(data);
-  const isPolling = running || (poll && !(data && finished(data)));
+  const isPolling = running || (processing && !(data && finished(data)));
 
   useEffect(() => {
     if (!isPolling) {

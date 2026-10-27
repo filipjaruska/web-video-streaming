@@ -61,6 +61,7 @@ public class VideosController : ControllerBase {
 
     [HttpGet]
     [ProducesResponseType<ListVideosResponse>(StatusCodes.Status200OK)]
+    [ConditionalJson]
     public async Task<IActionResult> ListVideos(CancellationToken cancellationToken) {
         return Ok(await _catalog.ListPublishedAsync(cancellationToken));
     }

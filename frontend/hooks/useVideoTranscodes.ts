@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useStillProcessing } from "@/hooks/useStillProcessing";
 import { getPublicApiUrl } from "@/lib/env";
 import {
   getVideoTranscodes,
@@ -44,8 +45,9 @@ export function useVideoTranscodes(routeId: string, { poll = false }: { poll?: b
     void reload();
   }, [reload]);
 
+  const processing = useStillProcessing(routeId, poll);
   const transcodes: VideoTranscodeListItem[] = data?.transcodes ?? [];
-  const keepPolling = poll && !settled(transcodes);
+  const keepPolling = processing && !settled(transcodes);
 
   useEffect(() => {
     if (!keepPolling) {
