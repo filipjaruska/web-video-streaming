@@ -2,6 +2,15 @@
 
 import { useEffect } from "react";
 
+/** The id a hash names; a malformed escape ("#100%") names nothing rather than throwing. */
+function sectionId(hash: string): string | null {
+  try {
+    return decodeURIComponent(hash.slice(1)) || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Scrolls to the section named in the URL hash once `ready` turns true.
  *
@@ -14,7 +23,7 @@ export function useScrollToHash(ready: boolean) {
     if (!ready) {
       return;
     }
-    const id = decodeURIComponent(window.location.hash.slice(1));
+    const id = sectionId(window.location.hash);
     if (!id) {
       return;
     }
