@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useActionAuth } from "@/components/action-auth-provider";
 import { Button } from "@/components/ui/button";
 import { getPublicApiUrl } from "@/lib/env";
@@ -20,6 +20,7 @@ export function UploadSessionLauncher() {
   const router = useRouter();
   const { requireAuth } = useActionAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [isNavigating, startNavigation] = useTransition();
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<string | null>(null);
   const [estimatedRemainingSeconds, setEstimatedRemainingSeconds] = useState<number | null>(null);
@@ -102,6 +103,9 @@ export function UploadSessionLauncher() {
 
       setIsLoading(true);
       const apiUrl = getPublicApiUrl();
+      // The header outlives the navigation, so the label follows the transition: it shows
+      // "Opening…" until the upload page has rendered, then clears.
+      const open = (url: string) => startNavigation(() => router.push(url));
 
       const storedSessionId = getStoredUploadSessionId();
       if (storedSessionId) {
@@ -111,7 +115,7 @@ export function UploadSessionLauncher() {
             setSessionStatus(existing.session.status);
             setCurrentStep(existing.session.currentStep ?? null);
             setEstimatedRemainingSeconds(existing.session.estimatedRemainingSeconds ?? null);
-            router.push(existing.redirectUrl);
+            open(existing.redirectUrl);
             return;
           }
 
@@ -126,9 +130,10 @@ export function UploadSessionLauncher() {
       setSessionStatus(session.session.status);
       setCurrentStep(session.session.currentStep ?? null);
       setEstimatedRemainingSeconds(session.session.estimatedRemainingSeconds ?? null);
-      router.push(session.redirectUrl);
+      open(session.redirectUrl);
     } catch (error) {
       console.error(error);
+    } finally {
       setIsLoading(false);
     }
   }
@@ -141,8 +146,8 @@ export function UploadSessionLauncher() {
   const idleLabel = uploadSessionButtonLabel(sessionStatus, currentStep, remainingSeconds);
 
   return (
-    <Button type="button" onClick={handleCreateSession} disabled={isLoading}>
-      {isLoading ? "Opening…" : idleLabel}
+    <Button type="button" onClick={handleCreateSession} disabled={isLoading || isNavigating}>
+      {isLoading || isNavigating ? "Opening…" : idleLabel}
     </Button>
   );
 }
